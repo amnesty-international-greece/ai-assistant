@@ -1,0 +1,51 @@
+# AI-in-AI Platform Configuration
+# Non-secret configuration values
+
+app:
+  name: "AI-in-AI Platform"
+  version: "0.1.0"
+
+llm:
+  provider: "gemini"              # "gemini" (free, prototyping) | "claude" (production)
+  model: "gemini-2.0-flash"       # gemini: gemini-2.0-flash / claude: claude-sonnet-4-20250514
+  max_tokens: 4096
+  temperature: 0.3
+
+claude:
+  model: "claude-sonnet-4-20250514"  # kept for reference
+  max_tokens: 4096
+  temperature: 0.3
+
+storage:
+  database_path: "data/amnesty.db"
+  prompts_dir: "data/prompts"
+
+onedrive:
+  archive_root: "/Amnesty/Archive"  # Base path in OneDrive for document archival
+
+google:
+  templates_folder_id: ""  # Google Drive folder ID containing document templates
+  decisions_sheet_id: ""   # Google Sheets ID for Βιβλίο Αποφάσεων
+  agenda_sheet_id: ""      # Google Sheets ID for meeting agendas
+
+zoom:
+  meeting_defaults:
+    duration: 120  # minutes
+    timezone: "Europe/Athens"
+
+brevo:
+  sender_email: "info@amnesty.org.gr"
+  sender_name: "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
+
+discord:
+  channels:
+    announcements: ""  # Channel ID for announcements
+    verification: ""   # Channel ID for member verification
+
+workflows:
+  board_meeting:
+    reminder_hours_before: 3
+    min_notice_days: 7
+  general_assembly:
+    min_notice_days: 30
+    min_electronic_notice_days: 15
