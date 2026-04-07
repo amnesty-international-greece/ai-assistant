@@ -48,9 +48,8 @@ class ClaudeClient:
     def _init_backend(self):
         """Initialise the appropriate SDK client."""
         if self._provider == "gemini":
-            import google.generativeai as genai
-            genai.configure(api_key=settings.gemini_api_key)
-            return genai
+            from google import genai
+            return genai.Client(api_key=settings.gemini_api_key)
         elif self._provider == "claude":
             import anthropic
             return anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -131,20 +130,21 @@ class ClaudeClient:
         temperature: float,
     ) -> tuple[str, int, int]:
         """Call the Gemini API and return (text, input_tokens, output_tokens)."""
-        import google.generativeai as genai
+        from google.genai import types
 
-        generation_config = genai.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
+        config_kwargs: dict = {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if system_prompt:
+            config_kwargs["system_instruction"] = system_prompt
+
+        response = self._backend.models.generate_content(
+            model=self._model,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
         )
 
-        model = genai.GenerativeModel(
-            model_name=self._model,
-            system_instruction=system_prompt or "",
-            generation_config=generation_config,
-        )
-
-        response = model.generate_content(user_prompt)
         text = response.text
 
         # Token counts from usage_metadata
