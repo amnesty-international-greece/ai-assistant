@@ -28,8 +28,8 @@ google:
   decisions_sheet_id: "1pfSGvgoGuNAkI1G34-bDmuSvRDwiEdhQydUZClmTh9c"   # Βιβλίο Αποφάσεων ΔΣ
   agenda_sheet_id: "17_K3yFcgmEHRiki_kJ-fjzHhT-LhT0CSGd5koMwo7To"  # Google Sheets ID for meeting agendas
   invitation_template_id: "1n_2cpUazlYSYKNSSgEqGSiOSUGdCRc9uAJ8suEpRDDU"  # [Πρότυπο] Πρόσκληση Google Doc
-  minutes_drafts_folder_id: ""   # Google Drive folder with SecGen's draft notes
-  protokollo_sheet_id: ""        # [Πρωτόκολλο] Αρχείο ΔΣ spreadsheet
+  minutes_drafts_folder_id: "1rk-wwL1tHJohd9tmjEE_mbJRK9CKjZCt"   # Google Drive folder with SecGen's draft notes
+  protokollo_sheet_id: "19gZeQ4IaiCqvsXSIyOuEbqrI4WNOYEJ9Vz--RgnVRUs"   # [Πρωτόκολλο] Αρχείο ΔΣ (Google Sheet in minutes drafts folder)
 
 zoom:
   meeting_defaults:
