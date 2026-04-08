@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment and secrets
+.env
+*.pem
+*.key
+
+# Database
+data/amnesty.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log

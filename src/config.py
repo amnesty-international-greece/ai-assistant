@@ -41,6 +41,9 @@ class GoogleConfig(BaseModel):
     templates_folder_id: str = ""
     decisions_sheet_id: str = ""
     agenda_sheet_id: str = ""
+    invitation_template_id: str = ""   # Google Doc ID for board meeting invitation template
+    minutes_drafts_folder_id: str = ""
+    protokollo_sheet_id: str = ""
 
 
 class ZoomMeetingDefaults(BaseModel):
@@ -55,6 +58,9 @@ class ZoomConfig(BaseModel):
 class BrevoConfig(BaseModel):
     sender_email: str = "info@amnesty.org.gr"
     sender_name: str = "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
+    # Default newsletter template & lists (can be overridden via CLI --brevo-template / --brevo-lists)
+    newsletter_template_id: int | None = None
+    newsletter_list_ids: list[int] = []
 
 
 class DiscordChannels(BaseModel):
@@ -66,9 +72,20 @@ class DiscordConfig(BaseModel):
     channels: DiscordChannels = DiscordChannels()
 
 
+class BoardMemberConfig(BaseModel):
+    """A single board member for Zoom pre-registration."""
+    email: str
+    first_name: str
+    last_name: str
+
+
 class BoardMeetingConfig(BaseModel):
     reminder_hours_before: int = 3
     min_notice_days: int = 7
+    max_advance_days: int = 14
+    minutes_share_message: str = "Σας κοινοποιούνται τα πρόχειρα πρακτικά προς σχολιασμό."
+    # Pre-registered on Zoom so each member gets a personal join link
+    board_members: list[BoardMemberConfig] = []
 
 
 class GeneralAssemblyConfig(BaseModel):
@@ -79,6 +96,14 @@ class GeneralAssemblyConfig(BaseModel):
 class WorkflowsConfig(BaseModel):
     board_meeting: BoardMeetingConfig = BoardMeetingConfig()
     general_assembly: GeneralAssemblyConfig = GeneralAssemblyConfig()
+
+
+class TestingConfig(BaseModel):
+    """Settings that apply during dry-run / test executions."""
+    # Emails are redirected here instead of skipped — lets you proof the
+    # actual email content before sending to real recipients.
+    # Set to "" to skip emails entirely during dry-runs.
+    dry_run_email: str = ""
 
 
 class AppConfig(BaseModel):
@@ -151,6 +176,7 @@ class Settings(BaseModel):
     brevo: BrevoConfig = BrevoConfig()
     discord: DiscordConfig = DiscordConfig()
     workflows: WorkflowsConfig = WorkflowsConfig()
+    testing: TestingConfig = TestingConfig()
 
 
 def _load_yaml_config() -> dict[str, Any]:

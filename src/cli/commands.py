@@ -6,6 +6,8 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import platform
 import sys
 from pathlib import Path
 
@@ -70,10 +72,36 @@ async def _run_invite(args: argparse.Namespace) -> None:
     """Async handler for the invitation workflow."""
     from src.workflows.board_meeting_invitation import BoardMeetingInvitationWorkflow
 
-    _print_header("Board Meeting Invitation Workflow")
+    # ── Resolve run mode ──────────────────────────────────────────────────────
+    # --test : full simulation — Zoom created+rolled back, PDF generated,
+    #          emails redirected to testing.dry_run_email, DEBUG logging.
+    # (no flag): live run — everything executes for real.
+    test_mode = getattr(args, "test", False)
+
+    if test_mode:
+        logging.getLogger().setLevel(logging.DEBUG)
+        for h in logging.getLogger().handlers:
+            h.setLevel(logging.DEBUG)
+
+        test_email = settings.testing.dry_run_email
+        _print_header("Board Meeting Invitation Workflow  [TEST MODE]")
+        print("  TEST MODE — what will happen:")
+        print("  • Reads agenda from Google Sheets (real)")
+        print("  • Creates Zoom meeting (real, rolled back at the end)")
+        print("  • Generates invitation PDF (real, opened for review)")
+        print("  • Newsletter test send →", test_email or "(skipped — set testing.dry_run_email in config.yaml)")
+        print("  • Archive: skipped")
+        print("  • Reminders: handled by Zoom natively")
+        print("  • Logging: DEBUG")
+        print()
+    else:
+        _print_header("Board Meeting Invitation Workflow")
 
     # Build initial context from CLI args
-    initial_data: dict = {}
+    initial_data: dict = {
+        "dry_run":   test_mode,   # test_mode implies dry_run behaviour internally
+        "test_mode": test_mode,
+    }
 
     if args.sheet_id:
         initial_data["agenda_sheet_id"] = args.sheet_id
@@ -124,30 +152,42 @@ async def _run_invite(args: argparse.Namespace) -> None:
         print()
         _print_header("APPROVAL REQUIRED")
 
-        # Display the draft for review
         ctx = wf.context
-        invitation = ctx.get("invitation_content", {})
 
-        print(f"  Title:    {invitation.get('title', 'N/A')}")
-        print(f"  Subtitle: {invitation.get('subtitle', 'N/A')}")
+        meeting_number = ctx.get("meeting_number", "?")
+        meeting_date   = ctx.get("meeting_date", "?")
+        meeting_time   = ctx.get("meeting_time", "?")
+        meeting_type   = ctx.get("meeting_type") or "ΤΑΚΤΙΚΗ"
+        location       = ctx.get("location") or "ΔΙΑΔΙΚΤΥΑΚΑ"
+        agenda_items   = ctx.get("agenda_items", [])
+
+        seq = meeting_number.zfill(2) if meeting_number.isdigit() else meeting_number
+        print(f"  Συνεδρίαση:  ΔΣ{seq}-{meeting_date[:4]}")
+        print(f"  Ημερομηνία:  {meeting_date}  {meeting_time}")
+        print(f"  Τύπος:       {meeting_type}")
+        print(f"  Τοποθεσία:   {location}")
         print()
-        for section in invitation.get("sections", []):
-            if section.get("heading"):
-                print(f"  ## {section['heading']}")
-            if section.get("body"):
-                # Word-wrap body text
-                body = section["body"]
-                for line in body.split("\n"):
-                    print(f"     {line}")
-            print()
-        if invitation.get("footer"):
-            print(f"  ---")
-            print(f"  {invitation['footer']}")
+        if agenda_items:
+            print("  Ημερήσια διάταξη:")
+            for i, item in enumerate(agenda_items, 1):
+                print(f"    {i}. {item}")
         print()
 
+        # Open PDF automatically so the user can review the actual document
         pdf_path = ctx.get("pdf_path", "")
-        if pdf_path:
-            print(f"  PDF saved at: {pdf_path}")
+        if pdf_path and Path(pdf_path).exists():
+            print(f"  Opening PDF: {pdf_path}")
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(pdf_path)
+                elif platform.system() == "Darwin":
+                    import subprocess
+                    subprocess.Popen(["open", pdf_path])
+                else:
+                    import subprocess
+                    subprocess.Popen(["xdg-open", pdf_path])
+            except Exception as open_err:
+                print(f"  (Could not open PDF automatically: {open_err})")
             print()
 
         if _confirm("  Approve this draft and proceed? [y/n]: "):
@@ -165,26 +205,304 @@ async def _run_invite(args: argparse.Namespace) -> None:
                 actor="secgen",
                 details={"workflow_id": wf.workflow_id},
             )
-            print("\n  Workflow cancelled by user.")
+            print("\n  Cancelling workflow and cleaning up...")
+            await wf.rollback(wf.context)
+            print("  Zoom meeting cancelled. PDF deleted. Done.")
             return
+
+    # Test mode cleanup: always roll back (whether completed or failed)
+    if test_mode and result.get("status") in ("completed", "failed"):
+        print("\n  [TEST MODE] Cleaning up: cancelling Zoom meeting and deleting PDF...")
+        await wf.rollback(wf.context)
+        print("  Cleanup done.")
 
     # Final status
     print()
     if result.get("status") == "completed":
         _print_header("WORKFLOW COMPLETED")
         ctx = wf.context
-        print(f"  Meeting #:     {ctx.get('meeting_number', 'N/A')}")
+        raw_id = ctx.get('raw_meeting_id', '')
+        mn = ctx.get('meeting_number', '')
+        md = ctx.get('meeting_date', '')
+        year = md[:4] if len(md) >= 4 else 'ΧΧΧΧ'
+        seq = mn.zfill(2) if mn.isdigit() else mn
+        meeting_label = raw_id or f"ΔΣ{seq}-{year}"
+        print(f"  Meeting:       {meeting_label}")
         print(f"  Date:          {ctx.get('meeting_date', 'N/A')}")
         print(f"  Zoom:          {ctx.get('zoom_join_url', 'N/A')}")
         print(f"  PDF:           {ctx.get('pdf_path', 'N/A')}")
         print(f"  Archived:      {'Yes' if ctx.get('archive_file_id') else 'No'}")
         print(f"  Newsletter:    {'Sent' if ctx.get('newsletter_sent') else 'Skipped'}")
-        print(f"  Board email:   {'Sent' if ctx.get('board_email_sent') else 'N/A'}")
         print(f"  Reminder:      {ctx.get('reminder_at', 'N/A')}")
     elif result.get("status") == "failed":
         _print_header("WORKFLOW FAILED")
         print(f"  Failed at step: {result.get('step', 'unknown')}")
         print(f"  Error: {result.get('error', 'unknown')}")
+    print()
+
+
+# --- Minutes Commands ---
+
+
+def cmd_minutes(args: argparse.Namespace) -> None:
+    """Dispatch board meeting minutes subcommands."""
+    minutes_command = getattr(args, "minutes_command", None)
+    if minutes_command == "finalize":
+        cmd_minutes_finalize(args)
+    elif minutes_command == "list-drafts":
+        cmd_minutes_list_drafts(args)
+    else:
+        # "run" or None → main workflow
+        init_db()
+        asyncio.run(_run_minutes(args))
+
+
+async def _run_minutes(args: argparse.Namespace) -> None:
+    """Async handler for the minutes workflow."""
+    from src.workflows.board_meeting_minutes import BoardMeetingMinutesWorkflow
+    from src.integrations.google_drive import GoogleClient
+    from src.integrations.zoom import ZoomClient
+
+    test_mode = getattr(args, "test", False)
+    meeting_ref = args.meeting
+
+    if test_mode:
+        logging.getLogger().setLevel(logging.DEBUG)
+        for h in logging.getLogger().handlers:
+            h.setLevel(logging.DEBUG)
+        _print_header(f"Board Meeting Minutes Workflow  [TEST MODE]  — {meeting_ref}")
+    else:
+        _print_header(f"Board Meeting Minutes Workflow  — {meeting_ref}")
+
+    # ── Interactive source selection ─────────────────────────────────────────
+
+    # List Google Docs in the minutes drafts folder
+    source_doc_index: int = 0
+    docs: list = []
+    try:
+        google = GoogleClient()
+        folder_id = settings.google.minutes_drafts_folder_id
+        if folder_id:
+            docs = google.list_docs_in_folder(folder_id)
+        else:
+            print("  (minutes_drafts_folder_id not configured — skipping doc listing)")
+    except Exception as e:
+        print(f"  (Could not list Google Docs: {e})")
+
+    if docs:
+        print("  Available draft documents:")
+        for i, doc in enumerate(docs, 1):
+            mod_date = doc.get("modifiedTime", "")[:10]
+            print(f"    {i}. {doc['name']} ({mod_date})")
+        while True:
+            raw = input("  Select document [1]: ").strip()
+            if not raw:
+                source_doc_index = 0
+                break
+            try:
+                choice = int(raw)
+                if 1 <= choice <= len(docs):
+                    source_doc_index = choice - 1
+                    break
+                print(f"  Please enter a number between 1 and {len(docs)}.")
+            except ValueError:
+                print("  Please enter a valid number.")
+    print()
+
+    # List Zoom recordings and pick one (or skip)
+    recording_index: int = -1  # -1 means skip
+    recordings: list = []
+    if not getattr(args, "manual", False):
+        try:
+            zoom = ZoomClient()
+            recordings = await zoom.list_recordings()
+        except Exception as e:
+            print(f"  (Could not list Zoom recordings: {e})")
+
+    if recordings:
+        # Auto-match: find recording whose topic contains the meeting_ref
+        auto_match_idx = next(
+            (i for i, r in enumerate(recordings) if meeting_ref in r.get("topic", "")),
+            None,
+        )
+        default_display = (auto_match_idx + 1) if auto_match_idx is not None else 1
+
+        print("  Available recordings:")
+        for i, rec in enumerate(recordings, 1):
+            topic = rec.get("topic", "")
+            start = rec.get("start_time", "")[:10]
+            marker = "  \u2190 auto-matched" if (auto_match_idx is not None and i - 1 == auto_match_idx) else ""
+            print(f"    {i}. {topic} ({start}){marker}")
+        while True:
+            raw = input(f"  Select recording [{default_display}] (or 0 to skip): ").strip()
+            if not raw:
+                recording_index = auto_match_idx if auto_match_idx is not None else 0
+                break
+            try:
+                choice = int(raw)
+                if choice == 0:
+                    recording_index = -1
+                    break
+                if 1 <= choice <= len(recordings):
+                    recording_index = choice - 1
+                    break
+                print(f"  Please enter 0 to skip or a number between 1 and {len(recordings)}.")
+            except ValueError:
+                print("  Please enter a valid number.")
+        print()
+
+    # ── Build initial context and run workflow ────────────────────────────────
+    initial_data: dict = {
+        "meeting_ref": meeting_ref,
+        "source_doc_index": source_doc_index,
+        "recording_index": recording_index,
+        "test_mode": test_mode,
+        "dry_run": test_mode,
+    }
+
+    actor = args.actor if hasattr(args, "actor") else "secgen"
+    wf = BoardMeetingMinutesWorkflow(actor=actor)
+
+    print(f"Workflow ID: {wf.workflow_id}")
+    print(f"Steps: {len(wf.steps)}")
+    print()
+
+    result = await wf.run(initial_data)
+
+    while result.get("status") == "awaiting_approval":
+        print()
+        _print_header("APPROVAL REQUIRED")
+
+        ctx = wf.context
+        print(f"  Meeting ref:  {ctx.get('meeting_ref', meeting_ref)}")
+        docx_path = ctx.get("docx_path", "")
+        if docx_path and Path(docx_path).exists():
+            print(f"  Draft DOCX:   {docx_path}")
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(docx_path)
+                elif platform.system() == "Darwin":
+                    import subprocess
+                    subprocess.Popen(["open", docx_path])
+                else:
+                    import subprocess
+                    subprocess.Popen(["xdg-open", docx_path])
+            except Exception as open_err:
+                print(f"  (Could not open DOCX automatically: {open_err})")
+        print()
+
+        if _confirm("  Approve this draft and share with board? [y/n]: "):
+            log_action(
+                workflow="board_meeting_minutes",
+                action="approval_given",
+                actor=actor,
+                details={"workflow_id": wf.workflow_id},
+            )
+            result = await wf.approve_and_resume()
+        else:
+            log_action(
+                workflow="board_meeting_minutes",
+                action="approval_rejected",
+                actor=actor,
+                details={"workflow_id": wf.workflow_id},
+            )
+            print("\n  Cancelling workflow.")
+            await wf.rollback(wf.context)
+            print("  Done.")
+            return
+
+    print()
+    if result.get("status") == "completed":
+        _print_header("MINUTES WORKFLOW COMPLETED")
+        ctx = wf.context
+        print(f"  Meeting:      {ctx.get('meeting_ref', meeting_ref)}")
+        print(f"  Draft DOCX:   {ctx.get('docx_path', 'N/A')}")
+        print(f"  Shared:       {'Yes' if ctx.get('share_url') else 'No'}")
+    elif result.get("status") == "failed":
+        _print_header("WORKFLOW FAILED")
+        print(f"  Failed at step: {result.get('step', 'unknown')}")
+        print(f"  Error: {result.get('error', 'unknown')}")
+    print()
+
+
+def cmd_minutes_finalize(args: argparse.Namespace) -> None:
+    """Finalize and extract decisions for a completed minutes draft."""
+    init_db()
+    asyncio.run(_run_minutes_finalize(args))
+
+
+async def _run_minutes_finalize(args: argparse.Namespace) -> None:
+    """Async handler for the minutes finalize subcommand."""
+    from src.workflows.board_meeting_minutes import BoardMeetingMinutesWorkflow
+
+    meeting_ref = args.meeting
+    test_mode = getattr(args, "test", False)
+
+    label = f"Finalize Minutes  — {meeting_ref}"
+    if test_mode:
+        label += "  [TEST MODE]"
+    _print_header(label)
+
+    actor = getattr(args, "actor", "secgen")
+    wf = BoardMeetingMinutesWorkflow(actor=actor)
+
+    initial_data: dict = {
+        "meeting_ref": meeting_ref,
+        "_start_at_step": "finalize",
+        "test_mode": test_mode,
+        "dry_run": test_mode,
+    }
+
+    print(f"Workflow ID: {wf.workflow_id}")
+    print()
+
+    result = await wf.run(initial_data)
+
+    print()
+    if result.get("status") == "completed":
+        _print_header("FINALIZE COMPLETED")
+        ctx = wf.context
+        print(f"  Protocol number: {ctx.get('protocol_number', 'N/A')}")
+        decisions = ctx.get("decisions_written", [])
+        print(f"  Decisions written: {len(decisions)}")
+        for d in decisions:
+            print(f"    • {d}")
+    elif result.get("status") == "failed":
+        _print_header("FINALIZE FAILED")
+        print(f"  Failed at step: {result.get('step', 'unknown')}")
+        print(f"  Error: {result.get('error', 'unknown')}")
+    print()
+
+
+def cmd_minutes_list_drafts(args: argparse.Namespace) -> None:
+    """List pending draft minutes in Google Drive."""
+    from src.integrations.google_drive import GoogleClient
+
+    _print_header("Draft Minutes in Google Drive")
+
+    folder_id = settings.google.minutes_drafts_folder_id
+    if not folder_id:
+        print("  minutes_drafts_folder_id is not configured in config.yaml.")
+        print("  Set google.minutes_drafts_folder_id to list drafts.")
+        return
+
+    try:
+        google = GoogleClient()
+        docs = google.list_docs_in_folder(folder_id)
+    except Exception as e:
+        print(f"  Error listing documents: {e}")
+        sys.exit(1)
+
+    if not docs:
+        print("  No draft documents found.")
+        return
+
+    print(f"  {'#':<4} {'Name':<50} {'Modified'}")
+    print(f"  {'-'*4} {'-'*50} {'-'*10}")
+    for i, doc in enumerate(docs, 1):
+        mod_date = doc.get("modifiedTime", "")[:10]
+        name = doc.get("name", "")
+        print(f"  {i:<4} {name:<50} {mod_date}")
     print()
 
 
@@ -292,6 +610,52 @@ def cmd_smoke_test(args: argparse.Namespace) -> None:
     print(f"Smoke Test Complete. Cost: ${client.total_cost:.6f}")
 
 
+# --- Auth Commands ---
+
+
+def cmd_auth_google(args: argparse.Namespace) -> None:
+    """Run the Google OAuth2 flow and save credentials token."""
+    from src.integrations.google_drive import GoogleClient
+
+    print("Starting Google OAuth2 authentication...")
+    print("A browser window will open — log in and click Allow.")
+    print()
+    try:
+        client = GoogleClient()
+        client.authenticate()
+        print("✓ Authentication successful! Token saved to data/google_token.json")
+    except Exception as e:
+        print(f"✗ Authentication failed: {e}")
+        sys.exit(1)
+
+
+def cmd_upload_template(args: argparse.Namespace) -> None:
+    """Upload a local HTML file to a Brevo template slot."""
+    from src.integrations.brevo import BrevoClient
+
+    html_path = Path(args.file)
+    if not html_path.exists():
+        print(f"File not found: {html_path}")
+        sys.exit(1)
+
+    html = html_path.read_text(encoding="utf-8")
+    template_id = args.template_id
+
+    print(f"Uploading '{html_path.name}' to Brevo template #{template_id} …")
+
+    async def _upload() -> None:
+        client = BrevoClient()
+        await client.update_template(
+            template_id=template_id,
+            html_content=html,
+            subject=args.subject or None,
+            template_name=args.name or None,
+        )
+
+    asyncio.run(_upload())
+    print(f"Done — template #{template_id} updated.")
+
+
 # --- Entry Point ---
 
 
@@ -319,6 +683,9 @@ def main() -> None:
     # Smoke test
     subparsers.add_parser("smoke-test", help="Run end-to-end smoke test")
 
+    # Auth Google
+    subparsers.add_parser("auth-google", help="Authenticate with Google APIs (OAuth2)")
+
     # Board meeting invitation
     invite_parser = subparsers.add_parser("invite", help="Run board meeting invitation workflow")
     invite_parser.add_argument("--sheet-id", help="Google Sheets ID for agenda data")
@@ -330,6 +697,35 @@ def main() -> None:
     invite_parser.add_argument("--brevo-template", help="Brevo template ID for newsletter")
     invite_parser.add_argument("--brevo-lists", help="Comma-separated Brevo list IDs")
     invite_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+    invite_parser.add_argument("--test", action="store_true",
+                               help="Test mode: creates Zoom+PDF, emails to dry_run_email, then rollback")
+
+    # Upload Brevo template
+    tmpl_parser = subparsers.add_parser("upload-template", help="Upload HTML file to a Brevo template")
+    tmpl_parser.add_argument("--file", required=True, help="Path to the HTML file")
+    tmpl_parser.add_argument("--template-id", type=int, required=True, help="Brevo template ID to overwrite")
+    tmpl_parser.add_argument("--subject", help="Optional default subject stored on the template")
+    tmpl_parser.add_argument("--name", help="Optional template display name in Brevo dashboard")
+
+    # Board meeting minutes
+    minutes_parser = subparsers.add_parser("minutes", help="Board meeting minutes workflow")
+    minutes_sub = minutes_parser.add_subparsers(dest="minutes_command")
+
+    # minutes run (default)
+    run_parser = minutes_sub.add_parser("run", help="Draft minutes from sources")
+    run_parser.add_argument("--meeting", required=True, help="Meeting ref (e.g., ΔΣ03-2026)")
+    run_parser.add_argument("--manual", action="store_true", help="Skip Zoom transcript")
+    run_parser.add_argument("--test", action="store_true", help="Test mode")
+    run_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+
+    # minutes finalize
+    finalize_parser = minutes_sub.add_parser("finalize", help="Finalize and archive minutes")
+    finalize_parser.add_argument("--meeting", required=True, help="Meeting ref (e.g., ΔΣ03-2026)")
+    finalize_parser.add_argument("--test", action="store_true",
+                                 help="Test mode: generates PDF but skips archive, Πρωτόκολλο, and Βιβλίο Αποφάσεων writes")
+
+    # minutes list-drafts
+    minutes_sub.add_parser("list-drafts", help="List draft minutes in Drive")
 
     args = parser.parse_args()
 
@@ -343,6 +739,9 @@ def main() -> None:
         "test-claude": cmd_test_claude,
         "smoke-test": cmd_smoke_test,
         "invite": cmd_invite,
+        "auth-google": cmd_auth_google,
+        "upload-template": cmd_upload_template,
+        "minutes": cmd_minutes,
     }
 
     cmd_func = commands.get(args.command)
