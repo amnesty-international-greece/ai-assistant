@@ -277,7 +277,8 @@ async def _run_minutes(args: argparse.Namespace) -> None:
     # ── Interactive source selection ─────────────────────────────────────────
 
     # List Google Docs in the minutes drafts folder
-    source_doc_index: int = 0
+    source_doc_id: str = ""
+    source_doc_name: str = ""
     docs: list = []
     try:
         google = GoogleClient()
@@ -297,16 +298,19 @@ async def _run_minutes(args: argparse.Namespace) -> None:
         while True:
             raw = input("  Select document [1]: ").strip()
             if not raw:
-                source_doc_index = 0
+                selected_idx = 0
                 break
             try:
                 choice = int(raw)
                 if 1 <= choice <= len(docs):
-                    source_doc_index = choice - 1
+                    selected_idx = choice - 1
                     break
                 print(f"  Please enter a number between 1 and {len(docs)}.")
             except ValueError:
                 print("  Please enter a valid number.")
+        source_doc_id = docs[selected_idx]["id"]
+        source_doc_name = docs[selected_idx]["name"]
+        print(f"  → Selected: {source_doc_name} ({source_doc_id})")
     print()
 
     # List Zoom recordings and pick one (or skip)
@@ -351,11 +355,29 @@ async def _run_minutes(args: argparse.Namespace) -> None:
                 print("  Please enter a valid number.")
         print()
 
+    # ── Transcript file (CLI flag or interactive prompt) ────────────────────
+    transcript_path: str = getattr(args, "transcript", "") or ""
+
+    # If no Zoom recordings found and no transcript file given, prompt the user
+    if not recordings and not transcript_path:
+        print("  No Zoom recordings found for this meeting.")
+        raw_path = input("  Path to local transcript file (.vtt / .txt / .docx) [skip]: ").strip()
+        if raw_path:
+            tp = Path(raw_path)
+            if tp.exists():
+                transcript_path = str(tp)
+                print(f"  → Using transcript: {tp.name}")
+            else:
+                print(f"  File not found: {raw_path} — continuing without transcript")
+        print()
+
     # ── Build initial context and run workflow ────────────────────────────────
     initial_data: dict = {
         "meeting_ref": meeting_ref,
-        "source_doc_index": source_doc_index,
+        "source_doc_id": source_doc_id,
+        "source_doc_name": source_doc_name,
         "recording_index": recording_index,
+        "transcript_path": transcript_path,
         "test_mode": test_mode,
         "dry_run": test_mode,
     }
@@ -407,7 +429,8 @@ async def _run_minutes(args: argparse.Namespace) -> None:
                 details={"workflow_id": wf.workflow_id},
             )
             print("\n  Cancelling workflow.")
-            await wf.rollback(wf.context)
+            if hasattr(wf, "rollback"):
+                await wf.rollback(wf.context)
             print("  Done.")
             return
 
@@ -714,6 +737,7 @@ def main() -> None:
     # minutes run (default)
     run_parser = minutes_sub.add_parser("run", help="Draft minutes from sources")
     run_parser.add_argument("--meeting", required=True, help="Meeting ref (e.g., ΔΣ03-2026)")
+    run_parser.add_argument("--transcript", help="Path to local transcript file (.vtt, .txt, .docx)")
     run_parser.add_argument("--manual", action="store_true", help="Skip Zoom transcript")
     run_parser.add_argument("--test", action="store_true", help="Test mode")
     run_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")

@@ -15,6 +15,7 @@ from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
 from src.documents.pdf_generator import embed_signatures
 from src.integrations.google_drive import GoogleClient
 from src.integrations.zoom import ZoomClient
+from src.utils.transcript_parser import parse_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -44,41 +45,59 @@ def _parse_meeting_ref(meeting_ref: str) -> tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
-def _format_draft_as_text(draft_json: dict[str, Any]) -> str:
-    """Convert a draft_json dict (Claude's output) to readable plain text."""
-    lines: list[str] = []
+def _format_draft_as_sections(draft_json: dict[str, Any]) -> list[dict[str, str]]:
+    """Convert a draft_json dict (Claude's output) to structured sections
+    suitable for ``GoogleClient.write_structured_doc``.
+
+    Returns a list of ``{"type": "title"|"heading"|"body", "text": "..."}`` dicts.
+    """
+    sections: list[dict[str, str]] = []
 
     title = draft_json.get("title", "Πρακτικά Συνεδρίασης")
-    lines.append(title)
-    lines.append("=" * len(title))
-    lines.append("")
+    sections.append({"type": "title", "text": title})
 
     meta = draft_json.get("metadata", {})
     if meta:
-        for key, val in meta.items():
-            lines.append(f"{key}: {val}")
-        lines.append("")
+        meta_lines = [f"{key}: {val}" for key, val in meta.items()]
+        sections.append({"type": "body", "text": "\n".join(meta_lines)})
 
     for section in draft_json.get("sections", []):
         heading = section.get("heading", "")
         body = section.get("body", "")
         if heading:
-            lines.append(f"\n{heading}")
-            lines.append("-" * len(heading))
+            sections.append({"type": "heading", "text": heading})
         if body:
-            lines.append(body)
+            sections.append({"type": "body", "text": body})
 
     decisions = draft_json.get("decisions", [])
     if decisions:
-        lines.append("\n\nΑΠΟΦΑΣΕΙΣ")
-        lines.append("----------")
+        sections.append({"type": "heading", "text": "ΑΠΟΦΑΣΕΙΣ"})
+        decision_lines = []
         for d in decisions:
             num = d.get("number", "")
             text = d.get("text", "")
             vote = d.get("vote", "")
             vote_str = f" ({vote})" if vote else ""
-            lines.append(f"{num}. {text}{vote_str}")
+            decision_lines.append(f"{num}. {text}{vote_str}")
+        sections.append({"type": "body", "text": "\n".join(decision_lines)})
 
+    return sections
+
+
+def _format_draft_as_text(draft_json: dict[str, Any]) -> str:
+    """Convert a draft_json dict to plain text (used for preview/logging)."""
+    sections = _format_draft_as_sections(draft_json)
+    lines: list[str] = []
+    for sec in sections:
+        if sec["type"] == "title":
+            lines.append(sec["text"])
+            lines.append("=" * len(sec["text"]))
+            lines.append("")
+        elif sec["type"] == "heading":
+            lines.append(f"\n{sec['text']}")
+            lines.append("-" * len(sec["text"]))
+        else:
+            lines.append(sec["text"])
     return "\n".join(lines)
 
 
@@ -114,6 +133,16 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
     def name(self) -> str:
         return "board_meeting_minutes"
 
+    async def rollback(self, ctx: dict[str, Any]) -> None:
+        """Undo any side-effects when the user rejects the draft.
+
+        For now this is a no-op — minutes drafting does not create external
+        resources that need cleanup (unlike the invitation workflow which
+        creates a Zoom meeting).  The Google Doc is only modified *after*
+        approval, so rejecting before that leaves everything unchanged.
+        """
+        logger.info("Minutes workflow rollback — no side-effects to undo.")
+
     def define_steps(self) -> list[WorkflowStep]:
         return [
             WorkflowStep("select_sources", "Select Google Doc and Zoom recording"),
@@ -134,11 +163,23 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
     # ── Step 1: Select sources ────────────────────────────────────────────────
 
     async def _step_select_sources(self, ctx: dict[str, Any]) -> StepResult:
-        """List Google Docs in the drafts folder and recordings from Zoom.
+        """Resolve the Google Doc and transcript for this meeting.
 
-        Uses ctx['meeting_ref'] (e.g. 'ΔΣ03-2026') to auto-match.
-        ctx['source_doc_index'] (0-based) picks which doc.
-        ctx.get('recording_index') picks which recording (None = auto-match).
+        Accepted context keys
+        ---------------------
+        meeting_ref : str (required)
+            e.g. 'ΔΣ03-2026'
+        source_doc_id : str (preferred)
+            The Drive file ID chosen by the CLI.  When provided the workflow
+            skips folder listing entirely — no index mismatch possible.
+        source_doc_index : int (fallback)
+            0-based index into the drafts folder listing.  Only used when
+            *source_doc_id* is **not** provided.
+        recording_index : int | None
+            Which Zoom recording to use (-1 = skip, None = auto-match).
+        transcript_path : str | None
+            Local file path to a transcript (.vtt / .txt / .docx / .doc).
+            Takes priority over Zoom recordings when provided.
         """
         meeting_ref: str = ctx.get("meeting_ref", "")
         if not meeting_ref:
@@ -149,82 +190,104 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         except ValueError as e:
             return StepResult(success=False, message=str(e))
 
-        folder_id = settings.google.minutes_drafts_folder_id
-        if not folder_id:
-            return StepResult(
-                success=False,
-                message="google.minutes_drafts_folder_id not configured",
-            )
+        # ── Resolve source doc ────────────────────────────────────────────
+        source_doc_id: str = ctx.get("source_doc_id", "")
+        source_doc_name: str = ""
 
-        # List docs in drafts folder
-        docs = self._google.list_docs_in_folder(folder_id)
-        if not docs:
-            return StepResult(success=False, message="No Google Docs found in minutes_drafts_folder")
+        if source_doc_id:
+            # CLI already resolved the doc — just read its content
+            source_doc_name = ctx.get("source_doc_name", source_doc_id)
+        else:
+            # Fallback: list docs and pick by index or auto-match
+            folder_id = settings.google.minutes_drafts_folder_id
+            if not folder_id:
+                return StepResult(
+                    success=False,
+                    message="google.minutes_drafts_folder_id not configured",
+                )
 
-        # Select source doc
-        source_doc_index: int = ctx.get("source_doc_index", 0)
+            docs = self._google.list_docs_in_folder(folder_id)
+            if not docs:
+                return StepResult(success=False, message="No Google Docs found in minutes_drafts_folder")
 
-        # Auto-match by meeting_ref in doc name if index not explicitly set
-        if "source_doc_index" not in ctx:
-            for i, doc in enumerate(docs):
-                if meeting_ref in doc.get("name", ""):
-                    source_doc_index = i
-                    break
+            source_doc_index: int = ctx.get("source_doc_index", 0)
 
-        if source_doc_index >= len(docs):
-            return StepResult(
-                success=False,
-                message=f"source_doc_index {source_doc_index} out of range (found {len(docs)} docs)",
-            )
+            # Auto-match by meeting_ref in doc name if index not explicitly set
+            if "source_doc_index" not in ctx:
+                for i, doc in enumerate(docs):
+                    if meeting_ref in doc.get("name", ""):
+                        source_doc_index = i
+                        break
 
-        source_doc = docs[source_doc_index]
-        source_doc_id: str = source_doc["id"]
+            if source_doc_index >= len(docs):
+                return StepResult(
+                    success=False,
+                    message=f"source_doc_index {source_doc_index} out of range (found {len(docs)} docs)",
+                )
+
+            source_doc = docs[source_doc_index]
+            source_doc_id = source_doc["id"]
+            source_doc_name = source_doc.get("name", source_doc_id)
 
         # Read SecGen notes from the selected doc
         secgen_notes: str = self._google.read_doc_content(source_doc_id)
 
-        # List Zoom recordings and get transcript
-        zoom_transcript = ""
-        recording_index = ctx.get("recording_index")
+        # ── Resolve transcript ────────────────────────────────────────────
+        transcript_text = ""
 
-        try:
-            recordings = await self._zoom.list_recordings()
-        except Exception as e:
-            logger.warning("Could not fetch Zoom recordings: %s", e)
-            recordings = []
+        # Option A: local transcript file takes priority
+        transcript_path: str = ctx.get("transcript_path", "")
+        if transcript_path:
+            try:
+                transcript_text = parse_transcript(transcript_path)
+                logger.info("Parsed local transcript: %s (%d chars)", transcript_path, len(transcript_text))
+            except Exception as e:
+                logger.warning("Could not parse transcript %s: %s", transcript_path, e)
 
-        if recordings:
-            selected_recording = None
+        # Option B: Zoom recordings (only if no local transcript)
+        if not transcript_text:
+            recording_index = ctx.get("recording_index")
 
-            if recording_index is not None:
-                if recording_index < len(recordings):
-                    selected_recording = recordings[recording_index]
-            else:
-                # Auto-match by meeting_ref in topic
-                for rec in recordings:
-                    topic = rec.get("topic", "")
-                    if meeting_ref in topic:
-                        selected_recording = rec
-                        break
-                # Fallback: take the most recent recording
-                if selected_recording is None and recordings:
-                    selected_recording = recordings[0]
-
-            if selected_recording:
-                meeting_id = str(selected_recording["id"])
+            # Skip Zoom entirely if recording_index == -1
+            if recording_index != -1:
                 try:
-                    transcript = await self._zoom.get_transcript(meeting_id)
-                    zoom_transcript = transcript or ""
+                    recordings = await self._zoom.list_recordings()
                 except Exception as e:
-                    logger.warning("Could not fetch transcript for meeting %s: %s", meeting_id, e)
+                    logger.warning("Could not fetch Zoom recordings: %s", e)
+                    recordings = []
+
+                if recordings:
+                    selected_recording = None
+
+                    if recording_index is not None and recording_index >= 0:
+                        if recording_index < len(recordings):
+                            selected_recording = recordings[recording_index]
+                    else:
+                        # Auto-match by meeting_ref in topic
+                        for rec in recordings:
+                            topic = rec.get("topic", "")
+                            if meeting_ref in topic:
+                                selected_recording = rec
+                                break
+                        if selected_recording is None and recordings:
+                            selected_recording = recordings[0]
+
+                    if selected_recording:
+                        meeting_id = str(selected_recording["id"])
+                        try:
+                            transcript = await self._zoom.get_transcript(meeting_id)
+                            transcript_text = transcript or ""
+                        except Exception as e:
+                            logger.warning("Could not fetch transcript for meeting %s: %s", meeting_id, e)
 
         return StepResult(
             success=True,
-            message=f"Sources selected: doc '{source_doc['name']}', transcript length={len(zoom_transcript)}",
+            message=f"Sources selected: doc '{source_doc_name}', transcript length={len(transcript_text)}",
             data={
                 "secgen_notes": secgen_notes,
-                "zoom_transcript": zoom_transcript,
+                "zoom_transcript": transcript_text,
                 "source_doc_id": source_doc_id,
+                "source_doc_name": source_doc_name,
                 "meeting_ref": meeting_ref,
                 "meeting_number": meeting_number,
                 "meeting_year": meeting_year,
@@ -275,7 +338,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
     # ── Step 3: Write draft to Google Doc ─────────────────────────────────────
 
     async def _step_write_draft_to_doc(self, ctx: dict[str, Any]) -> StepResult:
-        """Format the draft JSON as plain text and write it back to the Google Doc."""
+        """Write the drafted minutes back to the source Google Doc with formatting."""
         draft_json: dict = ctx.get("draft_json", {})
         source_doc_id: str = ctx.get("source_doc_id", "")
         meeting_ref: str = ctx.get("meeting_ref", "")
@@ -283,9 +346,9 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         if not source_doc_id:
             return StepResult(success=False, message="source_doc_id missing from context")
 
-        formatted_text = _format_draft_as_text(draft_json)
-
-        self._google.clear_and_write_doc(source_doc_id, formatted_text)
+        # Build structured sections (title, headings, body) and write with styles
+        sections = _format_draft_as_sections(draft_json)
+        self._google.write_structured_doc(source_doc_id, sections)
 
         new_title = f"[Πρόχειρο] Πρακτικά - Συνεδρίαση {meeting_ref}"
         self._google.rename_file(source_doc_id, new_title)

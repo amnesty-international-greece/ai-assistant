@@ -77,23 +77,19 @@ _DRAFT_JSON = {
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_step_select_sources_auto(workflow):
-    """Finds doc and recording by meeting_ref, downloads transcript."""
-    workflow._google.list_docs_in_folder.return_value = [
-        {"id": "doc-id-1", "name": "Πρακτικά ΔΣ03-2026 draft"},
-    ]
+async def test_step_select_sources_direct_doc_id(workflow):
+    """When source_doc_id is provided, skips folder listing entirely."""
+    workflow._google.read_doc_content.return_value = "Secretary notes content"
     workflow._zoom.list_recordings.return_value = [
         {"id": "zoom-123", "topic": "Συνεδρίαση ΔΣ03-2026"},
     ]
     workflow._zoom.get_transcript.return_value = "Speaker A: Hello\nSpeaker B: Hi"
-    workflow._google.read_doc_content.return_value = "Secretary notes content"
 
-    with patch("src.workflows.board_meeting_minutes.settings") as mock_settings:
-        mock_settings.google.minutes_drafts_folder_id = "folder-id"
-
-        result = await workflow._step_select_sources({
-            "meeting_ref": "ΔΣ03-2026",
-        })
+    result = await workflow._step_select_sources({
+        "meeting_ref": "ΔΣ03-2026",
+        "source_doc_id": "doc-id-1",
+        "source_doc_name": "Πρακτικά ΔΣ03-2026 draft",
+    })
 
     assert result.success, result.message
     assert result.data["source_doc_id"] == "doc-id-1"
@@ -101,24 +97,21 @@ async def test_step_select_sources_auto(workflow):
     assert result.data["zoom_transcript"] == "Speaker A: Hello\nSpeaker B: Hi"
     assert result.data["meeting_number"] == 3
     assert result.data["meeting_year"] == 2026
+    # Should NOT have listed docs in folder
+    workflow._google.list_docs_in_folder.assert_not_called()
     workflow._zoom.get_transcript.assert_called_once_with("zoom-123")
 
 
 @pytest.mark.asyncio
 async def test_step_select_sources_no_transcript(workflow):
     """Succeeds with empty transcript when no recordings are available."""
-    workflow._google.list_docs_in_folder.return_value = [
-        {"id": "doc-id-2", "name": "Notes ΔΣ01-2026"},
-    ]
-    workflow._zoom.list_recordings.return_value = []
     workflow._google.read_doc_content.return_value = "Notes only"
+    workflow._zoom.list_recordings.return_value = []
 
-    with patch("src.workflows.board_meeting_minutes.settings") as mock_settings:
-        mock_settings.google.minutes_drafts_folder_id = "folder-id"
-
-        result = await workflow._step_select_sources({
-            "meeting_ref": "ΔΣ01-2026",
-        })
+    result = await workflow._step_select_sources({
+        "meeting_ref": "ΔΣ01-2026",
+        "source_doc_id": "doc-id-2",
+    })
 
     assert result.success, result.message
     assert result.data["zoom_transcript"] == ""
@@ -146,8 +139,29 @@ async def test_step_select_sources_no_folder_configured(workflow):
 
 
 @pytest.mark.asyncio
-async def test_step_select_sources_explicit_index(workflow):
-    """Uses source_doc_index when explicitly provided."""
+async def test_step_select_sources_with_local_transcript(workflow, tmp_path):
+    """Uses a local transcript file when transcript_path is provided."""
+    workflow._google.read_doc_content.return_value = "Notes here"
+    # Write a fake VTT file
+    vtt_file = tmp_path / "meeting.vtt"
+    vtt_file.write_text("WEBVTT\n\n1\n00:00:01.000 --> 00:00:05.000\nSpeaker A: Hello\n", encoding="utf-8")
+
+    result = await workflow._step_select_sources({
+        "meeting_ref": "ΔΣ02-2026",
+        "source_doc_id": "doc-id-B",
+        "transcript_path": str(vtt_file),
+    })
+
+    assert result.success
+    assert result.data["source_doc_id"] == "doc-id-B"
+    assert "Hello" in result.data["zoom_transcript"]
+    # Should NOT have tried Zoom recordings
+    workflow._zoom.list_recordings.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_step_select_sources_index_fallback(workflow):
+    """Falls back to source_doc_index when source_doc_id not provided."""
     workflow._google.list_docs_in_folder.return_value = [
         {"id": "doc-id-A", "name": "First doc"},
         {"id": "doc-id-B", "name": "Second doc"},
@@ -241,8 +255,8 @@ async def test_step_draft_minutes_invalid_json(workflow, tmp_path):
 
 @pytest.mark.asyncio
 async def test_step_write_draft_to_doc(workflow):
-    """Clears and writes doc content, then renames it."""
-    workflow._google.clear_and_write_doc.return_value = None
+    """Writes structured sections to doc, then renames it."""
+    workflow._google.write_structured_doc.return_value = None
     workflow._google.rename_file.return_value = None
 
     result = await workflow._step_write_draft_to_doc({
@@ -256,10 +270,12 @@ async def test_step_write_draft_to_doc(workflow):
     assert "docs.google.com" in result.data["draft_doc_url"]
     assert "doc-id-1" in result.data["draft_doc_url"]
 
-    workflow._google.clear_and_write_doc.assert_called_once()
-    # Verify the text contains expected content
-    written_text = workflow._google.clear_and_write_doc.call_args[0][1]
-    assert "Πρακτικά" in written_text
+    workflow._google.write_structured_doc.assert_called_once()
+    # Verify sections list contains expected content
+    sections = workflow._google.write_structured_doc.call_args[0][1]
+    assert any("Πρακτικά" in s["text"] for s in sections)
+    assert any(s["type"] == "title" for s in sections)
+    assert any(s["type"] == "heading" for s in sections)
 
     workflow._google.rename_file.assert_called_once_with(
         "doc-id-1",
@@ -543,17 +559,24 @@ async def test_step_extract_decisions_no_sheet_configured(workflow):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+async def test_rollback_does_not_crash(workflow):
+    """Rollback method exists and runs without error."""
+    await workflow.rollback({})
+
+
+# ---------------------------------------------------------------------------
+# Full workflow: pauses at approval gate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
 async def test_workflow_pauses_at_approval(workflow, tmp_path):
     """Full run should pause at the approval_and_share step (step index 3)."""
-    # Step 1: select_sources
-    workflow._google.list_docs_in_folder.return_value = [
-        {"id": "doc-id-1", "name": "ΔΣ03-2026 draft"},
-    ]
-    workflow._zoom.list_recordings.return_value = []
+    # Step 1: select_sources (using direct doc ID — the preferred path)
     workflow._google.read_doc_content.return_value = "SecGen notes"
+    workflow._zoom.list_recordings.return_value = []
 
     # Step 3: write_draft_to_doc
-    workflow._google.clear_and_write_doc.return_value = None
+    workflow._google.write_structured_doc.return_value = None
     workflow._google.rename_file.return_value = None
 
     mock_client = MagicMock()
@@ -562,12 +585,13 @@ async def test_workflow_pauses_at_approval(workflow, tmp_path):
     with patch("src.workflows.board_meeting_minutes.ClaudeClient", return_value=mock_client), \
          patch("src.workflows.board_meeting_minutes.settings") as mock_settings:
 
-        mock_settings.google.minutes_drafts_folder_id = "folder-id"
         mock_settings.storage.prompts_dir = str(tmp_path)
         (tmp_path / "board_minutes.md").write_text("System prompt", encoding="utf-8")
 
         result = await workflow.run({
             "meeting_ref": "ΔΣ03-2026",
+            "source_doc_id": "doc-id-1",
+            "source_doc_name": "ΔΣ03-2026 draft",
         })
 
     assert result["status"] == "awaiting_approval"

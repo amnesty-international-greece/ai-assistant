@@ -568,6 +568,83 @@ class GoogleClient:
         )
         logger.info("Replaced content of doc %s (%d chars)", doc_id, len(content))
 
+    def write_structured_doc(self, doc_id: str, sections: list[dict[str, str]]) -> None:
+        """Write formatted content to a Google Doc, preserving heading styles."""
+        self._ensure_authenticated()
+
+        # Step 1: Clear existing content
+        doc = self._docs_service.documents().get(documentId=doc_id).execute()
+        body = doc.get("body", {})
+        end_index = max(
+            (elem.get("endIndex", 1) for elem in body.get("content", [])),
+            default=1,
+        )
+
+        requests: list[dict] = []
+        if end_index > 1:
+            requests.append({
+                "deleteContentRange": {
+                    "range": {"startIndex": 1, "endIndex": end_index - 1}
+                }
+            })
+
+        # Step 2: Build the full text and track section ranges
+        # Each section's text ends with \n
+        full_text = ""
+        section_ranges: list[tuple[int, int, str]] = []  # (start, end, style_type)
+
+        for sec in sections:
+            text = sec.get("text", "").rstrip("\n") + "\n"
+            start = len(full_text) + 1  # +1 because doc content starts at index 1
+            full_text += text
+            end = len(full_text) + 1
+            section_ranges.append((start, end, sec.get("type", "body")))
+
+        if not full_text:
+            if requests:
+                _batch_update_with_retry(self._docs_service, doc_id, {"requests": requests})
+            return
+
+        # Step 3: Insert all text at once
+        requests.append({
+            "insertText": {
+                "location": {"index": 1},
+                "text": full_text,
+            }
+        })
+
+        _batch_update_with_retry(self._docs_service, doc_id, {"requests": requests})
+
+        # Step 4: Apply paragraph styles
+        style_map = {
+            "title": "TITLE",
+            "heading": "HEADING_2",
+            "body": "NORMAL_TEXT",
+        }
+
+        style_requests: list[dict] = []
+        for start, end, sec_type in section_ranges:
+            named_style = style_map.get(sec_type, "NORMAL_TEXT")
+            style_requests.append({
+                "updateParagraphStyle": {
+                    "range": {"startIndex": start, "endIndex": end},
+                    "paragraphStyle": {"namedStyleType": named_style},
+                    "fields": "namedStyleType",
+                }
+            })
+
+        if style_requests:
+            _batch_update_with_retry(self._docs_service, doc_id, {"requests": style_requests})
+
+        log_action(
+            workflow="google_docs",
+            action="doc_structured_write",
+            actor="system",
+            target=doc_id,
+            details={"sections": len(sections), "content_length": len(full_text)},
+        )
+        logger.info("Wrote %d structured sections to doc %s (%d chars)", len(sections), doc_id, len(full_text))
+
     def rename_file(self, file_id: str, new_name: str) -> None:
         """Rename a file in Google Drive."""
         self._ensure_authenticated()
