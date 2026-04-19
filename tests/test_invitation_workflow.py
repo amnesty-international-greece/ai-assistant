@@ -151,7 +151,7 @@ async def test_step_draft_invitation(workflow):
         "location": "ΔΙΑΔΙΚΤΥΑΚΑ",
         "zoom_join_url": "https://zoom.us/j/123",
         "agenda_items": ["Θέμα 1", "Θέμα 2"],
-        "protocol_number": "2026-042",   # pre-supply so no sheet fetch / prompt needed
+        "protocol_number": "2026_042",   # pre-supply so no sheet fetch / prompt needed
     }
     result = await workflow._step_draft_invitation(ctx)
 

@@ -439,14 +439,15 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             import re as _re
 
             # ── Protocol number: auto-read from sheet, then ask user ──────────
-            if not (protocol_number and _re.match(r"^\d{4}-\d+$", protocol_number.strip())):
+            _PROTO_RE = r"^\d{4}[_-]\d+$"
+            if not (protocol_number and _re.match(_PROTO_RE, protocol_number.strip())):
                 protocol_number = _fetch_next_protocol_number(self._google) or ""
 
             if not protocol_number:
                 print()
                 print("  Αριθμός Πρωτοκόλλου: δεν βρέθηκε στο Πρωτόκολλο.")
-                raw = input("  Εισάγετε αριθμό πρωτοκόλλου (π.χ. 2026-016) ή Enter για παράλειψη: ").strip()
-                if raw and _re.match(r"^\d{4}-\d+$", raw):
+                raw = input("  Εισάγετε αριθμό πρωτοκόλλου (π.χ. 2026_017) ή Enter για παράλειψη: ").strip()
+                if raw and _re.match(_PROTO_RE, raw):
                     protocol_number = raw
                 elif raw:
                     print(f"  Μη έγκυρη μορφή '{raw}' — παράλειψη αριθμού πρωτοκόλλου.")
@@ -476,7 +477,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
 
             # ── Build replacements ────────────────────────────────────────────
             replacements: dict = {}
-            if protocol_number and _re.match(r"^\d{4}-\d+$", protocol_number.strip()):
+            if protocol_number and _re.match(r"^\d{4}[_-]\d+$", protocol_number.strip()):
                 replacements["[ΑΡΙΘΜΟΣ ΠΡΩΤΟΚΟΛΛΟΥ]"] = protocol_number.strip()
             else:
                 replacements["_delete_paragraphs_"] = ["Αρ. Πρωτ.: [ΑΡΙΘΜΟΣ ΠΡΩΤΟΚΟΛΛΟΥ]"]
@@ -547,7 +548,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             # ── Filename & doc title ──────────────────────────────────────────
             import re as _re
             doc_base  = f"Πρόσκληση - Συνεδρίαση {meeting_ref}"
-            if protocol_number and _re.match(r"^\d{4}-\d+$", protocol_number.strip()):
+            if protocol_number and _re.match(r"^\d{4}[_-]\d+$", protocol_number.strip()):
                 filename = f"[{protocol_number}] {doc_base}.pdf"
             else:
                 filename = f"{doc_base}.pdf"
@@ -850,15 +851,15 @@ def _fetch_next_protocol_number(google_client) -> str:
         current_year = _date.today().year
 
         if last_entry:
-            # Accept both YYYY-NNN and YYYY_NNN
+            # Accept both YYYY_NNN and YYYY-NNN
             m = _re.match(r"^(\d{4})[-_](\d+)$", str(last_entry).strip())
             if m:
                 entry_year = int(m.group(1))
                 seq        = int(m.group(2))
                 if entry_year < current_year:
                     # New year — reset counter
-                    return f"{current_year}-001"
-                return f"{current_year}-{seq + 1:03d}"
+                    return f"{current_year}_001"
+                return f"{current_year}_{seq + 1:03d}"
 
         # Empty sheet or unrecognised format — return "" so the caller can ask
         return ""

@@ -793,7 +793,7 @@ def main() -> None:
     invite_parser.add_argument("--time", help="Meeting time (HH:MM)")
     invite_parser.add_argument("--manual", action="store_true",
                                help="Manual mode: skip Google Sheets, enter data via CLI")
-    invite_parser.add_argument("--protocol", help="Manual protocol number (e.g. 2026-016), overrides Drive lookup")
+    invite_parser.add_argument("--protocol", help="Manual protocol number (e.g. 2026_017), overrides Drive lookup")
     invite_parser.add_argument("--brevo-template", help="Brevo template ID for newsletter")
     invite_parser.add_argument("--brevo-lists", help="Comma-separated Brevo list IDs")
     invite_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
