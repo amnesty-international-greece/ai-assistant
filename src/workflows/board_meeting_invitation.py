@@ -54,7 +54,8 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             WorkflowStep("generate_pdf", "Generate PDF document"),
             WorkflowStep("approval", "Review and approve draft", requires_approval=True),
             WorkflowStep("archive", "Archive PDF to OneDrive"),
-            WorkflowStep("send_newsletter", "Send newsletter via Brevo"),
+            WorkflowStep("send_newsletter_test", "Create campaign and send test email"),
+            WorkflowStep("confirm_newsletter", "Confirm and send live newsletter", requires_approval=True),
             WorkflowStep("schedule_reminder", "Meeting reminders (Zoom-native)"),
         ]
 
@@ -598,34 +599,8 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         except Exception as e:
             return StepResult(success=False, message=f"Failed to archive PDF: {e}")
 
-    async def _step_send_newsletter(self, ctx: dict[str, Any]) -> StepResult:
-        """Send the meeting invitation as a Brevo marketing email campaign.
-
-        Fetches the Brevo template, substitutes meeting-specific placeholders,
-        then creates an emailCampaigns campaign and either sends a test or sends
-        it immediately to the configured contact lists.
-
-        Template placeholder mapping (template #234):
-            [ΣΥΝΕΔΡΙΑΣΗ]       → meeting reference     (e.g. "ΔΣ04-2026")
-            [ΤΥΠΟΣ]            → lowercase nominative  (e.g. "τακτική")
-            [ΗΜΕΡΟΜΗΝΙΑ]       → Greek long-form date  (e.g. "14 Απριλίου 2026")
-            [ΩΡΑ]              → meeting time           (e.g. "20:30")
-            [ΗΜΕΡΗΣΙΑ_ΔΙΑΤΑΞΗ] → HTML <ol> of agenda items
-            [ZOOM_LINK]        → actual zoom_join_url
-        """
-        test_mode = ctx.get("test_mode", False)
-        test_addr = settings.testing.dry_run_email
-
-        template_id = ctx.get("brevo_template_id") or settings.brevo.newsletter_template_id
-        list_ids    = ctx.get("brevo_list_ids")    or settings.brevo.newsletter_list_ids or []
-
-        if not template_id:
-            return StepResult(
-                success=True,
-                data={"newsletter_skipped": True},
-                message="Newsletter skipped — set brevo.newsletter_template_id in config.yaml",
-            )
-
+    def _build_newsletter_params(self, ctx: dict[str, Any]) -> tuple[dict, str, str, list[int]]:
+        """Shared helper: build template_params, subject, campaign_name, list_ids."""
         meeting_number = ctx.get("meeting_number", "")
         meeting_date   = ctx.get("meeting_date", "")
         meeting_time   = ctx.get("meeting_time", "")
@@ -636,7 +611,6 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         seq_str        = meeting_number.zfill(2) if meeting_number.isdigit() else meeting_number
         meeting_ref    = raw_id or f"ΔΣ{seq_str}-{year}"
 
-        # Greek long-form date  (e.g. "14 Απριλίου 2026")
         _GREEK_MONTHS = {
             1: "Ιανουαρίου", 2: "Φεβρουαρίου", 3: "Μαρτίου",    4: "Απριλίου",
             5: "Μαΐου",      6: "Ιουνίου",     7: "Ιουλίου",     8: "Αυγούστου",
@@ -649,10 +623,8 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         except (ValueError, KeyError):
             greek_date = meeting_date
 
-        # Meeting type → lowercase nominative for body text
         type_lower = "έκτακτη" if "ΕΚΤΑΚΤΗ" in meeting_type.upper() else "τακτική"
 
-        # Agenda items → HTML ordered list for the template
         agenda_items = ctx.get("agenda_items", [])
         if agenda_items:
             items_html = "".join(
@@ -678,63 +650,117 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             "[ΗΜΕΡΗΣΙΑ_ΔΙΑΤΑΞΗ]": agenda_html,
             "[ZOOM_LINK]":        zoom_link or "#",
         }
-
-        subject = f"Πρόσκληση — Συνεδρίαση {meeting_ref} ({meeting_date})"
+        subject       = f"Πρόσκληση — Συνεδρίαση {meeting_ref} ({meeting_date})"
         campaign_name = f"Πρόσκληση {meeting_ref}"
+        list_ids      = ctx.get("brevo_list_ids") or settings.brevo.newsletter_list_ids or []
 
-        if test_mode:
-            if not test_addr:
-                return StepResult(
-                    success=True,
-                    data={"newsletter_skipped": True},
-                    message="[TEST] Newsletter skipped — set testing.dry_run_email in config.yaml",
-                )
-            try:
-                result = await self.brevo.send_campaign(
-                    template_id=template_id,
-                    list_ids=list_ids or [1],   # list_ids required by API even for test; use dummy
-                    subject=subject,
-                    params=template_params,
-                    campaign_name=campaign_name,
-                    test_emails=[test_addr],
-                    workflow=self.name,
-                )
-                return StepResult(
-                    success=True,
-                    data={"newsletter_sent": True, "campaign_id": result.get("campaign_id")},
-                    message=f"[TEST] Newsletter campaign test sent (template {template_id}) to {test_addr}",
-                )
-            except Exception as e:
-                logger.warning("[TEST] Newsletter campaign failed (non-fatal): %s", e)
-                return StepResult(
-                    success=True,
-                    data={"newsletter_skipped": True},
-                    message=f"[TEST] Newsletter campaign failed (non-fatal): {e}",
-                )
+        return template_params, subject, campaign_name, list_ids
 
-        # ── Production ────────────────────────────────────────────────────────
-        if not list_ids:
+    async def _step_send_newsletter_test(self, ctx: dict[str, Any]) -> StepResult:
+        """Create the Brevo campaign (saved as draft) and send a test email.
+
+        Template placeholder mapping (template #234):
+            [ΣΥΝΕΔΡΙΑΣΗ]       → meeting reference     (e.g. "ΔΣ04-2026")
+            [ΤΥΠΟΣ]            → lowercase nominative  (e.g. "τακτική")
+            [ΗΜΕΡΟΜΗΝΙΑ]       → Greek long-form date  (e.g. "14 Απριλίου 2026")
+            [ΩΡΑ]              → meeting time           (e.g. "20:30")
+            [ΗΜΕΡΗΣΙΑ_ΔΙΑΤΑΞΗ] → HTML <ol> of agenda items
+            [ZOOM_LINK]        → actual zoom_join_url
+
+        The campaign is always created first (Brevo keeps it as a draft).
+        A test email is sent to testing.dry_run_email so the SecGen can review
+        the rendered output before the live send is confirmed.
+        """
+        template_id = ctx.get("brevo_template_id") or settings.brevo.newsletter_template_id
+
+        if not template_id:
             return StepResult(
                 success=True,
                 data={"newsletter_skipped": True},
-                message="Newsletter skipped — set brevo.newsletter_list_ids in config.yaml",
+                message="Newsletter skipped — set brevo.newsletter_template_id in config.yaml",
             )
+
+        test_addr = settings.testing.dry_run_email
+        template_params, subject, campaign_name, list_ids = self._build_newsletter_params(ctx)
+
+        # Use a dummy list_id for campaign creation so the Brevo API accepts it
+        # even when newsletter_list_ids is empty (testing mode).
+        creation_list_ids = list_ids if list_ids else [1]
+
         try:
             result = await self.brevo.send_campaign(
                 template_id=template_id,
-                list_ids=list_ids,
+                list_ids=creation_list_ids,
                 subject=subject,
                 params=template_params,
                 campaign_name=campaign_name,
+                test_emails=[test_addr] if test_addr else None,
                 workflow=self.name,
+            )
+            campaign_id = result.get("campaign_id")
+            msg = (
+                f"Campaign created (id={campaign_id}) and test sent to {test_addr}"
+                if test_addr
+                else f"Campaign created (id={campaign_id}) — no dry_run_email set, skipping test send"
             )
             return StepResult(
                 success=True,
-                data={"newsletter_sent": True, "campaign_id": result.get("campaign_id")},
-                message=f"Newsletter campaign sent (template {template_id}, lists {list_ids})",
+                data={
+                    "newsletter_campaign_id": campaign_id,
+                    "newsletter_test_sent": bool(test_addr),
+                    "newsletter_test_addr": test_addr or "",
+                    "newsletter_list_ids": list_ids,
+                },
+                message=msg,
             )
         except Exception as e:
-            return StepResult(success=False, message=f"Failed to send newsletter: {e}")
+            logger.warning("Newsletter campaign creation/test failed (non-fatal): %s", e)
+            return StepResult(
+                success=True,
+                data={"newsletter_skipped": True},
+                message=f"Newsletter campaign failed (non-fatal): {e}",
+            )
+
+    async def _step_confirm_newsletter(self, ctx: dict[str, Any]) -> StepResult:
+        """Approval gate: send the campaign live to all members.
+
+        This step is reached only after the user confirms the test email looks
+        good.  If newsletter_list_ids is empty (testing mode) the live send is
+        skipped and the campaign stays as a Brevo draft.
+        """
+        campaign_id = ctx.get("newsletter_campaign_id")
+        list_ids    = ctx.get("newsletter_list_ids") or []
+
+        if ctx.get("newsletter_skipped"):
+            return StepResult(
+                success=True,
+                data={"newsletter_sent": False},
+                message="Newsletter was skipped in previous step — nothing to send",
+            )
+
+        if not campaign_id:
+            return StepResult(
+                success=True,
+                data={"newsletter_sent": False},
+                message="No campaign_id in context — newsletter will not be sent",
+            )
+
+        if not list_ids:
+            return StepResult(
+                success=True,
+                data={"newsletter_sent": False},
+                message="newsletter_list_ids is empty — campaign saved as draft in Brevo, not sent live",
+            )
+
+        try:
+            await self.brevo.send_campaign_now(campaign_id, workflow=self.name)
+            return StepResult(
+                success=True,
+                data={"newsletter_sent": True},
+                message=f"Newsletter sent live (campaign {campaign_id}, lists {list_ids})",
+            )
+        except Exception as e:
+            return StepResult(success=False, message=f"Failed to send newsletter live: {e}")
 
     async def _step_schedule_reminder(self, ctx: dict[str, Any]) -> StepResult:
         """Reminder placeholder — Zoom handles reminders natively.

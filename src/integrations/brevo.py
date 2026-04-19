@@ -219,6 +219,40 @@ class BrevoClient:
         logger.info("Brevo API key verified — account active")
         return response.json()
 
+    async def send_campaign_now(
+        self,
+        campaign_id: int,
+        workflow: str = "brevo",
+    ) -> None:
+        """Trigger an immediate live send for an already-created campaign.
+
+        Called after the user confirms they're happy with the test send.
+        The campaign must be in 'draft' or 'queued' state.
+
+        Args:
+            campaign_id: Brevo campaign ID (returned by send_campaign).
+            workflow: Workflow name for audit logging.
+        """
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{_BREVO_API_BASE}/emailCampaigns/{campaign_id}/sendNow",
+                headers=self._headers(),
+            )
+            if not resp.is_success:
+                logger.error(
+                    "Failed to live-send Brevo campaign %d (%s): %s",
+                    campaign_id, resp.status_code, resp.text,
+                )
+            resp.raise_for_status()
+
+        log_action(
+            workflow=workflow,
+            action="campaign_sent",
+            actor="system",
+            target=str(campaign_id),
+        )
+        logger.info("Brevo campaign %d sent live to contact lists", campaign_id)
+
     async def get_contacts(self, list_id: int, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         """Retrieve contacts from a Brevo contact list.
 

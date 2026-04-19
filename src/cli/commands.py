@@ -121,6 +121,10 @@ async def _run_invite(args: argparse.Namespace) -> None:
     if args.brevo_lists:
         initial_data["brevo_list_ids"] = [int(x) for x in args.brevo_lists.split(",")]
 
+    # Manual protocol number overrides whatever the workflow reads from Drive
+    if getattr(args, "protocol", None):
+        initial_data["protocol_number"] = args.protocol
+
     # If manual mode: skip Google Sheets, use provided args directly
     if args.manual:
         if not all([args.meeting_number, args.date, args.time]):
@@ -149,66 +153,120 @@ async def _run_invite(args: argparse.Namespace) -> None:
     result = await wf.run(initial_data)
 
     while result.get("status") == "awaiting_approval":
-        print()
-        _print_header("APPROVAL REQUIRED")
-
+        current_step = result.get("step", "")
         ctx = wf.context
 
-        meeting_number = ctx.get("meeting_number", "?")
-        meeting_date   = ctx.get("meeting_date", "?")
-        meeting_time   = ctx.get("meeting_time", "?")
-        meeting_type   = ctx.get("meeting_type") or "ΤΑΚΤΙΚΗ"
-        location       = ctx.get("location") or "ΔΙΑΔΙΚΤΥΑΚΑ"
-        agenda_items   = ctx.get("agenda_items", [])
+        # ── Gate 1: PDF review ────────────────────────────────────────────────
+        if current_step == "approval":
+            print()
+            _print_header("APPROVAL REQUIRED — Invitation PDF")
 
-        seq = meeting_number.zfill(2) if meeting_number.isdigit() else meeting_number
-        print(f"  Συνεδρίαση:  ΔΣ{seq}-{meeting_date[:4]}")
-        print(f"  Ημερομηνία:  {meeting_date}  {meeting_time}")
-        print(f"  Τύπος:       {meeting_type}")
-        print(f"  Τοποθεσία:   {location}")
-        print()
-        if agenda_items:
-            print("  Ημερήσια διάταξη:")
-            for i, item in enumerate(agenda_items, 1):
-                print(f"    {i}. {item}")
-        print()
+            meeting_number = ctx.get("meeting_number", "?")
+            meeting_date   = ctx.get("meeting_date", "?")
+            meeting_time   = ctx.get("meeting_time", "?")
+            meeting_type   = ctx.get("meeting_type") or "ΤΑΚΤΙΚΗ"
+            location       = ctx.get("location") or "ΔΙΑΔΙΚΤΥΑΚΑ"
+            agenda_items   = ctx.get("agenda_items", [])
 
-        # Open PDF automatically so the user can review the actual document
-        pdf_path = ctx.get("pdf_path", "")
-        if pdf_path and Path(pdf_path).exists():
-            print(f"  Opening PDF: {pdf_path}")
-            try:
-                if platform.system() == "Windows":
-                    os.startfile(pdf_path)
-                elif platform.system() == "Darwin":
-                    import subprocess
-                    subprocess.Popen(["open", pdf_path])
-                else:
-                    import subprocess
-                    subprocess.Popen(["xdg-open", pdf_path])
-            except Exception as open_err:
-                print(f"  (Could not open PDF automatically: {open_err})")
+            seq = meeting_number.zfill(2) if meeting_number.isdigit() else meeting_number
+            print(f"  Συνεδρίαση:  ΔΣ{seq}-{meeting_date[:4]}")
+            print(f"  Ημερομηνία:  {meeting_date}  {meeting_time}")
+            print(f"  Τύπος:       {meeting_type}")
+            print(f"  Τοποθεσία:   {location}")
+            print()
+            if agenda_items:
+                print("  Ημερήσια διάταξη:")
+                for i, item in enumerate(agenda_items, 1):
+                    print(f"    {i}. {item}")
             print()
 
-        if _confirm("  Approve this draft and proceed? [y/n]: "):
-            log_action(
-                workflow="board_meeting_invitation",
-                action="approval_given",
-                actor="secgen",
-                details={"workflow_id": wf.workflow_id},
-            )
-            result = await wf.approve_and_resume()
+            # Auto-open PDF for review
+            pdf_path = ctx.get("pdf_path", "")
+            if pdf_path and Path(pdf_path).exists():
+                print(f"  Opening PDF: {pdf_path}")
+                try:
+                    if platform.system() == "Windows":
+                        os.startfile(pdf_path)
+                    elif platform.system() == "Darwin":
+                        import subprocess
+                        subprocess.Popen(["open", pdf_path])
+                    else:
+                        import subprocess
+                        subprocess.Popen(["xdg-open", pdf_path])
+                except Exception as open_err:
+                    print(f"  (Could not open PDF automatically: {open_err})")
+                print()
+
+            if _confirm("  Approve this PDF and proceed? [y/n]: "):
+                log_action(
+                    workflow="board_meeting_invitation",
+                    action="approval_given",
+                    actor="secgen",
+                    details={"workflow_id": wf.workflow_id, "gate": "pdf"},
+                )
+                result = await wf.approve_and_resume()
+            else:
+                log_action(
+                    workflow="board_meeting_invitation",
+                    action="approval_rejected",
+                    actor="secgen",
+                    details={"workflow_id": wf.workflow_id, "gate": "pdf"},
+                )
+                print("\n  Cancelling workflow and cleaning up...")
+                await wf.rollback(wf.context)
+                print("  Zoom meeting cancelled. PDF deleted. Done.")
+                return
+
+        # ── Gate 2: Newsletter confirm ────────────────────────────────────────
+        elif current_step == "confirm_newsletter":
+            print()
+            _print_header("APPROVAL REQUIRED — Newsletter Live Send")
+
+            campaign_id  = ctx.get("newsletter_campaign_id", "?")
+            test_addr    = ctx.get("newsletter_test_addr", "")
+            list_ids     = ctx.get("newsletter_list_ids", [])
+
+            if test_addr:
+                print(f"  Test email sent to:  {test_addr}")
+                print(f"  Check your inbox, then confirm live send.")
+            else:
+                print("  (No test email configured — review campaign in Brevo dashboard)")
+            print(f"  Campaign ID:         {campaign_id}")
+            if list_ids:
+                print(f"  Will send to lists:  {list_ids}")
+            else:
+                print("  newsletter_list_ids is empty — campaign will be saved as Brevo draft only")
+            print()
+
+            if _confirm("  Send newsletter to members list? [y/n]: "):
+                log_action(
+                    workflow="board_meeting_invitation",
+                    action="approval_given",
+                    actor="secgen",
+                    details={"workflow_id": wf.workflow_id, "gate": "newsletter"},
+                )
+                result = await wf.approve_and_resume()
+            else:
+                log_action(
+                    workflow="board_meeting_invitation",
+                    action="approval_rejected",
+                    actor="secgen",
+                    details={"workflow_id": wf.workflow_id, "gate": "newsletter"},
+                )
+                print("\n  Live send cancelled — campaign saved as draft in Brevo.")
+                # Don't rollback — Zoom + PDF are already done; just skip the send
+                result = {"status": "completed", "context": ctx}
+                break
+
         else:
-            log_action(
-                workflow="board_meeting_invitation",
-                action="approval_rejected",
-                actor="secgen",
-                details={"workflow_id": wf.workflow_id},
-            )
-            print("\n  Cancelling workflow and cleaning up...")
-            await wf.rollback(wf.context)
-            print("  Zoom meeting cancelled. PDF deleted. Done.")
-            return
+            # Unknown gate — generic handler
+            print()
+            _print_header(f"APPROVAL REQUIRED — {current_step}")
+            if _confirm("  Proceed? [y/n]: "):
+                result = await wf.approve_and_resume()
+            else:
+                await wf.rollback(wf.context)
+                return
 
     # Test mode cleanup: always roll back (whether completed or failed)
     if test_mode and result.get("status") in ("completed", "failed"):
@@ -231,9 +289,27 @@ async def _run_invite(args: argparse.Namespace) -> None:
         print(f"  Date:          {ctx.get('meeting_date', 'N/A')}")
         print(f"  Zoom:          {ctx.get('zoom_join_url', 'N/A')}")
         print(f"  PDF:           {ctx.get('pdf_path', 'N/A')}")
-        print(f"  Archived:      {'Yes' if ctx.get('archive_file_id') else 'No'}")
-        print(f"  Newsletter:    {'Sent' if ctx.get('newsletter_sent') else 'Skipped'}")
-        print(f"  Reminder:      {ctx.get('reminder_at', 'N/A')}")
+
+        # If archive was skipped, open the output folder so manual archiving is easy
+        archived = bool(ctx.get('archive_file_id'))
+        print(f"  Archived:      {'Yes (OneDrive)' if archived else 'No — see folder below'}")
+        if not archived:
+            output_dir = Path("data") / "output"
+            print(f"  PDF folder:    {output_dir.resolve()}")
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(str(output_dir.resolve()))
+                elif platform.system() == "Darwin":
+                    import subprocess
+                    subprocess.Popen(["open", str(output_dir.resolve())])
+                else:
+                    import subprocess
+                    subprocess.Popen(["xdg-open", str(output_dir.resolve())])
+            except Exception:
+                pass
+
+        print(f"  Newsletter:    {'Sent' if ctx.get('newsletter_sent') else 'Draft/Skipped'}")
+        print(f"  Reminder:      Zoom-native")
     elif result.get("status") == "failed":
         _print_header("WORKFLOW FAILED")
         print(f"  Failed at step: {result.get('step', 'unknown')}")
@@ -717,6 +793,7 @@ def main() -> None:
     invite_parser.add_argument("--time", help="Meeting time (HH:MM)")
     invite_parser.add_argument("--manual", action="store_true",
                                help="Manual mode: skip Google Sheets, enter data via CLI")
+    invite_parser.add_argument("--protocol", help="Manual protocol number (e.g. 2026-016), overrides Drive lookup")
     invite_parser.add_argument("--brevo-template", help="Brevo template ID for newsletter")
     invite_parser.add_argument("--brevo-lists", help="Comma-separated Brevo list IDs")
     invite_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
