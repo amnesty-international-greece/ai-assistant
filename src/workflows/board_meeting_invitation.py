@@ -92,6 +92,15 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             except Exception as e:
                 logger.warning("Rollback: could not delete PDF %s: %s", pdf_path, e)
 
+        # Delete Brevo draft campaign (test mode only — live campaigns are kept)
+        campaign_id = ctx.get("newsletter_campaign_id")
+        if campaign_id and ctx.get("newsletter_skipped"):
+            try:
+                await self.brevo.delete_campaign(campaign_id, workflow=self.name)
+                logger.info("Rollback: deleted Brevo draft campaign %s", campaign_id)
+            except Exception as e:
+                logger.warning("Rollback: could not delete Brevo campaign %s: %s", campaign_id, e)
+
     async def _step_read_agenda(self, ctx: dict[str, Any]) -> StepResult:
         """Read meeting agenda data from Google Sheets.
 
@@ -739,6 +748,8 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 message="Newsletter skipped — no list IDs available (set brevo.master_list_id or brevo.newsletter_list_ids)",
             )
 
+        test_mode = ctx.get("test_mode", False)
+
         try:
             result = await self.brevo.send_campaign(
                 template_id=template_id,
@@ -750,10 +761,31 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 workflow=self.name,
             )
             campaign_id = result.get("campaign_id")
+
+            if test_mode:
+                # Keep the draft alive so the user can review the test email in
+                # their inbox.  rollback() will delete it during cleanup.
+                msg = (
+                    f"Test email sent to {test_addr} — draft will be deleted on cleanup"
+                    if test_addr
+                    else f"Campaign draft created (id={campaign_id}) — no test email configured"
+                )
+                return StepResult(
+                    success=True,
+                    data={
+                        "newsletter_campaign_id": campaign_id,   # stored for rollback
+                        "newsletter_test_sent": bool(test_addr),
+                        "newsletter_test_addr": test_addr or "",
+                        "newsletter_skipped": True,              # skip live-send confirm gate
+                    },
+                    message=msg,
+                )
+
+            # ── Live mode: keep draft, let confirm gate decide on live send ───
             msg = (
-                f"Campaign created (id={campaign_id}) and test sent to {test_addr}"
+                f"Campaign draft created (id={campaign_id}), test sent to {test_addr}"
                 if test_addr
-                else f"Campaign created (id={campaign_id}) — no dry_run_email set, skipping test send"
+                else f"Campaign draft created (id={campaign_id}) — no dry_run_email set"
             )
             return StepResult(
                 success=True,

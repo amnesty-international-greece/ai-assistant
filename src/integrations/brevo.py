@@ -253,6 +253,40 @@ class BrevoClient:
         )
         logger.info("Brevo campaign %d sent live to contact lists", campaign_id)
 
+    async def delete_campaign(
+        self,
+        campaign_id: int,
+        workflow: str = "brevo",
+    ) -> None:
+        """Delete a draft campaign (DELETE /emailCampaigns/{campaignId}).
+
+        Used in test mode to clean up after sending the test email so no
+        orphaned draft campaigns accumulate in the Brevo dashboard.
+
+        Args:
+            campaign_id: Brevo campaign ID to delete.
+            workflow: Workflow name for audit logging.
+        """
+        async with httpx.AsyncClient() as client:
+            resp = await client.delete(
+                f"{_BREVO_API_BASE}/emailCampaigns/{campaign_id}",
+                headers=self._headers(),
+            )
+            if not resp.is_success:
+                logger.error(
+                    "Failed to delete Brevo campaign %d (%s): %s",
+                    campaign_id, resp.status_code, resp.text,
+                )
+            resp.raise_for_status()
+
+        log_action(
+            workflow=workflow,
+            action="campaign_deleted",
+            actor="system",
+            target=str(campaign_id),
+        )
+        logger.info("Brevo campaign %d deleted (test mode cleanup)", campaign_id)
+
     async def get_contacts(self, list_id: int, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         """Retrieve contacts from a Brevo contact list.
 
