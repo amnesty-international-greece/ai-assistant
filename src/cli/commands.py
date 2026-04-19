@@ -219,18 +219,24 @@ async def _run_invite(args: argparse.Namespace) -> None:
 
         # ── Gate 2: Newsletter confirm ────────────────────────────────────────
         elif current_step == "confirm_newsletter":
+            # Auto-skip if the newsletter step already failed or was skipped
+            if ctx.get("newsletter_skipped"):
+                print("\n  Newsletter was not created (skipped or failed) — skipping confirm gate.")
+                result = await wf.approve_and_resume()
+                continue
+
             print()
             _print_header("APPROVAL REQUIRED — Newsletter Live Send")
 
-            campaign_id  = ctx.get("newsletter_campaign_id", "?")
-            test_addr    = ctx.get("newsletter_test_addr", "")
-            list_ids     = ctx.get("newsletter_list_ids", [])
+            campaign_id = ctx.get("newsletter_campaign_id", "?")
+            test_addr   = ctx.get("newsletter_test_addr", "")
+            list_ids    = ctx.get("newsletter_list_ids", [])
 
             if test_addr:
                 print(f"  Test email sent to:  {test_addr}")
                 print(f"  Check your inbox, then confirm live send.")
             else:
-                print("  (No test email configured — review campaign in Brevo dashboard)")
+                print("  (No test email address set — review campaign in Brevo dashboard)")
             print(f"  Campaign ID:         {campaign_id}")
             if list_ids:
                 print(f"  Will send to lists:  {list_ids}")
