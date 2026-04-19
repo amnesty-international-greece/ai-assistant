@@ -254,6 +254,16 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             final_date   = ctx.get("meeting_date")   or meeting_date
             final_time   = ctx.get("meeting_time")   or meeting_time
 
+            # ── 5b. Interactive fallback for missing time ─────────────────────
+            if not final_time:
+                print(f"\n  Tab '{chosen['tab']}' has no meeting time set.")
+                raw_time = input("  Enter meeting start time (e.g. 18:00): ").strip()
+                if raw_time and re.match(r"^\d{1,2}:\d{2}$", raw_time):
+                    h, m = map(int, raw_time.split(":"))
+                    final_time = f"{h:02d}:{m:02d}"
+                elif raw_time:
+                    print(f"  Invalid format '{raw_time}' — time left blank.")
+
             # ── 6. Date sanity check ──────────────────────────────────────────
             from datetime import date as _date
             if not final_date:
@@ -324,11 +334,23 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             meeting_time = ctx.get("meeting_time", "")
             meeting_number = ctx.get("meeting_number", "")
 
-            if not meeting_date or not meeting_time:
+            if not meeting_date:
                 return StepResult(
                     success=False,
-                    message="Meeting date and time are required to schedule Zoom",
+                    message="Meeting date is required to schedule Zoom — check the agenda sheet.",
                 )
+            if not meeting_time:
+                import re as _re
+                print("\n  Meeting time not set. Required for the Zoom meeting.")
+                raw_t = input("  Enter meeting start time (e.g. 18:00): ").strip()
+                if raw_t and _re.match(r"^\d{1,2}:\d{2}$", raw_t):
+                    h, m = map(int, raw_t.split(":"))
+                    meeting_time = f"{h:02d}:{m:02d}"
+                else:
+                    return StepResult(
+                        success=False,
+                        message=f"Invalid or missing meeting time '{raw_t}' — cannot schedule Zoom.",
+                    )
 
             # Construct ISO datetime
             start_time = f"{meeting_date}T{meeting_time}:00"
@@ -396,6 +418,13 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
           [ΩΡΑ ΕΝΑΡΞΗΣ]                   → HH:MM
           [ΤΟΠΟΘΕΣΙΑ]                     → location phrase
           [ΘΕΜΑ]  (numbered or single)    → agenda items (handled in fill step)
+
+        Interactive fallbacks
+        ---------------------
+        If protocol_number is not in context, the step tries to read the next
+        sequence number from the Πρωτόκολλο sheet.  If that also fails (sheet
+        not configured, network error, or malformed data), the user is asked
+        interactively.  Entering nothing skips the protocol line entirely.
         """
         try:
             meeting_date   = ctx.get("meeting_date", "")
@@ -406,6 +435,22 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             agenda_items   = ctx.get("agenda_items", [])
             zoom_url       = ctx.get("zoom_join_url", "")
             protocol_number = ctx.get("protocol_number", "")
+
+            import re as _re
+
+            # ── Protocol number: auto-read from sheet, then ask user ──────────
+            if not (protocol_number and _re.match(r"^\d{4}-\d+$", protocol_number.strip())):
+                protocol_number = _fetch_next_protocol_number(self._google) or ""
+
+            if not protocol_number:
+                print()
+                print("  Αριθμός Πρωτοκόλλου: δεν βρέθηκε στο Πρωτόκολλο.")
+                raw = input("  Εισάγετε αριθμό πρωτοκόλλου (π.χ. 2026-016) ή Enter για παράλειψη: ").strip()
+                if raw and _re.match(r"^\d{4}-\d+$", raw):
+                    protocol_number = raw
+                elif raw:
+                    print(f"  Μη έγκυρη μορφή '{raw}' — παράλειψη αριθμού πρωτοκόλλου.")
+                    protocol_number = ""
 
             # ── Greek date ────────────────────────────────────────────────────
             greek_date = _format_greek_date(meeting_date)
@@ -429,13 +474,11 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 zoom_part = "[ZOOM_PLACEHOLDER]" if zoom_url else "Zoom"
                 location_phrase = f"διαδικτυακά μέσω της πλατφόρμας {zoom_part}"
 
-            # ── Protocol number ───────────────────────────────────────────────
-            import re as _re
+            # ── Build replacements ────────────────────────────────────────────
             replacements: dict = {}
             if protocol_number and _re.match(r"^\d{4}-\d+$", protocol_number.strip()):
                 replacements["[ΑΡΙΘΜΟΣ ΠΡΩΤΟΚΟΛΛΟΥ]"] = protocol_number.strip()
             else:
-                # Delete the whole "Αρ. Πρωτ.: ..." paragraph so no blank line remains
                 replacements["_delete_paragraphs_"] = ["Αρ. Πρωτ.: [ΑΡΙΘΜΟΣ ΠΡΩΤΟΚΟΛΛΟΥ]"]
 
             replacements.update({
@@ -443,20 +486,20 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 "[ΤΥΠΟΣ]":       type_genitive,
                 "[ΩΡΑ ΕΝΑΡΞΗΣ]": meeting_time or "ΩΡΑ ΤΒΔ",
                 "[ΤΟΠΟΘΕΣΙΑ]":   location_phrase,
-                # _agenda_items_ is a special list key consumed by fill_document_template
-                # via character-index replacement (not replaceAllText)
                 "_agenda_items_": agenda_items if agenda_items else ["(κατόπιν ανακοίνωσης)"],
             })
 
+            proto_msg = f", Αρ. Πρωτ. {protocol_number}" if protocol_number else ", χωρίς αριθμό πρωτοκόλλου"
             return StepResult(
                 success=True,
                 data={
                     "invitation_replacements": replacements,
-                    "invitation_zoom_url": zoom_url,  # forwarded to generate_pdf
+                    "invitation_zoom_url": zoom_url,
+                    "protocol_number": protocol_number,
                 },
                 message=(
                     f"Invitation prepared for {greek_date} at {meeting_time} "
-                    f"({type_genitive}) — {len(agenda_items)} agenda items"
+                    f"({type_genitive}){proto_msg} — {len(agenda_items)} agenda items"
                 ),
             )
         except Exception as e:
@@ -781,6 +824,48 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             data={"reminder_native": True},
             message="Reminder handled by Zoom — configure in Zoom Settings → Email Notification",
         )
+
+
+def _fetch_next_protocol_number(google_client) -> str:
+    """Read the Πρωτόκολλο sheet and return the next protocol number.
+
+    Reads column A, finds the last entry matching YYYY-NNN or YYYY_NNN,
+    increments the sequence, and returns the next number (e.g. "2026-016").
+
+    Returns "" if the sheet is not configured, unreachable, or malformed.
+    Year roll-over is handled: if the last entry is from a prior year the
+    counter resets to 001 for the current year.
+    """
+    import re as _re
+    from datetime import date as _date
+
+    protokollo_id = settings.google.protokollo_sheet_id
+    if not protokollo_id:
+        logger.debug("protokollo_sheet_id not configured — skipping auto protocol fetch")
+        return ""
+
+    try:
+        google_client.authenticate()
+        last_entry = google_client.get_last_row_value(protokollo_id, "A:A")
+        current_year = _date.today().year
+
+        if last_entry:
+            # Accept both YYYY-NNN and YYYY_NNN
+            m = _re.match(r"^(\d{4})[-_](\d+)$", str(last_entry).strip())
+            if m:
+                entry_year = int(m.group(1))
+                seq        = int(m.group(2))
+                if entry_year < current_year:
+                    # New year — reset counter
+                    return f"{current_year}-001"
+                return f"{current_year}-{seq + 1:03d}"
+
+        # Empty sheet or unrecognised format — return "" so the caller can ask
+        return ""
+
+    except Exception as e:
+        logger.warning("Could not fetch protocol number from Πρωτόκολλο sheet: %s", e)
+        return ""
 
 
 def _scan_form_labels(rows: list) -> dict:

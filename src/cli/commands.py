@@ -722,9 +722,9 @@ def cmd_auth_google(args: argparse.Namespace) -> None:
     try:
         client = GoogleClient()
         client.authenticate()
-        print("✓ Authentication successful! Token saved to data/google_token.json")
+        print("OK Authentication successful! Token saved to data/google_token.json")
     except Exception as e:
-        print(f"✗ Authentication failed: {e}")
+        print(f"FAILED Authentication failed: {e}")
         sys.exit(1)
 
 

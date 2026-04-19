@@ -151,6 +151,7 @@ async def test_step_draft_invitation(workflow):
         "location": "ΔΙΑΔΙΚΤΥΑΚΑ",
         "zoom_join_url": "https://zoom.us/j/123",
         "agenda_items": ["Θέμα 1", "Θέμα 2"],
+        "protocol_number": "2026-042",   # pre-supply so no sheet fetch / prompt needed
     }
     result = await workflow._step_draft_invitation(ctx)
 
@@ -166,6 +167,9 @@ async def test_step_draft_invitation(workflow):
 @pytest.mark.asyncio
 async def test_step_draft_invitation_no_protocol(workflow):
     """draft_invitation should mark protocol paragraph for deletion when number missing."""
+    # Simulate sheet returning no entries so auto-fetch yields nothing
+    workflow._google.get_last_row_value.return_value = ""
+
     ctx = {
         "meeting_number": "1",
         "meeting_date": "2026-01-15",
@@ -176,7 +180,10 @@ async def test_step_draft_invitation_no_protocol(workflow):
         "agenda_items": [],
         "protocol_number": "",
     }
-    result = await workflow._step_draft_invitation(ctx)
+
+    # Suppress interactive input prompt (simulate user pressing Enter)
+    with patch("builtins.input", return_value=""):
+        result = await workflow._step_draft_invitation(ctx)
 
     assert result.success, result.message
     reps = result.data["invitation_replacements"]
@@ -371,9 +378,11 @@ async def test_full_workflow_pauses_at_approval(workflow):
     }
     workflow._zoom.add_registrants.return_value = []
 
-    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings, \
+         patch("builtins.input", return_value=""):
         mock_settings.google.agenda_sheet_id = "test-id"
         mock_settings.google.invitation_template_id = "template-doc-id"
+        mock_settings.google.protokollo_sheet_id = ""   # disable auto-fetch
         mock_settings.workflows.board_meeting.board_members = []
         mock_settings.workflows.board_meeting.min_notice_days = 7
         mock_settings.workflows.board_meeting.max_advance_days = 60

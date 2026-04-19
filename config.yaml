@@ -72,12 +72,40 @@ workflows:
     min_notice_days: 7
     max_advance_days: 14      # warn if inviting more than this many days in advance
     minutes_share_message: "Σας κοινοποιούνται τα πρόχειρα πρακτικά προς σχολιασμό. Παρακαλώ αφήστε τα σχόλιά σας απευθείας στο έγγραφο."
-    # Pre-registered on Zoom so each gets a personal join link (no form needed).
-    # Add one entry per board member. The group inbox covers everyone for now.
+    # ── Board members — each receives a personal Zoom join link via pre-registration
+    # Προεδρείο uses professional @amnesty.org.gr emails; regular members use personal.
+    # director@amnesty.org.gr is not a board member but is officially invited to all meetings.
     board_members:
-      - email: "board@amnesty.org.gr"
-        first_name: "Διοικητικό"
-        last_name: "Συμβούλιο"
+      # ── Προεδρείο ──────────────────────────────────────────────────────────
+      - email: "chair@amnesty.org.gr"
+        first_name: "Ελένη"
+        last_name: "Κοντού"
+      - email: "vicechair@amnesty.org.gr"
+        first_name: "Δημήτρης"
+        last_name: "Μαρουλίδης"
+      - email: "treasurer@amnesty.org.gr"
+        first_name: "Γρηγόρης"
+        last_name: "Μουζακίτης"
+      - email: "secgen@amnesty.org.gr"
+        first_name: "Γεώργιος"
+        last_name: "Αθανασιάς"
+      - email: "depsec@amnesty.org.gr"
+        first_name: "Αγγελική"
+        last_name: "Θωμοπούλου"
+      # ── Regular members ────────────────────────────────────────────────────
+      - email: "tzotzasofia@gmail.com"
+        first_name: "Σοφία"
+        last_name: "Τζώτζα"
+      - email: "scourta.athena@gmail.com"
+        first_name: "Αθηνά"
+        last_name: "Σκούρτα"
+      - email: "kontari.maril@gmail.com"
+        first_name: "Μαρία Μιχαέλα"
+        last_name: "Κοντάρη"
+      - email: "georgiaslani08@gmail.com"
+        first_name: "Γεωργία"
+        last_name: "Ασλάνη"
+      # ── Officially invited (non-member) ────────────────────────────────────
       - email: "director@amnesty.org.gr"
         first_name: "Διευθυντής"
         last_name: "Τμήματος"
