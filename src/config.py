@@ -61,6 +61,9 @@ class BrevoConfig(BaseModel):
     # Default newsletter template & lists (can be overridden via CLI --brevo-template / --brevo-lists)
     newsletter_template_id: int | None = None
     newsletter_list_ids: list[int] = []
+    # Master membership list — used as fallback when newsletter_list_ids is empty
+    # so Brevo campaign creation doesn't fail with an invalid list ID
+    master_list_id: int = 0
 
 
 class DiscordChannels(BaseModel):

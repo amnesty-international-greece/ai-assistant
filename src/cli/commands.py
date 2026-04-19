@@ -276,7 +276,8 @@ async def _run_invite(args: argparse.Namespace) -> None:
 
     # Test mode cleanup: always roll back (whether completed or failed)
     if test_mode and result.get("status") in ("completed", "failed"):
-        print("\n  [TEST MODE] Cleaning up: cancelling Zoom meeting and deleting PDF...")
+        input("\n  [TEST MODE] Press Enter when done reviewing to clean up (cancel Zoom + delete PDF)...")
+        print("  Cleaning up...")
         await wf.rollback(wf.context)
         print("  Cleanup done.")
 

@@ -40,6 +40,7 @@ brevo:
   sender_email: "info@amnesty.org.gr"
   sender_name: "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
   newsletter_template_id: 234   # [Πρότυπο] Πρόσκληση ΔΣ
+  master_list_id: 74             # Μητρώο Μελών — fallback for campaign creation when newsletter_list_ids is empty
 
   # ── Contact list ─────────────────────────────────────────────────────────────
   # The master membership list — used as the parent for all segments below.

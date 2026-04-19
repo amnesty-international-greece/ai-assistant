@@ -727,9 +727,17 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         test_addr = settings.testing.dry_run_email
         template_params, subject, campaign_name, list_ids = self._build_newsletter_params(ctx)
 
-        # Use a dummy list_id for campaign creation so the Brevo API accepts it
-        # even when newsletter_list_ids is empty (testing mode).
-        creation_list_ids = list_ids if list_ids else [1]
+        # Use the master list as fallback so the Brevo API accepts the campaign
+        # even when newsletter_list_ids is empty (testing / dry-run mode).
+        fallback_list = settings.brevo.master_list_id
+        creation_list_ids = list_ids if list_ids else ([fallback_list] if fallback_list else [])
+
+        if not creation_list_ids:
+            return StepResult(
+                success=True,
+                data={"newsletter_skipped": True},
+                message="Newsletter skipped — no list IDs available (set brevo.master_list_id or brevo.newsletter_list_ids)",
+            )
 
         try:
             result = await self.brevo.send_campaign(
