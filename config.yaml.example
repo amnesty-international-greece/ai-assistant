@@ -1,0 +1,149 @@
+# AI Assistant Platform — example configuration
+# Copy this file to config.yaml and fill in your values.
+# Secrets (API keys, tokens) go in .env — see .env.example.
+
+app:
+  name: "AI Assistant Platform"
+  version: "0.1.0"
+
+llm:
+  provider: "gemini"              # "gemini" (free, prototyping) | "claude" (production)
+  model: "gemini-2.0-flash"       # switch to "claude-sonnet-4-20250514" for production
+  max_tokens: 4096
+  temperature: 0.3
+
+claude:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+  temperature: 0.3
+
+storage:
+  database_path: "data/amnesty.db"
+  prompts_dir: "src/prompts"
+
+onedrive:
+  sharepoint_host: "yourorg.sharepoint.com"
+  sharepoint_site_path: "/sites/Board"
+  archive_root: "Αρχείο"
+  yearly_subfolder: "Αρχείο ανά έτος"
+  protocol_excel: "[Πρωτόκολλο] Αρχείο ΔΣ.xlsx"
+  archiving_guide: "Σύστημα Αρχειοθέτησης.docx"
+
+google:
+  templates_folder_id: ""         # Google Drive folder ID for document templates
+  decisions_sheet_id: ""          # Βιβλίο Αποφάσεων ΔΣ spreadsheet ID
+  agenda_sheet_id: ""             # Meeting agenda spreadsheet ID
+  invitation_template_id: ""      # [Πρότυπο] Πρόσκληση Google Doc ID
+  minutes_drafts_folder_id: ""    # Google Drive folder with SecGen's draft notes
+
+zoom:
+  meeting_defaults:
+    duration: 120                 # minutes
+    timezone: "Europe/Athens"
+
+brevo:
+  sender_email: "members@yourorg.gr"
+  sender_name: "Your Organisation Name"
+  newsletter_template_id: 0       # Brevo template ID for board meeting invitations
+  master_list_id: 0               # Brevo master contact list ID (fallback)
+
+  contact_lists:
+    master: 0                     # Master membership list (do not send newsletters directly)
+
+  segments:
+    regular_members:   0          # Τακτικά Μέλη — receive board-meeting newsletters
+    candidate_members: 0          # Υποψήφια Μέλη — welcome email + onboarding only
+    youth_members:     0          # Νέοι/Νέες — youth-specific newsletters
+
+  newsletter_list_ids: [0]        # Segment IDs to receive board meeting invitations
+
+discord:
+  channels:
+    announcements: ""             # Channel ID for announcements
+    verification: ""              # Channel ID for member verification
+    events_channel_id: ""         # Forum channel for public events
+  email_gateway:
+    gmail_user: ""                # Gmail address for the email↔Discord bridge
+    google_group_email: ""        # Google Group email address
+    imap_host: "imap.gmail.com"
+    imap_port: 993
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    poll_interval_seconds: 60
+    max_attachment_mb: 5
+  classifier:
+    enabled: true
+    confidence_threshold: 0.70
+    temperature: 0.1
+    uncertain_label: "UNCERTAIN"
+  admin:
+    admin_channel_id: ""          # Admin-only channel for bot status/logs
+    test_admin_channel_id: ""     # Test channel for dev runs
+  stats:
+    weekly_post_day: 6            # Sunday (0=Monday … 6=Sunday)
+    weekly_post_hour: 0           # midnight local time
+  teams:
+    coordinator_role_id: ""       # Discord role ID for Συντονιστής
+  platform_bridge:
+    board_meeting:
+      agenda_channel_id: ""       # Public forum channel — members-visible agenda threads
+      agenda_channel_id_test: ""  # Sandbox channel for --test runs
+      board_channel_id: ""        # Private board forum channel
+      board_channel_id_test: ""   # Sandbox channel for --test runs
+      board_role_id: ""           # Discord role ID gating /archive and right-click archive
+      reminder_hours_before: 6
+
+workflows:
+  board_meeting:
+    reminder_hours_before: 3
+    min_notice_days: 7
+    max_advance_days: 14
+    minutes_share_message: "Σας κοινοποιούνται τα πρόχειρα πρακτικά προς σχολιασμό. Παρακαλώ αφήστε τα σχόλιά σας απευθείας στο έγγραφο."
+    # Add one entry per board member. Each receives a personal Zoom join link.
+    board_members:
+      - email: "chair@yourorg.gr"
+        first_name: "Πρόεδρος"
+        last_name: "Επώνυμο"
+      - email: "secgen@yourorg.gr"
+        first_name: "Γεν. Γραμματέας"
+        last_name: "Επώνυμο"
+      # Add remaining board members here...
+  general_assembly:
+    min_notice_days: 30
+    min_electronic_notice_days: 15
+
+# ── M365 inbox watcher ────────────────────────────────────────────────────────
+m365_inbox:
+  subject_patterns:
+    - "αρχειο"
+    - "archive"
+  sender_allow_list: []           # empty → defaults to all board_members
+  webhook_url: ""                 # public Cloudflare Tunnel URL, e.g. https://tunnel.example.com
+  subscription_lifetime_minutes: 4230
+  renew_threshold_hours: 24
+  safety_poll_hour: 12
+  safety_poll_minute: 0
+
+# ── Minutes pipeline ──────────────────────────────────────────────────────────
+minutes_pipeline:
+  transcriber: "faster_whisper"   # "faster_whisper" | "fake" (no-ASR stub for testing)
+  whisper_model: "large-v3"       # model size: tiny / base / small / medium / large-v3
+  whisper_device: "cpu"           # "cpu" | "cuda"
+  whisper_compute_type: "int8"    # "int8" (CPU-friendly) | "float16" (GPU)
+  language: "el"                  # ASR + drafting language
+  recordings_dir: "data/recordings"
+  transcripts_dir: "data/transcripts"
+  articles_path: "assets/governance/articles.json"
+  # Map each board member's Zoom display name to their canonical roster name.
+  speaker_aliases:
+    "Display Name in Zoom": "Κανονικό Όνομα"
+
+# ── Public-facing URLs ────────────────────────────────────────────────────────
+urls:
+  katastatiko: ""                 # Link to your Καταστατικό (e.g. Google Drive share link)
+  esoterikoi_kanonismoi: ""       # Link to your Εσωτερικοί Κανονισμοί
+  website: "https://www.yourorg.gr"
+
+# ── Test mode ─────────────────────────────────────────────────────────────────
+testing:
+  test_email: ""                  # Redirect all outbound emails here during --test runs

@@ -30,11 +30,16 @@ class LLMConfig(BaseModel):
 
 class StorageConfig(BaseModel):
     database_path: str = "data/amnesty.db"
-    prompts_dir: str = "data/prompts"
+    prompts_dir: str = "src/prompts"   # LLM system-prompt .md files (versioned with code)
 
 
 class OneDriveConfig(BaseModel):
-    archive_root: str = "/Amnesty/Archive"
+    sharepoint_host: str = ""                        # e.g. "amnestygr.sharepoint.com"
+    sharepoint_site_path: str = ""                   # e.g. "/sites/Board"
+    archive_root: str = "Αρχείο"                     # folder name relative to the site's default drive root
+    yearly_subfolder: str = "Αρχείο ανά έτος"        # sub-folder pattern under archive_root
+    protocol_excel: str = "[Πρωτόκολλο] Αρχείο ΔΣ.xlsx"   # master protocol registry filename
+    archiving_guide: str = "Σύστημα Αρχειοθέτησης.docx"    # filing convention document filename
 
 
 class GoogleConfig(BaseModel):
@@ -43,7 +48,8 @@ class GoogleConfig(BaseModel):
     agenda_sheet_id: str = ""
     invitation_template_id: str = ""   # Google Doc ID for board meeting invitation template
     minutes_drafts_folder_id: str = ""
-    protokollo_sheet_id: str = ""
+    # NOTE: protokollo_sheet_id was removed 2026-05-23 — the πρωτόκολλο now
+    # lives in SharePoint as [Πρωτόκολλο] Αρχείο ΔΣ.xlsx (see settings.onedrive.protocol_excel).
 
 
 class ZoomMeetingDefaults(BaseModel):
@@ -67,12 +73,83 @@ class BrevoConfig(BaseModel):
 
 
 class DiscordChannels(BaseModel):
+    """Discord channel IDs by purpose."""
+
     announcements: str = ""
     verification: str = ""
+    events_channel_id: str = ""
+
+
+class DiscordEmailGatewayConfig(BaseModel):
+    """IMAP/SMTP settings for the email ↔ Discord bridge."""
+
+    gmail_user: str = ""                  # e.g. "membersforum.amnesty.gr@gmail.com"
+    google_group_email: str = ""          # e.g. "forum-ai@googlegroups.com"
+    imap_host: str = "imap.gmail.com"
+    imap_port: int = 993
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    poll_interval_seconds: int = 60
+    max_attachment_mb: int = 5
+
+
+class DiscordClassifierConfig(BaseModel):
+    """Gemini-based email classifier configuration."""
+
+    enabled: bool = True
+    confidence_threshold: float = 0.70   # 70% — below this returns UNCERTAIN
+    temperature: float = 0.1
+    uncertain_label: str = "UNCERTAIN"
+
+
+class DiscordAdminConfig(BaseModel):
+    """Admin channel IDs for production and test modes."""
+
+    admin_channel_id: str = ""
+    test_admin_channel_id: str = ""
+
+
+class DiscordStatsConfig(BaseModel):
+    """Weekly digest scheduling (Greece local time)."""
+
+    weekly_post_day: int = 6   # Sunday (0=Monday … 6=Sunday)
+    weekly_post_hour: int = 0  # midnight Europe/Athens
+
+
+class DiscordTeamsConfig(BaseModel):
+    """Team management settings."""
+
+    coordinator_role_id: str = ""    # Universal Συντονιστής role
+
+
+class DiscordPlatformBridgeBoardMeetingConfig(BaseModel):
+    """Platform-bridge settings for board meeting events."""
+
+    agenda_channel_id: str = ""       # Public channel (forum or text) — members-visible agenda thread
+    agenda_channel_id_test: str = ""  # Sandbox channel used when payload.test_mode=True (falls back to agenda_channel_id if blank)
+    agenda_forum_tag_name: str = "Συνεδριάσεις"  # Tag applied to public forum threads (forum channels only)
+    board_channel_id: str = ""        # Private board channel — board-only thread for preliminary discussion + minutes
+    board_channel_id_test: str = ""   # Sandbox channel used when payload.test_mode=True (falls back to board_channel_id if blank)
+    board_role_id: str = ""           # Διοικητικό Συμβούλιο role — gates /archive submit + right-click archive
+    reminder_hours_before: int = 3    # mirrors workflows.board_meeting.reminder_hours_before
+
+
+class DiscordPlatformBridgeConfig(BaseModel):
+    """Platform-bridge sub-config aggregated into DiscordConfig."""
+
+    board_meeting: DiscordPlatformBridgeBoardMeetingConfig = DiscordPlatformBridgeBoardMeetingConfig()
 
 
 class DiscordConfig(BaseModel):
+    """Top-level Discord integration config — aggregates all sub-configs."""
+
     channels: DiscordChannels = DiscordChannels()
+    email_gateway: DiscordEmailGatewayConfig = DiscordEmailGatewayConfig()
+    classifier: DiscordClassifierConfig = DiscordClassifierConfig()
+    admin: DiscordAdminConfig = DiscordAdminConfig()
+    stats: DiscordStatsConfig = DiscordStatsConfig()
+    teams: DiscordTeamsConfig = DiscordTeamsConfig()
+    platform_bridge: DiscordPlatformBridgeConfig = DiscordPlatformBridgeConfig()
 
 
 class BoardMemberConfig(BaseModel):
@@ -101,16 +178,86 @@ class WorkflowsConfig(BaseModel):
     general_assembly: GeneralAssemblyConfig = GeneralAssemblyConfig()
 
 
+class M365InboxConfig(BaseModel):
+    """Phase 3 — board members' mailbox watcher (Graph webhook + safety poll).
+
+    ``members@amnesty.org.gr`` is the M365 account signed in via
+    ``ai-assistant auth microsoft``.  The webhook subscription watches
+    its Inbox; the safety poll runs daily at 12:00 Europe/Athens and
+    catches anything the webhook may have missed (e.g. during the
+    sub-minute window between subscription expiry and renewal).
+    """
+
+    # Substring patterns (case-insensitive, accent-stripped) that mark an
+    # email as an archive request.  Default catches "αρχειο", "αρχείο",
+    # "ΑΡΧΕΙΟ", "Archive", etc.  Customize via config.yaml if needed.
+    subject_patterns: list[str] = ["αρχειο", "archive"]
+
+    # Email addresses authorized to submit archive requests.  Empty list
+    # = ALL board_members + secgen.  Add additional addresses (e.g. the
+    # Director's @amnesty.org.gr address) here.
+    sender_allow_list: list[str] = []
+
+    # Public HTTPS URL Graph posts notifications to.  Override per
+    # environment via this YAML value (set after the Cloudflare Tunnel
+    # is up).  REQUIRED for `ai-assistant m365 subscribe` to work.
+    webhook_url: str = ""
+
+    # Subscription lifetime — Outlook resources max out at 4230 minutes
+    # (~70.5h).  We renew when remaining lifetime < renew_threshold_hours.
+    subscription_lifetime_minutes: int = 4230
+    renew_threshold_hours: int = 24
+
+    # Safety poll cadence (Europe/Athens local time, 24h).
+    safety_poll_hour: int = 12
+    safety_poll_minute: int = 0
+
+
+class MinutesPipelineConfig(BaseModel):
+    """Minutes pipeline orchestrator config (recording -> transcript -> skeleton).
+
+    ``transcriber`` selects the ASR backend:
+      * ``"faster_whisper"`` — real ASR via :class:`FasterWhisperTranscriber`
+        (heavy dep, imported lazily only when used).
+      * ``"fake"`` — :class:`FakeTranscriber`, a no-ASR stub for testing/wiring.
+    The ``whisper_*`` knobs are forwarded to faster-whisper.
+    """
+
+    transcriber: str = "faster_whisper"     # "faster_whisper" | "fake"
+    whisper_model: str = "large-v3"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+    language: str = "el"
+    recordings_dir: str = "data/recordings"
+    transcripts_dir: str = "data/transcripts"
+    articles_path: str = "assets/governance/articles.json"
+    # Map Zoom display names (as they appear in the recording timeline) to the
+    # canonical Greek roster names, so attributed segments + presence use the
+    # board's real names. e.g. {"Giorgos Athanasias": "Γεώργιος Αθανασιάς"}.
+    speaker_aliases: dict[str, str] = {}
+
+
+class UrlsConfig(BaseModel):
+    """Public-facing URLs referenced by user-facing copy (welcome DM, embeds, etc.).
+
+    Empty defaults — fill these in ``config.yaml`` when ready.  Code referencing
+    these falls back to omitting the link when the URL is empty.
+    """
+    katastatiko: str = ""              # Καταστατικό — used in M1 welcome DM
+    esoterikoi_kanonismoi: str = ""    # Εσωτερικοί Κανονισμοί — used in M1 welcome DM
+    website: str = "https://www.amnesty.gr"
+
+
 class TestingConfig(BaseModel):
-    """Settings that apply during dry-run / test executions."""
+    """Settings that apply during test (--test) executions."""
     # Emails are redirected here instead of skipped — lets you proof the
     # actual email content before sending to real recipients.
-    # Set to "" to skip emails entirely during dry-runs.
-    dry_run_email: str = ""
+    # Set to "" to skip emails entirely in test mode.
+    test_email: str = ""
 
 
 class AppConfig(BaseModel):
-    name: str = "AI-in-AI Platform"
+    name: str = "AI Assistant Platform"
     version: str = "0.1.0"
 
 
@@ -131,9 +278,11 @@ class EnvSecrets(BaseSettings):
     zoom_account_id: str = ""
     zoom_client_id: str = ""
     zoom_client_secret: str = ""
+    zoom_webhook_secret_token: str = ""  # Zoom webhook CRC validation, e.g. recording.completed (env: ZOOM_WEBHOOK_SECRET_TOKEN)
     brevo_api_key: str = ""
     discord_bot_token: str = ""
     discord_guild_id: str = ""
+    gmail_app_password: str = ""
     app_env: str = "development"
     log_level: str = "INFO"
 
@@ -162,9 +311,11 @@ class Settings(BaseModel):
     zoom_account_id: str = ""
     zoom_client_id: str = ""
     zoom_client_secret: str = ""
+    zoom_webhook_secret_token: str = ""  # Zoom webhook CRC validation, e.g. recording.completed (env: ZOOM_WEBHOOK_SECRET_TOKEN)
     brevo_api_key: str = ""
     discord_bot_token: str = ""
     discord_guild_id: str = ""
+    gmail_app_password: str = ""
     app_env: str = "development"
     log_level: str = "INFO"
 
@@ -179,6 +330,9 @@ class Settings(BaseModel):
     brevo: BrevoConfig = BrevoConfig()
     discord: DiscordConfig = DiscordConfig()
     workflows: WorkflowsConfig = WorkflowsConfig()
+    m365_inbox: M365InboxConfig = M365InboxConfig()
+    minutes_pipeline: MinutesPipelineConfig = MinutesPipelineConfig()
+    urls: UrlsConfig = UrlsConfig()
     testing: TestingConfig = TestingConfig()
 
 

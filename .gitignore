@@ -14,11 +14,23 @@ env/
 
 # Environment and secrets
 .env
+*.env
+!.env.example
 *.pem
 *.key
 
 # Database
 data/amnesty.db
+
+# Local safety backups (refreshed on every SharePoint download — never commit)
+data/backups/
+data/inbox/
+data/output/
+
+# OAuth tokens (contain refresh tokens — never commit)
+data/tokens.json
+data/google_token.json
+data/google_token.json.legacy_backup
 
 # IDE
 .vscode/
@@ -34,3 +46,33 @@ desktop.ini
 
 # Logs
 *.log
+data/logs/
+
+# OAuth credentials and tokens (never commit)
+data/google_credentials.json
+data/google_token.json
+data/tokens.json
+data/google_token.json.legacy_backup
+
+# Runtime data — recordings, transcripts, generated output (contains real meeting content)
+data/recordings/
+data/transcripts/
+data/egkyklios/
+data/minutes/
+data/debug/
+data/director_briefings/
+data/template_cache/
+
+# Past minutes PDFs (real board governance documents — not for public repo)
+past_minutes/
+
+# Governance / legal PDFs (large binary files; reference them by link instead)
+framework/*.pdf
+
+# Protocol analysis reports (contain real org data)
+data/protokollo_analysis_report.md
+data/protokollo_long_tail.md
+
+# Config (contains real board member details and channel IDs — use config.yaml.example)
+config.yaml
+!config.yaml.example

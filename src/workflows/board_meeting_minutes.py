@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from src.config import settings
 from src.core.claude import ClaudeClient
+from src.core.email_templates import render_email
 from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
 from src.documents.pdf_generator import embed_signatures
 from src.integrations.google_drive import GoogleClient
@@ -152,6 +153,44 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             WorkflowStep("finalize", "Generate signed PDF and archive"),
             WorkflowStep("extract_decisions", "Write decisions to Βιβλίο Αποφάσεων"),
         ]
+
+    @staticmethod
+    def debug_fixture() -> dict[str, Any]:
+        """Canonical fake ctx for `debug run board_meeting_minutes <step>`.
+
+        Provides every key any ``_step_*`` reads so a step can run in isolation
+        without a KeyError.  The debug runner forces ``test_mode=True`` (skips
+        OneDrive archive, Πρωτόκολλο write, Doc rename, and Βιβλίο Αποφάσεων
+        write); it is intentionally NOT set here.
+        """
+        return {
+            # select_sources
+            "meeting_ref": "ΔΣ99-2099",                   # required by select_sources/draft/write/finalize
+            "source_doc_id": "debug-doc-id",              # select_sources: skip folder listing
+            "source_doc_name": "[Πρόχειρο] Πρακτικά - Συνεδρίαση ΔΣ99-2099",  # select_sources
+            "source_doc_index": 0,                        # select_sources fallback index
+            "recording_index": -1,                        # select_sources: skip Zoom recordings
+            "transcript_path": "",                        # select_sources local transcript override
+            # select_sources outputs → consumed by draft_minutes / extract_*
+            "secgen_notes": "Δοκιμαστικές σημειώσεις Γενικού Γραμματέα.",
+            "zoom_transcript": "Δοκιμαστικό απομαγνητοφωνημένο κείμενο.",
+            "meeting_number": 99,                         # extract_decisions / finalize
+            "meeting_year": 2099,                         # extract_decisions / finalize
+            # draft_minutes output → consumed by write/finalize/extract_decisions
+            "draft_json": {
+                "title": "Πρακτικά - Συνεδρίαση ΔΣ99-2099",
+                "metadata": {"Ημερομηνία": "2099-06-15"},
+                "sections": [
+                    {"heading": "Θέμα 1", "body": "Δοκιμαστικό σώμα θέματος 1."},
+                ],
+                "decisions": [
+                    {"number": 1, "text": "Δοκιμαστική απόφαση.", "vote": "Ομόφωνα"},
+                ],
+            },
+            # write_draft_to_doc outputs → consumed by finalize
+            "draft_doc_id": "debug-doc-id",
+            "draft_doc_url": "https://example.invalid/doc/debug",
+        }
 
     async def execute_step(self, step: WorkflowStep, context: dict[str, Any]) -> StepResult:
         """Route to the appropriate step handler."""
@@ -373,27 +412,32 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         test_mode: bool = ctx.get("test_mode", False)
 
         board_members = settings.workflows.board_meeting.board_members
-        share_message = settings.workflows.board_meeting.minutes_share_message
-
         recipients = [m.email for m in board_members]
 
         if test_mode:
-            dry_run_email = settings.testing.dry_run_email
-            if dry_run_email:
-                recipients = [dry_run_email]
+            test_email = settings.testing.test_email
+            if test_email:
+                recipients = [test_email]
             else:
-                logger.info("test_mode=True and no dry_run_email set — skipping email")
+                logger.info("test_mode=True and no test_email set — skipping email")
                 return StepResult(
                     success=True,
-                    message="Email skipped (test_mode, no dry_run_email configured)",
+                    message="Email skipped (test_mode, no test_email configured)",
                     data={"shared": False, "shared_at": datetime.utcnow().isoformat()},
                 )
 
         if recipients:
             subject = f"Πρόχειρα Πρακτικά - Συνεδρίαση {meeting_ref}"
-            body_html = (
-                f"<p>{share_message}</p>"
-                f'<p><a href="{draft_doc_url}">Άνοιγμα εγγράφου</a></p>'
+            body_html = render_email(
+                "minutes_share",
+                kicker=f"Πρακτικά · Συνεδρίαση {meeting_ref}",
+                title="Πρόχειρα πρακτικά<br/>για σχόλια.",
+                header_ref="ΔΣ — ΠΡΑΚΤΙΚΑ",
+                footer_note=(
+                    "Διεθνής Αμνηστία — Ελληνικό Τμήμα · "
+                    "Πρόχειρα πρακτικά Διοικητικού Συμβουλίου"
+                ),
+                draft_doc_url=draft_doc_url,
             )
             self.gmail.send_email(
                 to=recipients,
@@ -469,24 +513,13 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             logger.info("No signature files found in %s — skipping signing", sig_dir)
             final_pdf_path = pdf_path
 
-        # Read protocol number from Πρωτόκολλο sheet
+        # Fetch next protocol number from the SharePoint Excel registry
         protocol_number = ""
-        protokollo_id = settings.google.protokollo_sheet_id
-        if protokollo_id:
+        if settings.ms_client_id and settings.ms_tenant_id:
             try:
-                last_entry = self._google.get_last_row_value(protokollo_id, "A:A")
-                if last_entry:
-                    # Parse format like "2026_014" and increment
-                    parts = last_entry.split("_")
-                    if len(parts) == 2:
-                        seq = int(parts[1]) + 1
-                    else:
-                        seq = 1
-                else:
-                    seq = 1
-                protocol_number = f"{meeting_year}_{seq:03d}"
+                protocol_number = await self.onedrive.get_next_protocol_number(meeting_year)
             except Exception as e:
-                logger.warning("Could not read Πρωτόκολλο sheet: %s", e)
+                logger.warning("Could not fetch next protocol number from OneDrive: %s", e)
                 protocol_number = f"{meeting_year}_001"
         else:
             protocol_number = f"{meeting_year}_001"
@@ -498,13 +531,14 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             logger.info("test_mode — skipping OneDrive archive, Πρωτόκολλο write, and Doc rename")
             archive_info = {"status": "skipped", "reason": "test_mode"}
         else:
-            # Upload to OneDrive (skip if MS creds not configured)
+            # Upload to SharePoint (skip if MS creds not configured)
             if settings.ms_client_id and settings.ms_tenant_id:
                 try:
+                    remote_folder = f"{settings.onedrive.yearly_subfolder}/{meeting_year}"
                     result = await self.onedrive.upload_file(
                         local_path=final_pdf_path,
-                        remote_folder=f"Minutes/{meeting_year}",
-                        filename=f"minutes_{meeting_ref}.pdf",
+                        remote_folder=remote_folder,
+                        filename=f"[{protocol_number}] Πρακτικά - Συνεδρίαση {meeting_ref}.pdf",
                         workflow=self.name,
                     )
                     archive_info = {"file_id": result.get("id"), "status": "archived"}
@@ -515,30 +549,66 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                 logger.info("MS credentials not configured — skipping OneDrive archive")
                 archive_info = {"status": "skipped", "reason": "MS credentials not configured"}
 
-            # Register in Πρωτόκολλο sheet
-            if protokollo_id:
+            # Register in the Excel πρωτόκολλο registry on SharePoint
+            if settings.ms_client_id and settings.ms_tenant_id:
                 try:
                     today_str = date.today().isoformat()
                     key_points = "; ".join(
                         d.get("text", "")[:80] for d in draft_json.get("decisions", [])
                     )
-                    self._google.write_sheet(
-                        protokollo_id,
-                        "A:E",
-                        [[
-                            protocol_number,
-                            today_str,
-                            f"Πρακτικά - Συνεδρίαση {meeting_ref}",
-                            key_points,
-                            "Διοικητικά, Πρακτικά",
-                        ]],
+                    await self.onedrive.append_protocol_row(
+                        protocol_id=protocol_number,
+                        date_str=today_str,
+                        title=f"Πρακτικά - Συνεδρίαση {meeting_ref}",
+                        main_points=key_points,
+                        tags="Διοικητικά, Πρακτικά",
                     )
                 except Exception as e:
-                    logger.warning("Could not write to Πρωτόκολλο sheet: %s", e)
+                    logger.warning("Could not append row to protocol registry: %s", e)
 
             # Rename Google Doc to final title
             final_title = f"[Τελικό] Πρακτικά - Συνεδρίαση {meeting_ref}"
             self._google.rename_file(draft_doc_id, final_title)
+
+        # Publish board.minutes.shared event so Discord can post the link
+        # in the agenda thread. Use a best-effort Drive URL: prefer the
+        # OneDrive share link (if archiving succeeded), else skip gracefully.
+        drive_url = archive_info.get("share_link") or archive_info.get("file_id") or ""
+        if not drive_url and not test_mode:
+            # Nothing useful to post, but we still publish so the platform
+            # bridge can at least record that minutes were finalized.
+            drive_url = f"minutes_{meeting_ref}.pdf (see OneDrive)"
+
+        await _publish_board_minutes_shared(
+            meeting_ref=meeting_ref,
+            drive_url=drive_url,
+            doc_id=draft_doc_id,
+        )
+
+        # ── Post-cycle housekeeping: reset the agenda sheet (Model A) ────────
+        # This frees the next cycle: bumps D5 to the next meeting_ref, clears
+        # the agenda items, unchecks the three approval boxes (D16/D17/D18),
+        # clears Z1 (the Apps Script idempotency cell), and removes the
+        # script-owned protection.  Non-fatal — minutes is the official
+        # artifact; reset failure should not fail the workflow.
+        agenda_sheet_id = settings.google.agenda_sheet_id
+        if agenda_sheet_id:
+            try:
+                reset_info = self._google.reset_agenda_sheet(agenda_sheet_id)
+                logger.info(
+                    "Agenda sheet reset: %s → %s",
+                    reset_info.get("old_meeting_ref"),
+                    reset_info.get("new_meeting_ref"),
+                )
+            except Exception as reset_err:
+                logger.warning(
+                    "Agenda sheet reset failed (non-fatal): %s",
+                    reset_err,
+                )
+        else:
+            logger.info(
+                "No google.agenda_sheet_id configured — skipping agenda reset"
+            )
 
         return StepResult(
             success=True,
@@ -629,3 +699,47 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                 "decision_numbers": decision_numbers,
             },
         )
+
+
+# ── Module-level helpers ──────────────────────────────────────────────────────
+
+async def _publish_board_minutes_shared(
+    *,
+    meeting_ref: str,
+    drive_url: str,
+    doc_id: str,
+) -> None:
+    """Publish EVENT_BOARD_MINUTES_SHARED to the event bus (non-fatal).
+
+    The meeting_id uses the same convention as the invitation workflow:
+    ``board_meeting:ΔΣXX-YYYY``.  Built directly from meeting_ref so the
+    Discord platform_bridge handler keys on the same id the invitation
+    workflow published when scheduling the meeting.
+    """
+    try:
+        from src.core.event_bus import bus
+        from src.core.events import EVENT_BOARD_MINUTES_SHARED, BoardMinutesSharedPayload
+
+        meeting_id = _meeting_id_from_ref(meeting_ref)
+
+        await bus.publish(
+            EVENT_BOARD_MINUTES_SHARED,
+            BoardMinutesSharedPayload(
+                meeting_id=meeting_id,
+                drive_url=drive_url or "",
+                doc_id=doc_id or "",
+            ),
+        )
+        logger.info("_publish_board_minutes_shared: published %s", meeting_id)
+    except Exception as exc:
+        logger.warning("Bus publish board.minutes.shared failed (non-fatal): %s", exc)
+
+
+def _meeting_id_from_ref(meeting_ref: str) -> str:
+    """Convert a meeting_ref like 'ΔΣ03-2026' to a meeting_id string.
+
+    Aligned with the board_meeting_invitation workflow (2026-05-24 refactor):
+    both workflows now key on ``board_meeting:ΔΣXX-YYYY``, so platform_bridge
+    handlers and pending_actions rows match across invitation + minutes.
+    """
+    return f"board_meeting:{meeting_ref}"

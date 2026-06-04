@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -15,6 +19,45 @@ logger = logging.getLogger(__name__)
 
 _ZOOM_API_BASE = "https://api.zoom.us/v2"
 _ZOOM_AUTH_URL = "https://zoom.us/oauth/token"
+
+# Video asset markers (case-insensitive) — matched against a recording file's
+# ``file_type`` and ``recording_type``. When ``audio_only=True`` (the default
+# for the minutes pipeline) any file matching one of these is skipped: we never
+# need the large MP4/screen-share/gallery/active-speaker recordings.
+_VIDEO_MARKERS = {
+    "mp4",
+    "shared_screen_with_speaker_view",
+    "shared_screen_with_gallery_view",
+    "active_speaker",
+    "gallery_view",
+    "shared_screen",
+}
+
+
+def _is_video_asset(rec: dict[str, Any]) -> bool:
+    """True if a recording file looks like a video asset (skipped by default)."""
+    file_type = (rec.get("file_type") or "").strip().lower()
+    recording_type = (rec.get("recording_type") or "").strip().lower()
+    return file_type in _VIDEO_MARKERS or recording_type in _VIDEO_MARKERS
+
+
+def _encode_uuid(uuid: str) -> str:
+    """URL-encode a Zoom meeting UUID for use in an API path.
+
+    Zoom requires *double* URL-encoding for a UUID that begins with ``/`` or
+    contains ``//``; otherwise the raw value is used unchanged.  See
+    https://developers.zoom.us/docs/api/ ("Double encode the UUID ...").
+
+    Args:
+        uuid: The meeting UUID (or numeric meeting ID).
+
+    Returns:
+        The path-safe identifier, double-encoded when required.
+    """
+    if uuid.startswith("/") or "//" in uuid:
+        # Double-encode: encode once, then encode the result again.
+        return quote(quote(uuid, safe=""), safe="")
+    return uuid
 
 
 class ZoomClient:
@@ -211,6 +254,213 @@ class ZoomClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def download_recording_assets(
+        self,
+        meeting_id: str,
+        *,
+        dest_dir: str | None = None,
+        workflow: str = "minutes",
+        audio_only: bool = True,
+    ) -> dict[str, Any]:
+        """Download every recording asset for a meeting to local disk.
+
+        Fetches the recording object via :meth:`get_recording`, then streams
+        each entry in ``recording_files`` to ``dest_dir`` using the same bearer
+        + ``follow_redirects`` pattern as :meth:`get_transcript`.  This is the
+        first stage of the minutes pipeline: it lands all per-participant audio
+        on disk so a later stage can transcribe/align it.
+
+        Video assets are SKIPPED by default (``audio_only=True``): the minutes
+        pipeline only needs the mixed ``audio_only`` M4A, the ``timeline`` JSON,
+        chat, and transcript files — never the (large) MP4/screen-share/gallery
+        recordings.  Pass ``audio_only=False`` to download video as well.
+
+        The per-file ``recording_start`` / ``recording_end`` fields are captured
+        verbatim in the manifest because they reveal each asset's time origin
+        (critical for per-participant alignment downstream).
+
+        Args:
+            meeting_id: Zoom meeting ID or UUID.
+            dest_dir: Target directory.  Defaults to
+                ``data/recordings/{safe_uuid}/``.
+            workflow: Workflow name for audit logging.
+            audio_only: When True (default), skip video assets and keep only
+                audio, the timeline JSON, chat, and transcript files.
+
+        Returns:
+            A manifest dict (also written to ``manifest.json`` in ``dest_dir``)::
+
+                {
+                  "meeting_uuid", "topic", "start_time", "dest_dir",
+                  "files": [{"id", "file_type", "recording_type",
+                             "recording_start", "recording_end",
+                             "file_extension", "file_size", "local_path"}, ...]
+                }
+        """
+        recording = await self.get_recording(meeting_id)
+        meeting_uuid = recording.get("uuid") or meeting_id
+
+        # UUIDs may contain '/', '\\', '+', '=' — make a filesystem-safe folder.
+        safe_uuid = re.sub(r"[/\\+=]", "_", str(meeting_uuid))
+        if dest_dir is None:
+            dest_dir = str(Path("data") / "recordings" / safe_uuid)
+        dest_path = Path(dest_dir)
+        dest_path.mkdir(parents=True, exist_ok=True)
+
+        files: list[dict[str, Any]] = []
+        # Per-participant audio may live under EITHER key depending on Zoom's
+        # response shape: the mixed assets are in ``recording_files``, while
+        # separate per-participant audio has historically surfaced under
+        # ``participant_audio_files``. Iterate both so we never silently miss
+        # the per-participant tracks (the whole point of this fetch). The real
+        # meeting spike confirms which key Zoom actually populates; capturing
+        # both is robust either way and the manifest's ``source`` records it.
+        tagged: list[tuple[str, dict[str, Any]]] = [
+            ("recording_files", rec)
+            for rec in (recording.get("recording_files", []) or [])
+        ] + [
+            ("participant_audio_files", rec)
+            for rec in (recording.get("participant_audio_files", []) or [])
+        ]
+        headers = await self._headers()
+
+        for index, (source, rec) in enumerate(tagged):
+            if audio_only and _is_video_asset(rec):
+                logger.debug(
+                    "Skipping video asset for meeting %s (audio_only): "
+                    "file_type=%r recording_type=%r id=%r",
+                    meeting_uuid,
+                    rec.get("file_type"),
+                    rec.get("recording_type"),
+                    rec.get("id") or index,
+                )
+                continue
+
+            download_url = rec.get("download_url")
+            if not download_url:
+                logger.warning(
+                    "Recording file %s for meeting %s has no download_url; skipping",
+                    rec.get("id") or index, meeting_uuid,
+                )
+                continue
+
+            file_ext = (rec.get("file_extension") or "").lower()
+            label = rec.get("recording_type") or rec.get("file_type") or "file"
+            ident = rec.get("id") or index
+            filename = f"{label}_{ident}.{file_ext}" if file_ext else f"{label}_{ident}"
+            local_path = dest_path / filename
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        download_url,
+                        headers=headers,
+                        follow_redirects=True,
+                    )
+                    response.raise_for_status()
+                    local_path.write_bytes(response.content)
+            except Exception as e:  # noqa: BLE001 — defensive per-file isolation
+                logger.warning(
+                    "Failed to download recording file %s for meeting %s: %s",
+                    ident, meeting_uuid, e,
+                )
+                continue
+
+            files.append({
+                "id":              rec.get("id", ""),
+                "source":          source,  # which Zoom array this came from
+                "file_type":       rec.get("file_type", ""),
+                "recording_type":  rec.get("recording_type", ""),
+                # per-participant audio carries the speaker's name/email here
+                "participant":     rec.get("participant_name") or rec.get("user_name") or "",
+                "recording_start": rec.get("recording_start", ""),
+                "recording_end":   rec.get("recording_end", ""),
+                "file_extension":  rec.get("file_extension", ""),
+                "file_size":       rec.get("file_size", ""),
+                "local_path":      str(local_path),
+            })
+
+        manifest: dict[str, Any] = {
+            "meeting_uuid": meeting_uuid,
+            "topic":        recording.get("topic", ""),
+            "start_time":   recording.get("start_time", ""),
+            "dest_dir":     str(dest_path),
+            "files":        files,
+        }
+
+        manifest_path = dest_path / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        log_action(
+            workflow=workflow,
+            action="recording_assets_downloaded",
+            actor="system",
+            target=str(meeting_uuid),
+            details={"file_count": len(files)},
+        )
+        logger.info(
+            "Downloaded %d recording asset(s) for meeting %s to %s",
+            len(files), meeting_uuid, dest_path,
+        )
+        return manifest
+
+    async def get_past_participants(
+        self,
+        meeting_id: str,
+        workflow: str = "minutes",
+    ) -> list[dict[str, Any]]:
+        """Return the attendance list for a past meeting (best-effort).
+
+        Primary source is the report endpoint
+        (``/report/meetings/{id}/participants``), which the account is scoped
+        for (``meeting:read:list_past_participants:admin``).  On a 4xx it falls
+        back to ``/past_meetings/{id}/participants``.
+
+        UUIDs that begin with ``/`` or contain ``//`` must be double-URL-encoded
+        in the path; :func:`_encode_uuid` handles that.
+
+        Args:
+            meeting_id: Zoom meeting ID or UUID.
+            workflow: Workflow name for audit logging.
+
+        Returns:
+            List of participant dicts, or ``[]`` on any failure (logged).
+        """
+        encoded = _encode_uuid(str(meeting_id))
+        headers = await self._headers()
+        params = {"page_size": 300}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{_ZOOM_API_BASE}/report/meetings/{encoded}/participants",
+                    headers=headers,
+                    params=params,
+                )
+                if response.status_code >= 400 and response.status_code < 500:
+                    # Fall back to the non-report past-meetings endpoint.
+                    response = await client.get(
+                        f"{_ZOOM_API_BASE}/past_meetings/{encoded}/participants",
+                        headers=headers,
+                        params=params,
+                    )
+                response.raise_for_status()
+                data = response.json()
+        except Exception as e:  # noqa: BLE001 — best-effort
+            logger.warning(
+                "Could not fetch participants for meeting %s: %s", meeting_id, e,
+            )
+            return []
+
+        participants = data.get("participants", []) or []
+        logger.info(
+            "Fetched %d participant(s) for meeting %s", len(participants), meeting_id,
+        )
+        return participants
 
     async def get_transcript(self, meeting_id: str) -> str | None:
         """Download the transcript for a meeting recording.

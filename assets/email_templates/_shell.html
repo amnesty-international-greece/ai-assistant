@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title_plain}</title>
+<style>
+  /* --------------------------------------------------------------------
+     Amnesty AI Assistant - shared email shell (v2, 2026-05-27)
+
+     Renders in: Gmail (web/mobile), Apple Mail, Outlook 2019+, Outlook.com.
+     Outlook < 2019 strips @font-face and ignores most CSS - the inline
+     fallbacks (Arial / sans-serif) keep the layout intact there too.
+
+     Greek body = Roboto (Amnesty house style for Greek).
+     English chrome = Amnesty Trade Gothic - falls back to Arial when the
+     woff2 isn't reachable (e.g. inside corporate email gateways).
+     -------------------------------------------------------------------- */
+  @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&family=Roboto+Condensed:wght@700;900&family=Roboto+Mono:wght@400;500&display=swap");
+
+  body, table, td, p, a, h1, h2, h3, h4 {{
+    font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }}
+  .en, [lang="en"] {{
+    font-family: "Amnesty Trade Gothic", "Helvetica Neue", Arial, sans-serif;
+  }}
+  body {{
+    margin: 0;
+    padding: 0;
+    background: #f5f3ee;
+    color: #0a0a0a;
+  }}
+  a {{ color: inherit; }}
+  img {{ border: 0; display: block; outline: none; text-decoration: none; }}
+
+  .email-wrap {{
+    width: 100%;
+    background: #f5f3ee;
+    padding: 24px 0;
+  }}
+  .email {{
+    max-width: 640px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #1a1a1a;
+  }}
+
+  /* -- Header (black + logo) ---------------------------------------- */
+  .e-head {{
+    background: #0a0a0a;
+    color: #ffffff;
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }}
+  .e-head img {{ height: 28px; }}
+  /* Typographic logo fallback - used when no logo_url is provided.
+     Renders the same visual weight as the image so the header doesn't
+     shift between branded and unbranded sends. */
+  .e-head .logo-text {{
+    font-family: "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 900;
+    font-size: 16px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #FFFF00;
+  }}
+  .e-head .ref {{
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #FFFF00;
+    font-weight: 700;
+  }}
+
+  /* -- Yellow titlebar (kicker + headline) -------------------------- */
+  .e-y-bar {{
+    background: #FFFF00;
+    color: #0a0a0a;
+    padding: 28px 28px 32px;
+    border-bottom: 4px solid #0a0a0a;
+  }}
+  .e-y-bar .kicker {{
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 14px;
+    opacity: 0.85;
+  }}
+  .e-y-bar h2 {{
+    font-family: "Roboto Condensed", "Roboto", "Helvetica Neue", Arial, sans-serif;
+    font-weight: 900;
+    font-size: 34px;
+    line-height: 1.05;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }}
+
+  /* -- Body ---------------------------------------------------------- */
+  .e-body {{
+    padding: 32px 28px 28px;
+    color: #1a1a1a;
+  }}
+  .e-body p {{
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0 0 14px;
+  }}
+  .e-body .lede {{ font-size: 17px; line-height: 1.5; }}
+
+  /* Primary CTA - black on yellow */
+  .e-body a.cta {{
+    display: inline-block;
+    background: #0a0a0a;
+    color: #FFFF00 !important;
+    padding: 12px 22px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 8px 0 4px;
+  }}
+  /* Secondary CTA - yellow on black */
+  .e-body a.cta.alt {{
+    background: #FFFF00;
+    color: #0a0a0a !important;
+  }}
+
+  /* Typed info row - used for Zoom credentials, archive details, etc. */
+  .e-body .info-row {{
+    margin: 22px 0 4px;
+    border-top: 1px solid #1a1a1a;
+    border-bottom: 1px solid #1a1a1a;
+    padding: 16px 0 14px;
+  }}
+  .e-body .info-row h4 {{
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin: 0 0 10px;
+    color: #0a0a0a;
+  }}
+  .e-body .info-row dl {{
+    margin: 0;
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    row-gap: 6px;
+    column-gap: 16px;
+    font-size: 14px;
+  }}
+  .e-body .info-row dt {{
+    font-weight: 700;
+    color: #1a1a1a;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding-top: 3px;
+  }}
+  .e-body .info-row dd {{ margin: 0; color: #1a1a1a; }}
+  .e-body .info-row .mono,
+  .e-body .info-row dd.mono {{
+    font-family: "Roboto Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font-size: 13px;
+  }}
+
+  /* The protokollo stamp (used on the archive receipt) */
+  .e-body .stamp,
+  .e-y-bar .stamp {{
+    display: inline-block;
+    margin-top: 16px;
+    padding: 6px 10px;
+    border: 2px solid #0a0a0a;
+    font-family: "Roboto Mono", ui-monospace, Menlo, monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: rgba(255,255,255,0.4);
+  }}
+
+  /* Yellow-on-black timer block (archive 72h window) */
+  .e-body .timer {{
+    background: #0a0a0a;
+    color: #FFFF00;
+    padding: 18px 20px;
+    margin: 18px 0 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }}
+  .e-body .timer .big {{
+    font-family: "Roboto Condensed", "Roboto", Arial, sans-serif;
+    font-weight: 900;
+    font-size: 32px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }}
+  .e-body .timer span:last-child {{
+    font-size: 13px;
+    line-height: 1.5;
+    color: #d6d6d6;
+    flex: 1;
+    min-width: 220px;
+  }}
+
+  /* Test-mode banner - used by archive_confirmation when test_mode=True */
+  .e-body .test-banner {{
+    background: #fff7d6;
+    border-left: 4px solid #FFA000;
+    padding: 10px 14px;
+    margin: 0 0 18px;
+    font-size: 13px;
+    color: #5b3d00;
+    font-weight: 500;
+  }}
+
+  /* Flame-red reason card — archive_failure */
+  .e-body .reason-card {{
+    background: #fff1ed;
+    border-left: 4px solid #E63B11;
+    padding: 14px 16px;
+    margin: 0 0 18px;
+  }}
+  .e-body .reason-card .rc-label {{
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    color: #E63B11;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }}
+  .e-body .reason-card .rc-text {{
+    font-size: 15px;
+    line-height: 1.5;
+    color: #1a1a1a;
+    margin: 0;
+  }}
+
+  /* Deadline countdown strip — scheduling templates */
+  .e-body .deadline-strip {{
+    background: #FFFF00;
+    border-top: 2px solid #0a0a0a;
+    border-bottom: 2px solid #0a0a0a;
+    padding: 14px 16px;
+    margin: 0 0 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }}
+  .e-body .deadline-strip .ds-label {{
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+    color: #0a0a0a;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }}
+  .e-body .deadline-strip .ds-date {{
+    font-family: "Roboto Condensed", "Roboto", Arial, sans-serif;
+    font-weight: 900;
+    font-size: 20px;
+    color: #0a0a0a;
+    letter-spacing: -0.01em;
+  }}
+  .e-body .deadline-strip .ds-hint {{
+    font-size: 13px;
+    color: #1a1a1a;
+    opacity: 0.7;
+  }}
+
+  /* Numbered task list — scheduling templates */
+  .e-body ol.task-list {{
+    margin: 16px 0 8px;
+    padding-left: 0;
+    list-style: none;
+    counter-reset: task-counter;
+  }}
+  .e-body ol.task-list li {{
+    counter-increment: task-counter;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #e8e8e8;
+    font-size: 15px;
+    line-height: 1.5;
+  }}
+  .e-body ol.task-list li:last-child {{ border-bottom: none; }}
+  .e-body ol.task-list li::before {{
+    content: counter(task-counter);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    background: #0a0a0a;
+    color: #FFFF00;
+    font-weight: 900;
+    font-size: 13px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }}
+
+  /* -- Footer (candle mark + legal) --------------------------------- */
+  .e-foot {{
+    background: #f5f3ee;
+    border-top: 1px solid #1a1a1a;
+    padding: 20px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 12px;
+    color: #6b6b6b;
+    line-height: 1.55;
+  }}
+  .e-foot .candle-mark {{width: 40px; height: 40px; padding-right: 10px; flex-shrink: 0; }}
+  .e-foot a {{ color: #1a1a1a; }}
+  .e-foot .ver {{
+    font-family: "Roboto Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    opacity: 0.5;
+  }}
+
+  /* Outlook ignores flex - give it sensible block fallbacks via MSO. */
+  @media only screen and (max-width: 600px) {{
+    .e-y-bar h2 {{ font-size: 28px; }}
+    .e-body .info-row dl {{ grid-template-columns: 1fr; }}
+    .e-body .info-row dt {{ padding-top: 6px; }}
+  }}
+</style>
+</head>
+<body>
+<div class="email-wrap">
+  <div class="email">
+
+    <div class="e-head">
+      {logo_html}
+    </div>
+
+    <div class="e-y-bar">
+      <div class="kicker">{kicker}</div>
+      <h2>{title}</h2>{stamp_html}
+    </div>
+
+    <div class="e-body">
+{body}
+    </div>
+
+    <div class="e-foot">
+      {candle_html}
+      <div style="flex:1;">
+        Διεθνής Αμνηστία - Ελληνικό Τμήμα · <a href="https://www.amnesty.gr">amnesty.gr</a><br/>
+        {footer_note}
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

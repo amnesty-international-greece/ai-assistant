@@ -31,6 +31,7 @@ class BrevoClient:
         subject: str,
         params: dict[str, str] | None = None,
         campaign_name: str | None = None,
+        preview_text: str | None = None,
         test_emails: list[str] | None = None,
         workflow: str = "brevo",
     ) -> dict[str, Any]:
@@ -95,6 +96,8 @@ class BrevoClient:
             "htmlContent": html,
             "recipients": {"listIds": list_ids},
         }
+        if preview_text:
+            create_payload["previewText"] = preview_text
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(

@@ -191,7 +191,13 @@ class ClaudeClient:
         return text, input_tokens, output_tokens
 
     def load_prompt(self, prompt_name: str) -> str:
-        """Load a system prompt from data/prompts/{name}.md."""
+        """Load a system prompt from src/prompts/{name}.md.
+
+        Path is configurable via ``settings.storage.prompts_dir`` (default
+        ``src/prompts``) — the prompts live with the code now, not in
+        ``data/``, since they're code-like artifacts versioned together
+        with the workflows that consume them.
+        """
         prompts_dir = Path(settings.storage.prompts_dir)
         prompt_path = prompts_dir / f"{prompt_name}.md"
         if not prompt_path.exists():

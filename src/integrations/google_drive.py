@@ -56,21 +56,40 @@ class GoogleClient:
         self._sheets_service = None
         self._docs_service = None
 
-    def authenticate(self) -> None:
+    def authenticate(self, *, force_interactive: bool = False) -> None:
         """Authenticate with Google APIs using OAuth2 flow.
 
         Loads cached credentials from disk if available and still valid.
         Falls back to running the local OAuth server flow for first-time auth.
-        Persists refreshed credentials back to disk.
+        If the cached refresh token is revoked (``invalid_grant``), the stale
+        token file is wiped and the interactive flow runs.
+
+        Args:
+            force_interactive: Skip the cache entirely and run the browser
+                flow.  Use this when switching Google accounts.
         """
+        from google.auth.exceptions import RefreshError
+
         creds = None
-        if _TOKEN_PATH.exists():
+        if not force_interactive and _TOKEN_PATH.exists():
             creds = Credentials.from_authorized_user_file(str(_TOKEN_PATH), _SCOPES)
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+        if force_interactive or not creds or not creds.valid:
+            refreshed = False
+            if not force_interactive and creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    refreshed = True
+                except RefreshError as exc:
+                    # Token was revoked or the Google account changed —
+                    # wipe the stale file and fall through to interactive.
+                    logger.warning("Google token refresh failed (%s) — re-authenticating", exc)
+                    try:
+                        _TOKEN_PATH.unlink()
+                    except OSError:
+                        pass
+                    creds = None
+            if not refreshed:
                 flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS_PATH), _SCOPES)
                 creds = flow.run_local_server(port=0)
             _TOKEN_PATH.write_text(creds.to_json())
@@ -469,6 +488,108 @@ class GoogleClient:
         )
         return result
 
+    # Pattern enforced for ``meeting_ref`` — uppercase "ΔΣ" followed by 1-2
+    # digits, hyphen, 4-digit year.  Tightening this single regex changes the
+    # entire workflow's notion of what a valid reference looks like.
+    _MEETING_REF_PATTERN = r"^ΔΣ\d{1,2}-\d{4}$"
+
+    def read_meeting_ref(
+        self,
+        spreadsheet_id: str,
+        tab_title: str | None = None,
+        *,
+        use_cache: bool = True,
+    ) -> str:
+        """Read the current ``meeting_ref`` from cell D5 of the agenda sheet.
+
+        D5 is the **universal source of truth** for which meeting cycle the
+        agenda sheet currently represents (e.g. ``ΔΣ05-2026``).  This method
+        also maintains a thin local SQLite cache of the most recent valid
+        value — so a transient Sheets API outage doesn't block the workflow.
+
+        Read policy:
+          1. Read D5 from the Sheet.  If valid → cache it, return it.
+          2. If D5 is empty / malformed / Sheets API failed AND ``use_cache``
+             is ``True``, return the most recently cached value (with a
+             ``logger.warning`` so the operator sees what happened).
+          3. If no cache exists either, raise — failing loudly is deliberate:
+             a wrong meeting_ref would corrupt every downstream artefact
+             (subject line, PDF filename, archive folder, protocol number).
+
+        Args:
+            spreadsheet_id: Spreadsheet ID.
+            tab_title:      Tab the D5 lives in.  ``None`` (default) picks
+                ``tabs[0]`` — there is only ever one tab on the agenda sheet
+                by convention.
+            use_cache:      Set to ``False`` to disable both the on-success
+                cache write AND the on-failure cache fallback.  Useful in
+                tests that want pure I/O.
+
+        Returns:
+            The validated meeting_ref string (e.g. ``"ΔΣ05-2026"``).
+
+        Raises:
+            RuntimeError if the Sheet is unreadable AND no cached value
+            exists, or if a fresh D5 value is malformed.
+        """
+        import re as _re
+
+        from src.core.audit import get_meeting_ref_cache, set_meeting_ref_cache
+
+        def _fallback(reason: str) -> str:
+            """Return the cached value or raise with the original reason."""
+            if not use_cache:
+                raise RuntimeError(reason)
+            cached = get_meeting_ref_cache()
+            if cached:
+                logger.warning(
+                    "read_meeting_ref: %s — falling back to cached value %r",
+                    reason, cached,
+                )
+                return cached
+            raise RuntimeError(
+                f"{reason} (no cached value available either — run "
+                f"`ai-assistant invite reset-sheet` to seed D5)."
+            )
+
+        try:
+            self._ensure_authenticated()
+            if tab_title is None:
+                tabs = self.list_sheet_tabs(spreadsheet_id)
+                if not tabs:
+                    return _fallback(
+                        f"Agenda sheet {spreadsheet_id} has no tabs"
+                    )
+                tab_title = tabs[0]["title"]
+
+            rows = self.read_sheet(
+                spreadsheet_id,
+                f"'{tab_title}'!D5",
+                value_render_option="FORMATTED_VALUE",
+            )
+        except Exception as exc:
+            return _fallback(f"Sheets API read failed: {exc!r}")
+
+        value = (rows[0][0] if rows and rows[0] else "").strip()
+        if not value:
+            return _fallback(f"D5 is empty in tab '{tab_title}'")
+        if not _re.match(self._MEETING_REF_PATTERN, value):
+            return _fallback(
+                f"D5 value {value!r} in tab '{tab_title}' is not a valid "
+                f"meeting_ref (expected 'ΔΣXX-YYYY')"
+            )
+
+        # Live D5 read succeeded — refresh the local mirror (best-effort).
+        if use_cache:
+            try:
+                set_meeting_ref_cache(value)
+            except Exception as cache_err:  # pragma: no cover — DB hiccup
+                logger.warning(
+                    "read_meeting_ref: live read OK but cache refresh failed: %s",
+                    cache_err,
+                )
+        return value
+
     def list_sheet_tabs(self, spreadsheet_id: str) -> list[dict[str, Any]]:
         """Return all tab names and their sheet IDs for a spreadsheet.
 
@@ -659,6 +780,197 @@ class GoogleClient:
             details={"new_name": new_name},
         )
         logger.info("Renamed Drive file %s → %s", file_id, new_name)
+
+    def upload_pdf_and_share(self, local_path: Path, folder_id: str) -> str:
+        """Upload a local PDF to a Google Drive folder and make it publicly viewable.
+
+        Returns the direct download link (webContentLink) for use in emails.
+        """
+        self._ensure_authenticated()
+        from googleapiclient.http import MediaFileUpload  # type: ignore
+
+        file_metadata = {
+            "name": local_path.name,
+            "parents": [folder_id],
+        }
+        media = MediaFileUpload(str(local_path), mimetype="application/pdf", resumable=False)
+        file = self._drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id,webContentLink,webViewLink",
+        ).execute()
+
+        file_id = file["id"]
+        self._drive_service.permissions().create(
+            fileId=file_id,
+            body={"role": "reader", "type": "anyone"},
+        ).execute()
+
+        # webContentLink forces a download; webViewLink opens in Drive viewer
+        link = file.get("webContentLink") or file.get("webViewLink", "")
+        log_action(
+            workflow="google_drive",
+            action="file_shared",
+            actor="system",
+            target=file_id,
+            details={"name": local_path.name, "folder": folder_id},
+        )
+        logger.info("Uploaded & shared %s → %s", local_path.name, link)
+        return link
+
+    # ── Agenda sheet reset (post-cycle housekeeping) ─────────────────────────
+
+    def reset_agenda_sheet(self, sheet_id: str) -> dict[str, Any]:
+        """Reset the agenda sheet for the next meeting cycle.
+
+        Performs in one logical pass:
+          - D5 incremented to next meeting_ref (year-aware: ΔΣ12-YYYY rolls
+            over to ΔΣ01-(YYYY+1); otherwise just ΔΣXX → ΔΣ(XX+1))
+          - D7, D9, D11 cleared (type / date / time)
+          - D16, D17, D18 unchecked (boolean FALSE)
+          - H7:K10000 cleared (agenda items)
+          - Script-owned protection (description == "ai-assistant:cycle-locked")
+            removed if present; the user's own protections are left alone.
+
+        Idempotency is enforced on the Python side via workflow_state
+        (see ``_find_in_progress_invite`` in webhooks.py).  No sheet cell
+        is used as an idempotency marker.
+
+        Args:
+            sheet_id: Spreadsheet ID to reset.
+
+        Returns:
+            Dict summarising what changed:
+              {
+                "tab_title": str,
+                "old_meeting_ref": str,
+                "new_meeting_ref": str,
+                "cleared_cells": [str, ...],
+                "protections_removed": int,
+              }
+
+        Raises:
+            RuntimeError: if the sheet has no tabs or D5 is unrecognisable.
+        """
+        import re
+
+        self._ensure_authenticated()
+
+        tabs = self.list_sheet_tabs(sheet_id)
+        if not tabs:
+            raise RuntimeError(f"Agenda sheet {sheet_id} has no tabs")
+        tab = tabs[0]
+        tab_title = tab["title"]
+        sheet_internal_id = tab["sheetId"]
+
+        # ── Read current meeting_ref from D5 ─────────────────────────────────
+        current = self._sheets_service.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range=f"'{tab_title}'!D5",
+        ).execute()
+        rows = current.get("values", [])
+        old_meeting_ref = (rows[0][0] if rows and rows[0] else "").strip()
+
+        match = re.match(r"^(ΔΣ)(\d{1,2})-(\d{4})$", old_meeting_ref)
+        if not match:
+            raise RuntimeError(
+                f"D5 value {old_meeting_ref!r} is not a recognised meeting ref "
+                "(expected 'ΔΣXX-YYYY')"
+            )
+        prefix, seq_str, year_str = match.group(1), match.group(2), match.group(3)
+        seq = int(seq_str)
+        year = int(year_str)
+        if seq >= 12:
+            new_seq = 1
+            new_year = year + 1
+        else:
+            new_seq = seq + 1
+            new_year = year
+        new_meeting_ref = f"{prefix}{new_seq:02d}-{new_year}"
+
+        # ── Batch value updates (D5 + clears for D7/D9/D11/D16/D17/D18) ──
+        # checkbox cells must be written as booleans so the checkbox stays
+        # functional (clearing the value via clear() would also work but
+        # batchUpdate keeps everything in one round-trip).
+        value_data = [
+            {"range": f"'{tab_title}'!D5",  "values": [[new_meeting_ref]]},
+            {"range": f"'{tab_title}'!D7",  "values": [[""]]},
+            {"range": f"'{tab_title}'!D9",  "values": [[""]]},
+            {"range": f"'{tab_title}'!D11", "values": [[""]]},
+            {"range": f"'{tab_title}'!D16", "values": [[False]]},
+            {"range": f"'{tab_title}'!D17", "values": [[False]]},
+            {"range": f"'{tab_title}'!D18", "values": [[False]]},
+        ]
+        self._sheets_service.spreadsheets().values().batchUpdate(
+            spreadsheetId=sheet_id,
+            body={"valueInputOption": "USER_ENTERED", "data": value_data},
+        ).execute()
+
+        # D5 was just written; refresh the local mirror so the next read
+        # falls back to this exact value if Sheets is briefly unreachable.
+        try:
+            from src.core.audit import set_meeting_ref_cache
+            set_meeting_ref_cache(new_meeting_ref)
+        except Exception as cache_err:  # pragma: no cover — DB hiccup
+            logger.warning(
+                "reset_agenda_sheet: D5 written but cache refresh failed: %s",
+                cache_err,
+            )
+
+        # ── Clear the agenda items block H7:K10000 ───────────────────────────
+        self._sheets_service.spreadsheets().values().clear(
+            spreadsheetId=sheet_id,
+            range=f"'{tab_title}'!H7:K10000",
+            body={},
+        ).execute()
+
+        # ── Remove only OUR script-owned protection ──────────────────────────
+        meta = self._sheets_service.spreadsheets().get(
+            spreadsheetId=sheet_id,
+            fields="sheets(properties.sheetId,protectedRanges(protectedRangeId,description))",
+        ).execute()
+        protection_ids: list[int] = []
+        for s in meta.get("sheets", []):
+            if s.get("properties", {}).get("sheetId") != sheet_internal_id:
+                continue
+            for pr in s.get("protectedRanges", []) or []:
+                if pr.get("description") == "ai-assistant:cycle-locked":
+                    protection_ids.append(pr["protectedRangeId"])
+
+        if protection_ids:
+            requests = [
+                {"deleteProtectedRange": {"protectedRangeId": pid}}
+                for pid in protection_ids
+            ]
+            self._sheets_service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id,
+                body={"requests": requests},
+            ).execute()
+
+        log_action(
+            workflow="google_sheets",
+            action="agenda_sheet_reset",
+            actor="system",
+            target=sheet_id,
+            details={
+                "tab": tab_title,
+                "old_meeting_ref": old_meeting_ref,
+                "new_meeting_ref": new_meeting_ref,
+                "protections_removed": len(protection_ids),
+            },
+        )
+        logger.info(
+            "Reset agenda sheet %s: %s → %s (removed %d protection(s))",
+            sheet_id, old_meeting_ref, new_meeting_ref, len(protection_ids),
+        )
+
+        return {
+            "tab_title": tab_title,
+            "old_meeting_ref": old_meeting_ref,
+            "new_meeting_ref": new_meeting_ref,
+            "cleared_cells": ["D7", "D9", "D11", "D16", "D17", "D18", "H7:K10000"],
+            "protections_removed": len(protection_ids),
+        }
 
     def get_last_row_value(
         self,
