@@ -1,4 +1,4 @@
-"""Template management — fetch and cache document templates from Google Drive."""
+"""Template management - fetch and cache document templates from Google Drive."""
 
 from __future__ import annotations
 

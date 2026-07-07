@@ -84,7 +84,7 @@ def html_only_email_bytes() -> bytes:
     msg["Subject"] = "HTML Only"
     msg["Message-ID"] = "<html789@example.com>"
 
-    # Only an HTML part — no plain text part.
+    # Only an HTML part - no plain text part.
     html_part = MIMEText(
         "<html><body><p>Hello &amp; welcome!</p></body></html>", "html", "utf-8"
     )

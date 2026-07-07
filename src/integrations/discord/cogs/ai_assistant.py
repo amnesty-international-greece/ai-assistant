@@ -1,4 +1,4 @@
-"""/ai-assistant cog — general-purpose admin & info commands.
+"""/ai-assistant cog - general-purpose admin & info commands.
 
 Replaces the previous ``/discord-admin`` group and standalone ``/stats``.
 Migrated commands:
@@ -7,8 +7,8 @@ Migrated commands:
 - ``stats``     (was ``/stats``)
 
 New commands added in this phase:
-- ``about``     — anyone-can-run version + description info
-- ``health``    — platform health (filled in by B6); stub for now
+- ``about``     - anyone-can-run version + description info
+- ``health``    - platform health (filled in by B6); stub for now
 
 Out-of-scope here (moved elsewhere):
 - ``classify-toggle``  → ``/forum auto-classify``  (built in B6 forum cog)
@@ -50,7 +50,7 @@ AMNESTY_BLACK = discord.Color.from_str("#000000")
 
 
 class AiAssistantCog(commands.Cog):
-    """`/ai-assistant` slash command group — general-purpose admin & info."""
+    """`/ai-assistant` slash command group - general-purpose admin & info."""
 
     class _AiAssistantCommands(app_commands.Group):
         def __init__(self, cog: "AiAssistantCog") -> None:
@@ -70,7 +70,7 @@ class AiAssistantCog(commands.Cog):
             notif_users = await self.cog._notif_store.list()
 
             embed = discord.Embed(
-                title="AI Assistant — Κατάσταση",
+                title="AI Assistant - Κατάσταση",
                 color=AMNESTY_YELLOW,
                 timestamp=datetime.now(timezone.utc),
             )
@@ -78,7 +78,10 @@ class AiAssistantCog(commands.Cog):
             embed.add_field(name="webhook_active", value=snap.get(STATE_WEBHOOK_ACTIVE, "?"), inline=True)
             embed.add_field(name="auto_classify", value=snap.get(STATE_AUTO_CLASSIFY, "?"), inline=True)
             embed.add_field(name="test_mode", value=snap.get(STATE_TEST_MODE_ACTIVE, "0"), inline=True)
-            embed.add_field(name="test_email", value=snap.get(STATE_TEST_EMAIL, "—"), inline=True)
+            # Prefer the Discord-set override; fall back to the config default
+            # (what workflows actually use) so the card never misleadingly blanks.
+            test_email_val = snap.get(STATE_TEST_EMAIL) or settings.testing.test_email or "-"
+            embed.add_field(name="test_email", value=test_email_val, inline=True)
             embed.add_field(name="Ενεργά κανάλια", value=str(len(ch_list)), inline=True)
             embed.add_field(name="Notif users", value=str(len(notif_users)), inline=True)
             embed.set_footer(text=f"AI Assistant Platform v{settings.app.version}")
@@ -105,7 +108,7 @@ class AiAssistantCog(commands.Cog):
             embed = discord.Embed(
                 title="AI Assistant Bot",
                 description=(
-                    "Πλατφόρμα αυτοματισμού για τη Διεθνή Αμνηστία — Ελληνικό Τμήμα.\n\n"
+                    "Πλατφόρμα αυτοματισμού για τη Διεθνή Αμνηστία - Ελληνικό Τμήμα.\n\n"
                     "Διαχειρίζεται προσκλήσεις ΔΣ, πρωτόκολλο εγγράφων, ενημερωτικά δελτία, "
                     "γέφυρα email↔Discord, και πολλά άλλα."
                 ),
@@ -115,19 +118,19 @@ class AiAssistantCog(commands.Cog):
             website = settings.urls.website or ""
             if website:
                 embed.add_field(name="Web", value=website, inline=True)
-            embed.set_footer(text="Διεθνής Αμνηστία — Ελληνικό Τμήμα")
+            embed.set_footer(text="Διεθνής Αμνηστία - Ελληνικό Τμήμα")
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        @app_commands.command(name="health", description="Πλατφόρμα — υγεία υπηρεσιών")
+        @app_commands.command(name="health", description="Πλατφόρμα - υγεία υπηρεσιών")
         @app_commands.default_permissions(administrator=True)
         async def cmd_health(self, interaction: discord.Interaction) -> None:
-            """Health summary — scheduler jobs, backups, Graph subscription expiry."""
+            """Health summary - scheduler jobs, backups, Graph subscription expiry."""
             await interaction.response.defer(ephemeral=True)
             from src.integrations.discord.brand import fmt_ts
             from src.integrations.onedrive import OneDriveClient
 
             embed = discord.Embed(
-                title="AI Assistant — Health",
+                title="AI Assistant - Health",
                 color=AMNESTY_YELLOW,
                 timestamp=datetime.now(timezone.utc),
             )
@@ -149,7 +152,7 @@ class AiAssistantCog(commands.Cog):
                 else:
                     embed.add_field(
                         name="Πρωτόκολλο backup",
-                        value="⚠️ Δεν υπάρχει — πρώτος κύκλος αρχειοθέτησης θα τον δημιουργήσει.",
+                        value="⚠️ Δεν υπάρχει - πρώτος κύκλος αρχειοθέτησης θα τον δημιουργήσει.",
                         inline=False,
                     )
             except Exception as exc:
@@ -177,7 +180,7 @@ class AiAssistantCog(commands.Cog):
                 else:
                     embed.add_field(
                         name="Graph subscriptions",
-                        value="—  (δεν υπάρχει ενεργή subscription)",
+                        value="-  (δεν υπάρχει ενεργή subscription)",
                         inline=False,
                     )
             except Exception as exc:
@@ -195,7 +198,7 @@ class AiAssistantCog(commands.Cog):
             app_commands.Choice(name="All time", value="all"),
         ])
         async def cmd_stats(self, interaction: discord.Interaction, range: str = "7d") -> None:
-            """Stats dashboard — S1 from the modernization plan.
+            """Stats dashboard - S1 from the modernization plan.
 
             Renders a Rich Embed in Amnesty palette with a SelectMenu that lets
             the viewer flip between time ranges in-place (no need to re-run
@@ -218,7 +221,7 @@ class AiAssistantCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.bot.tree.add_command(self._commands)
-        logger.info("AiAssistantCog loaded — /ai-assistant group registered")
+        logger.info("AiAssistantCog loaded - /ai-assistant group registered")
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command("ai-assistant")
@@ -264,7 +267,7 @@ class StatsDashboardView(discord.ui.View):
         per_cls = await store.per_classification(since=since)
 
         embed = discord.Embed(
-            title=f"Στατιστικά — {_RANGE_LABELS[self.current_range]}",
+            title=f"Στατιστικά - {_RANGE_LABELS[self.current_range]}",
             color=AMNESTY_YELLOW,
             timestamp=datetime.now(timezone.utc),
         )
@@ -278,7 +281,7 @@ class StatsDashboardView(discord.ui.View):
             lines = []
             for cs in per_ch[:5]:
                 ch = bot.get_channel(int(cs.channel_id)) if cs.channel_id else None
-                name = f"#{ch.name}" if ch else (cs.channel_id or "—")
+                name = f"#{ch.name}" if ch else (cs.channel_id or "-")
                 lines.append(f"{name}: {cs.count}")
             embed.add_field(name="Top channels", value="\n".join(lines), inline=False)
         if per_cls:

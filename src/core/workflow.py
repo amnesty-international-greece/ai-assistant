@@ -1,4 +1,4 @@
-"""Base workflow engine — state machine for multi-step workflows with approval gates."""
+"""Base workflow engine - state machine for multi-step workflows with approval gates."""
 
 from __future__ import annotations
 
@@ -107,6 +107,9 @@ class BaseWorkflow(ABC):
                     "[%s] Jumping to step %r (index %d)",
                     self.workflow_id, start_at, idx,
                 )
+            # Consume the flag: approve_and_resume() re-enters run() with the
+            # same context, and a second jump would loop back to this step.
+            self.context.pop("_start_at_step", None)
         self._transition(WorkflowState.IN_PROGRESS)
         log_action(
             workflow=self.name,

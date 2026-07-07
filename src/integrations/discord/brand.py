@@ -21,12 +21,12 @@ AMNESTY_YELLOW = discord.Color.from_str("#FFFF00")
 AMNESTY_BLACK = discord.Color.from_str("#000000")
 AMNESTY_WHITE = discord.Color.from_str("#FFFFFF")
 
-# Flame-orange accent — the one place we break the unified yellow.
+# Flame-orange accent - the one place we break the unified yellow.
 # Reserved for triage embeds ("needs human attention now") and data-viz
 # gradient endpoints.  Never use for routine chrome.
 AMNESTY_FLAME = discord.Color.from_str("#E63B11")
 
-# Convenience aliases — meaning-based; both map to the same yellow per the
+# Convenience aliases - meaning-based; both map to the same yellow per the
 # user's "unified Amnesty-yellow across all embeds" preference.
 BRAND_PRIMARY = AMNESTY_YELLOW
 BRAND_NEUTRAL = AMNESTY_BLACK
@@ -37,7 +37,7 @@ BRAND_NEUTRAL = AMNESTY_BLACK
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 BRAND_DIR = _PROJECT_ROOT / "brand"
 
-# 1284×1284 yellow candle on transparent/white background — used for the bot
+# 1284×1284 yellow candle on transparent/white background - used for the bot
 # avatar and as the source for the :amnesty: app emoji.
 CANDLE_YELLOW_PNG = (
     BRAND_DIR
@@ -64,13 +64,13 @@ async def ensure_app_emojis(bot: discord.Client) -> dict[str, discord.Emoji]:
     Idempotent: if an emoji with the target name already exists, we reuse it.
     Returns a dict ``{name: Emoji}`` for all successfully resolved emojis.
 
-    Best-effort — failures are logged but never propagated.  The embeds we
+    Best-effort - failures are logged but never propagated.  The embeds we
     render fall back to plain text when an emoji is missing.
     """
     resolved: dict[str, discord.Emoji] = {}
     try:
         existing = {e.name: e for e in await bot.fetch_application_emojis()}
-    except Exception as exc:  # pragma: no cover — Discord API hiccup
+    except Exception as exc:  # pragma: no cover - Discord API hiccup
         logger.warning("ensure_app_emojis: could not list app emojis: %s", exc)
         return resolved
 
@@ -86,7 +86,7 @@ async def ensure_app_emojis(bot: discord.Client) -> dict[str, discord.Emoji]:
                 emoji = await bot.create_application_emoji(name=name, image=f.read())
             resolved[name] = emoji
             logger.info("Uploaded app emoji :%s: (id=%s)", name, emoji.id)
-        except Exception as exc:  # pragma: no cover — Discord API hiccup
+        except Exception as exc:  # pragma: no cover - Discord API hiccup
             logger.warning("ensure_app_emojis: upload failed for %s: %s", name, exc)
     return resolved
 
@@ -120,21 +120,21 @@ def fmt_ts(dt: datetime, style: str = "F") -> str:
 
 
 def fmt_ts_full_and_relative(dt: datetime) -> str:
-    """Render ``<t:UNIX:F> (<t:UNIX:R>)`` — the most common pairing."""
+    """Render ``<t:UNIX:F> (<t:UNIX:R>)`` - the most common pairing."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     unix = int(dt.timestamp())
     return f"<t:{unix}:F> (<t:{unix}:R>)"
 
 
-# ── Flame palette (charts only — never for chrome) ──────────────────────────
+# ── Flame palette (charts only - never for chrome) ──────────────────────────
 #
 # The style guide reserves the yellow → orange → red gradient for data viz.
 # We use it exclusively in ``/stats``-style embeds via ``flame_bar=`` below.
 
 FLAME_PALETTE_HEX = ("#FFE600", "#FFA000", "#E63B11")
 
-# Public asset URL for the yellow candle — used as the default thumbnail on
+# Public asset URL for the yellow candle - used as the default thumbnail on
 # system / status embeds so the bot's voice carries a watermark.  Override
 # by passing ``thumbnail_url=`` directly to :func:`brand_embed`.
 CANDLE_THUMBNAIL_URL = (
@@ -178,13 +178,13 @@ def flame_bar(
     r"""Render a flame-gradient horizontal bar chart for embed descriptions.
 
     Uses Unicode block characters (``█`` filled / ``░`` empty) inside a
-    monospaced code block — readable in every Discord client without
+    monospaced code block - readable in every Discord client without
     relying on ANSI rendering (which Discord-mobile still ignores in 2026).
 
     Args:
         rows:       Either an ordered list of ``(label, value)`` tuples, or
                     a dict (in which case insertion order is preserved).
-        width:      Number of bar slots (default 22 — fits the embed's
+        width:      Number of bar slots (default 22 - fits the embed's
                     natural width on mobile without wrapping).
         max_value:  Scale all bars against this max.  Defaults to the
                     largest value in ``rows`` (so the leader is full-width).
@@ -221,7 +221,7 @@ def brand_embed(
     color: discord.Color | None = None,
     url: str | None = None,
     timestamp: datetime | None = None,
-    footer: str | None = "Διεθνής Αμνηστία — Ελληνικό Τμήμα",
+    footer: str | None = "Διεθνής Αμνηστία - Ελληνικό Τμήμα",
     thumbnail_url: str | None = None,
     image_url: str | None = None,
     flame_bars: list[tuple[str, int]] | dict[str, int] | None = None,
@@ -233,19 +233,19 @@ def brand_embed(
     Defaults: AMNESTY_YELLOW color, our footer text.  Pass ``footer=None`` to
     suppress the footer entirely.  ``timestamp=None`` defaults to NOW.
 
-    v2 additions (2026-05-27 — backwards compatible):
+    v2 additions (2026-05-27 - backwards compatible):
         thumbnail_url:  Small image top-right.  Pass the literal string
                         ``"candle"`` to use :data:`CANDLE_THUMBNAIL_URL`
-                        (the yellow candle watermark) — recommended for
+                        (the yellow candle watermark) - recommended for
                         status / system embeds so the bot's voice is
                         signed visually.
-        image_url:      Full-width hero image below the embed body — used
+        image_url:      Full-width hero image below the embed body - used
                         for event / live announcement embeds.
         flame_bars:     Either a dict ``{label: value}`` or list of
                         ``(label, value)`` tuples.  Renders a Unicode-block
                         flame-gradient bar chart and appends it to the
                         description.  Reserve for ``/stats`` and other
-                        chart-style embeds — never for chrome.
+                        chart-style embeds - never for chrome.
         author:         Small line above the title.  ``author_icon`` sets
                         the round avatar next to it.
     """
@@ -289,7 +289,7 @@ def status_embed(
     description: str | None = None,
     fields: Iterable[tuple[str, str, bool]] | None = None,
 ) -> discord.Embed:
-    """Status / health embed — candle watermark in the thumbnail slot.
+    """Status / health embed - candle watermark in the thumbnail slot.
 
     Use for ``/status``, scheduled health pings, "all-systems-go" replies.
     The candle in the top-right makes it instantly recognizable as a
@@ -314,7 +314,7 @@ def event_live_embed(
     url: str | None = None,
     fields: Iterable[tuple[str, str, bool]] | None = None,
 ) -> discord.Embed:
-    """Event / live-announcement embed — full-width hero image.
+    """Event / live-announcement embed - full-width hero image.
 
     Use for protest live-posts, public event announcements, anything that
     deserves a poster treatment rather than a system-message look.  The
@@ -340,15 +340,15 @@ def stats_embed(
     description: str | None = None,
     range_label: str | None = None,
 ) -> discord.Embed:
-    """Stats / metrics embed — flame-gradient bar chart in the body.
+    """Stats / metrics embed - flame-gradient bar chart in the body.
 
     Use for ``/stats``, traffic dashboards, "top channels last 30 days"
-    summaries.  The flame palette is reserved for this register — using
+    summaries.  The flame palette is reserved for this register - using
     it elsewhere dilutes its meaning.
     """
     return brand_embed(
         title=title,
         description=description,
-        author=f"Στατιστικά γέφυρας · {range_label}" if range_label else "Στατιστικά γέφυρας",
+        author=f"Στατιστικά γέφυρας - {range_label}" if range_label else "Στατιστικά γέφυρας",
         flame_bars=bars,
     )

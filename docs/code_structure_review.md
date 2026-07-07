@@ -1395,12 +1395,12 @@ C:\USERS\DELL\ONEDRIVE\ΥΠΟΛΟΓΙΣΤΉς\ΔΙΕΘΝΉς ΑΜΝΗΣΤΊΑ\AI
     └───__pycache__
 
 Here is the code along with the Claude Code chat that produced it:
-# Code Structure — Technical Review
+# Code Structure - Technical Review
 
 **Date:** 2026-05-26
 **Reviewer:** Claude (project's own AI agent)
 **Scope:** Directory layout and file organization of the `AI in AI` repository as of today.
-**Stance:** Honest — calls out real issues alongside what works. Nothing is uncritical.
+**Stance:** Honest - calls out real issues alongside what works. Nothing is uncritical.
 
 > _One bias to declare up front: I wrote much of this code, so I'm grading my own
 > work. I've tried to be harsher than I'd be on someone else's, not gentler._
@@ -1441,7 +1441,7 @@ So far so reasonable. **The bones are fine.** The problems are in the meat.
 
 ## 2. What Actually Works Well
 
-These aren't filler — they're decisions worth keeping:
+These aren't filler - they're decisions worth keeping:
 
 ### 2.1 `src/` layout
 Standard Python `src/` layout properly separates source from configuration,
@@ -1453,7 +1453,7 @@ ambiguity. Pyproject is set up correctly for this (`tool.setuptools.packages.fin
   scheduler, the event bus) that don't know about specific business processes.
 - `workflows/` holds business processes (archive, board meeting invitation,
   board meeting minutes) that compose `core/` primitives.
-- `cli/` and `api/` are pure dispatchers — they translate user/HTTP intent
+- `cli/` and `api/` are pure dispatchers - they translate user/HTTP intent
   into workflow invocations.
 
 This means a refactor of (say) the SQLite layer touches `core/audit.py` only,
@@ -1462,7 +1462,7 @@ labelling.**
 
 ### 2.3 `integrations/` distinguished from `workflows/`
 External APIs (OneDrive, Brevo, Zoom, Gmail, M365 Graph) live in
-`integrations/`. They're thin clients with no business logic — they don't
+`integrations/`. They're thin clients with no business logic - they don't
 know what "πρωτόκολλο" or "συνεδρίαση" mean. The mapping happens in
 `workflows/`. **This is the right boundary.** It means swapping Brevo for
 another mailing platform is one file, not twelve.
@@ -1473,13 +1473,13 @@ Discord-specific suite. Not all test directories think to do this; this one
 did. Mostly. (More on the "mostly" below.)
 
 ### 2.5 Brand assets in their own tree
-`brand/` keeps logos, fonts, icons in one place — not scattered through
+`brand/` keeps logos, fonts, icons in one place - not scattered through
 `src/` or `assets/`. Already paying off: the bot's `:amnesty:` app emoji
 loads from a known path in this directory.
 
 ---
 
-## 3. What Doesn't Work — Honest Issues
+## 3. What Doesn't Work - Honest Issues
 
 These are real problems, ranked by severity.
 
@@ -1521,7 +1521,7 @@ The `data/` directory currently contains:
 | `backups/protokollo_latest.xlsx` | recovery backup | `data/` ✓ |
 | `inbox/` | tempfile workspace | `data/tmp/` or `/tmp/` |
 | `output/` | PDF outputs awaiting archival | `data/` ✓ |
-| `minutes/` | unclear — empty in this run | unclear |
+| `minutes/` | unclear - empty in this run | unclear |
 | `email_templates/` | HTML email templates | **`assets/email_templates/`** (these are CODE-LIKE, not data) |
 | `prompts/` | LLM prompt files | **`src/prompts/`** (they're consumed by `src/core/claude.py`) |
 | `google_credentials.json` | **SECRET** OAuth client config | **`.env`-adjacent or `secrets/`** |
@@ -1592,7 +1592,7 @@ This file is 460+ lines and owns:
 - `graph_subscriptions` table
 
 That's **10+ tables, all defined as one big `_SCHEMA` string, and helpers
-for each interleaved**. It's grown organically — every new feature added
+for each interleaved**. It's grown organically - every new feature added
 a table here.
 
 It still works (368 tests pass), but the cohesion is weak: `audit.py` knows
@@ -1643,7 +1643,7 @@ src/cli/
 Same caveat: not urgent. The file IS still navigable. Split when it stops
 being.
 
-### 3.6 ⚠️ `tests/` is mostly flat — won't scale
+### 3.6 ⚠️ `tests/` is mostly flat - won't scale
 
 ```
 tests/
@@ -1715,16 +1715,16 @@ docs/
 ├── plans/                              ← subdirectory ✓
 ├── workflows/                          ← subdirectory ✓
 ├── discord_bot_modernization.md        ← root
-├── google_apps_script_trigger.js       ← root, AND IT'S NOT DOCS — it's a script
+├── google_apps_script_trigger.js       ← root, AND IT'S NOT DOCS - it's a script
 ├── phase3_email_intake_setup.md        ← root
 └── protokollo_categories_draft.md      ← root
 ```
 
 Two issues:
-1. **`google_apps_script_trigger.js` is misfiled** — it's executable code,
+1. **`google_apps_script_trigger.js` is misfiled** - it's executable code,
    not documentation. Should live in `scripts/` (or its own dedicated dir
    if there's more Apps Script coming).
-2. The 3 root-level `.md` files should be in `docs/plans/` — they're
+2. The 3 root-level `.md` files should be in `docs/plans/` - they're
    exactly the kind of in-progress design docs that `plans/` exists for.
 
 **Concrete fix (5 minutes):**
@@ -1736,7 +1736,7 @@ mv docs/protokollo_categories_draft.md docs/plans/
 ```
 
 Bonus: the runbook (`phase3_email_intake_setup.md`) is operational, not
-planning — it might deserve its own `docs/runbooks/` directory. Today
+planning - it might deserve its own `docs/runbooks/` directory. Today
 there's only one runbook so a single dir is overkill; once there are 3+,
 it's worth it.
 
@@ -1793,20 +1793,20 @@ src/integrations/m365/
 └── subscriptions.py    ← was graph_subscriptions.py
 ```
 
-This actually eliminates duplication — the 4 current files each implement
+This actually eliminates duplication - the 4 current files each implement
 `_get_token()` / `_persist_cache()` separately with near-identical code. A
 shared `m365/auth.py` would shrink the codebase.
 
 Same idea could apply to `google_drive.py` + `gmail.py` (both use the
 Google OAuth flow), but those are less duplicated so the win is smaller.
 
-### 3.10 🟢 Minor — `__pycache__` in source tree visual noise
+### 3.10 🟢 Minor - `__pycache__` in source tree visual noise
 
 Every package has `__pycache__/` next to its `.py` files. They're properly
-gitignored, but they fill the directory tree visually (as we saw — the
+gitignored, but they fill the directory tree visually (as we saw - the
 original tree dump was 70% `__pycache__` lines).
 
-**No fix needed** — this is normal Python. Just a reminder that
+**No fix needed** - this is normal Python. Just a reminder that
 `find -type d -name __pycache__ -exec rm -rf {} +` is your friend before
 sharing a tree.
 
@@ -1836,7 +1836,7 @@ factory, timestamp helpers. The cogs all import from here. Means future
 
 ### 4.4 Tests don't import each other
 None of the test files share imports beyond pytest fixtures and the
-production code itself. That's healthy — tests stay independent and one
+production code itself. That's healthy - tests stay independent and one
 broken test doesn't cascade.
 
 ### 4.5 Configuration: `.env` + `config.yaml` split
@@ -1865,8 +1865,8 @@ If I had a quiet half-day, this is the order I'd do things:
 | 10 | Move project to ASCII-only path | 20 min + revalidate | medium | Windows quality of life |
 | ❌ | Split `src/core/audit.py` (when > 800 lines) | 1-2 h | medium | not yet |
 
-Items 1-5 are pure house-keeping — 50 minutes total, no risk.
-Items 6-10 are real refactors — do them when motivated, not under pressure.
+Items 1-5 are pure house-keeping - 50 minutes total, no risk.
+Items 6-10 are real refactors - do them when motivated, not under pressure.
 
 ---
 
@@ -1874,22 +1874,22 @@ Items 6-10 are real refactors — do them when motivated, not under pressure.
 
 Just as important as the fix list:
 
-- **The `src/` layout** — don't flatten it, don't break `src/core` vs
+- **The `src/` layout** - don't flatten it, don't break `src/core` vs
   `src/workflows` vs `src/integrations`. They're earning their keep.
-- **The Discord cogs structure** — `cogs/` subdirectory with one file per
+- **The Discord cogs structure** - `cogs/` subdirectory with one file per
   feature area is idiomatic and the right call for discord.py.
-- **The config split** — `.env` for secrets + `config.yaml` for structured
+- **The config split** - `.env` for secrets + `config.yaml` for structured
   config + pydantic-validated `settings`. Keep this exactly as-is.
-- **The audit log** — one centralized `log_action()` everywhere, audit_log
+- **The audit log** - one centralized `log_action()` everywhere, audit_log
   table queryable via CLI. Don't fragment this even when you split storage.
-- **Brand assets in `brand/`** — not in `src/`, not in `assets/`. They're
+- **Brand assets in `brand/`** - not in `src/`, not in `assets/`. They're
   a self-contained artifact bundle. Keep them where they are.
 
 ---
 
 ## 7. Closing Take
 
-**This codebase is in genuinely good shape.** The bones are right —
+**This codebase is in genuinely good shape.** The bones are right -
 `src/` layout, layered architecture, typed config, structured tests. The
 issues I called out are growth-pain issues: a directory that got loaded
 up too quickly, a tempfile leak that nobody noticed, some scripts that
@@ -1899,7 +1899,7 @@ That's the kind of debt you accumulate when shipping features fast, and
 the kind that pays back compound interest. **Get items 1-5 done this week;
 they're 50 minutes total and they make every future search/grep cleaner.**
 
-Items 6+ are judgment calls — defer until the module sizes _force_ your
+Items 6+ are judgment calls - defer until the module sizes _force_ your
 hand.
 
 The single thing I'd most defend if challenged: the **boundary between
@@ -1907,15 +1907,15 @@ The single thing I'd most defend if challenged: the **boundary between
 integration starts knowing about πρωτόκολλο numbers is the day the
 codebase starts to rot.
 
-_— Claude_
+_- Claude_
 
 ---
 
-## 8. RESULTS — what actually landed (2026-05-26, second pass)
+## 8. RESULTS - what actually landed (2026-05-26, second pass)
 
 Update written after executing the prioritized fix list end-to-end.
 Every item below is verified against the **369-passing test suite** as
-of the second pass — no item is "in progress"; everything is either
+of the second pass - no item is "in progress"; everything is either
 done with tests green, or explicitly deferred with reasons.
 
 ### 8.1 Fixes that landed
@@ -1924,7 +1924,7 @@ done with tests green, or explicitly deferred with reasons.
 |---|---|---|---|
 | 1 | Delete 27+ stale `m365_intake_*` tempdirs + 2 `tmp_*` orphans in `data/` root | ✅ done | `ls data/inbox` empty; `ls data/tmp_*` returns "no such file" |
 | 2 | Fix the `process_inbox_message` tempdir leak | ✅ done | New regression test `test_intake_cleans_up_tempdir_on_success` pins the contract |
-| 2a | Refactor to use `tempfile.TemporaryDirectory()` context manager (per Gemini/ChatGPT meta-review — see §9) | ✅ done | 369/369 still green; ~30 lines of try/finally + helper-function plumbing collapsed into a `with` block |
+| 2a | Refactor to use `tempfile.TemporaryDirectory()` context manager (per Gemini/ChatGPT meta-review - see §9) | ✅ done | 369/369 still green; ~30 lines of try/finally + helper-function plumbing collapsed into a `with` block |
 | 2b | Add scheduler job for stale-tempdir cleanup (belt-and-braces) | ✅ done | `_inbox_tmpdir_cleanup_job` runs daily, removes `m365_intake_*` older than 7d |
 | 3 | Move `docs/google_apps_script_trigger.js` → `scripts/apps_script/` | ✅ done | Misfiled JS script no longer lives in docs/ |
 | 4 | Move 3 root-level `.md` plans in `docs/` → `docs/plans/` | ✅ done | `discord_bot_modernization.md`, `phase3_email_intake_setup.md`, `protokollo_categories_draft.md` |
@@ -1932,16 +1932,16 @@ done with tests green, or explicitly deferred with reasons.
 | 6 | Move `data/email_templates/` → `assets/email_templates/` | ✅ done | `src/core/email_templates.py` updated; all callers' docstrings refreshed |
 | 7 | Move `data/prompts/` → `src/prompts/` | ✅ done | `config.yaml` + `src/config.py` default updated; `test_config.py` updated |
 | 8 | Consolidate M365 stack into `src/integrations/m365/` subpackage | ✅ done | New `m365/auth.py` provides `M365GraphAuthMixin` + `M365AuthRequired`; 4 client files moved (`onedrive.py`, `mail.py`, `inbox.py`, `subscriptions.py`); duplicate `__init__` / `_get_token` / `_persist_cache` / `_headers` collapsed; **~150 lines of duplication eliminated**; old paths retained as 1-line shim re-exports for backwards compat; `tests/integrations/test_onedrive.py` patch-paths updated to point at the new module locations |
-| 9 | Mirror `tests/` to `src/` structure | ✅ done | 17 flat test files now organized into `tests/core/`, `tests/integrations/`, `tests/workflows/`, `tests/cli/`, `tests/api/`, `tests/utils/`, `tests/documents/`. Three tests had hardcoded `Path(__file__).parent.parent` — updated to `parents[2]` |
+| 9 | Mirror `tests/` to `src/` structure | ✅ done | 17 flat test files now organized into `tests/core/`, `tests/integrations/`, `tests/workflows/`, `tests/cli/`, `tests/api/`, `tests/utils/`, `tests/documents/`. Three tests had hardcoded `Path(__file__).parent.parent` - updated to `parents[2]` |
 
 ### 8.2 Deferred (explicit reasons, not laziness)
 
 | Item | Why deferred |
 |---|---|
-| Split `src/core/audit.py` into per-domain storage modules | **Acknowledged the meta-reviewers were right** (see §9) — cohesion is about responsibility, not line count. But the refactor would touch a 10-table schema and the connection-management layer; that's a multi-hour focused effort I'd rather do as its own session, not chained onto unrelated cleanup. Tracked as the #1 outstanding architectural debt. |
+| Split `src/core/audit.py` into per-domain storage modules | **Acknowledged the meta-reviewers were right** (see §9) - cohesion is about responsibility, not line count. But the refactor would touch a 10-table schema and the connection-management layer; that's a multi-hour focused effort I'd rather do as its own session, not chained onto unrelated cleanup. Tracked as the #1 outstanding architectural debt. |
 | Split `src/cli/commands.py` (currently 1500+ lines) | Less urgent than `audit.py`. Will split when it crosses 2000 lines or when a single subcommand grows enough to warrant its own file. |
 | Move project to ASCII-only path | **Replaced by a better fix** per the meta-reviewers (see §9): set `PYTHONUTF8=1`. The filesystem path stays. |
-| Strip stale tmp files at `data/` root that pre-date this session | Done — the analysis-report `.md` files at `data/` root were left alone; they're legitimate analysis artifacts (the user values them), not tmp orphans |
+| Strip stale tmp files at `data/` root that pre-date this session | Done - the analysis-report `.md` files at `data/` root were left alone; they're legitimate analysis artifacts (the user values them), not tmp orphans |
 
 ### 8.3 Final test count
 
@@ -1950,7 +1950,7 @@ $ python -m pytest tests/ -q
 369 passed, 2 warnings in 30s
 ```
 
-Started at 368 → added 1 regression test for the tempdir leak (now 369). Zero test logic was modified to "make tests pass" — only patch paths in `tests/integrations/test_onedrive.py` were updated to reflect the M365 module move (bookkeeping, not test rewriting).
+Started at 368 → added 1 regression test for the tempdir leak (now 369). Zero test logic was modified to "make tests pass" - only patch paths in `tests/integrations/test_onedrive.py` were updated to reflect the M365 module move (bookkeeping, not test rewriting).
 
 ---
 
@@ -1958,7 +1958,7 @@ Started at 368 → added 1 regression test for the tempdir leak (now 369). Zero 
 
 Four independent AI reviews of the original report (Gemini, DeepAI, ChatGPT, Gemini-Deep-Research) flagged specific critiques. Honest replies to each:
 
-### 9.1 Gemini — "the tempdir fix is un-Pythonic; use `tempfile.TemporaryDirectory()`"
+### 9.1 Gemini - "the tempdir fix is un-Pythonic; use `tempfile.TemporaryDirectory()`"
 
 **Fully conceded.** Gemini was right and so was ChatGPT (it landed the same point). The original fix wrapped the workflow in a manual `try/finally` + `shutil.rmtree`, which works but reinvents what the stdlib already gives you cleanly. The follow-up commit (§8.1 item 2a above) replaces the pattern with:
 
@@ -1971,24 +1971,24 @@ with tempfile.TemporaryDirectory(prefix="m365_intake_", dir=_INBOX_DIR) as tmpdi
 
 That's 5 lines instead of 30 (try/finally block + helper function), `shutil` import dropped, identical semantics, easier to read. **The 369-test suite passes unchanged**, including the leak regression test.
 
-### 9.2 Gemini & ChatGPT — "the 800-line framing for `audit.py` is wrong; cohesion is about responsibility"
+### 9.2 Gemini & ChatGPT - "the 800-line framing for `audit.py` is wrong; cohesion is about responsibility"
 
-**Fully conceded.** That framing was sloppy. The file's actual problem is that it owns ~10 tables across unrelated domains (Discord state, Graph subscriptions, archive reservations, audit log itself) — and that's a cohesion violation at any line count.
+**Fully conceded.** That framing was sloppy. The file's actual problem is that it owns ~10 tables across unrelated domains (Discord state, Graph subscriptions, archive reservations, audit log itself) - and that's a cohesion violation at any line count.
 
 That said, **I'm still deferring the split** (§8.2), not because of line count but because:
-- The schema is currently one big `_SCHEMA` string handed to `executescript` in one `init_db()` call. Splitting it cleanly means designing how multiple modules contribute schema fragments without breaking initialization ordering — that's a real refactor, not a rename.
+- The schema is currently one big `_SCHEMA` string handed to `executescript` in one `init_db()` call. Splitting it cleanly means designing how multiple modules contribute schema fragments without breaking initialization ordering - that's a real refactor, not a rename.
 - The connection-management code (`_get_connection()`, `_DB_PATH`, `_CONNECTION`) is referenced by **every** caller, often directly via `from src.core.audit import _get_connection`. Moving it forces touching ~15 files.
 - It's the kind of change that's easy to half-finish, leaving the codebase in a worse state than either before or after. I'd rather do it as a focused dedicated session than tacked onto file-organization cleanup.
 
 **Updated framing**: this is the **#1 outstanding architectural debt**, not "wait for it to hit 800 lines". Will tackle when there's a clean window.
 
-### 9.3 Gemini, DeepAI, ChatGPT — "PYTHONUTF8=1 is the principled fix for the Greek-path issue, not moving the folder"
+### 9.3 Gemini, DeepAI, ChatGPT - "PYTHONUTF8=1 is the principled fix for the Greek-path issue, not moving the folder"
 
 **Fully conceded.** The path-move was a band-aid; the env-var is the right fix. Adding it to the project's `.env.example` (and the runtime invocation) makes Python use UTF-8 for I/O regardless of the system locale.
 
-**Action item carried forward** (not done in this session — it's a deployment-environment change, not a code change): add `PYTHONUTF8=1` to the documented setup steps, and to any process supervisor / systemd unit / Docker `ENV` if/when those exist. The path can stay where it is.
+**Action item carried forward** (not done in this session - it's a deployment-environment change, not a code change): add `PYTHONUTF8=1` to the documented setup steps, and to any process supervisor / systemd unit / Docker `ENV` if/when those exist. The path can stay where it is.
 
-### 9.4 Gemini — "`data/prompts → src/prompts` is debatable; prompts are config, not code"
+### 9.4 Gemini - "`data/prompts → src/prompts` is debatable; prompts are config, not code"
 
 **Partially conceded, but standing by the call.**
 
@@ -1996,89 +1996,89 @@ Gemini's argument: prompts are non-developer-editable text that change frequentl
 
 My reasoning for `src/prompts/`:
 - These prompts are not edited by non-developers in this project. The only people editing them are the same engineers editing the Python files that consume them.
-- The .md files are versioned with the code that depends on them. When a prompt changes, the workflow that uses it usually changes too — keeping them in lockstep is easier when they're side by side.
+- The .md files are versioned with the code that depends on them. When a prompt changes, the workflow that uses it usually changes too - keeping them in lockstep is easier when they're side by side.
 - The `prompts_dir` config setting still exists, so an operator who genuinely wanted to move them out of `src/` for editorial workflow reasons can override the path at deploy time.
 
 **Verdict**: legitimate disagreement, not a defect. The compromise is the config override.
 
-### 9.5 ChatGPT — "the more durable fix for the leak is deterministic cleanup at the point of creation"
+### 9.5 ChatGPT - "the more durable fix for the leak is deterministic cleanup at the point of creation"
 
-**Conceded and implemented** — see §9.1 above; the `TemporaryDirectory()` context manager IS that deterministic-cleanup-at-creation pattern. The scheduler job (8.1 item 2b) remains as belt-and-braces, not the primary fix.
+**Conceded and implemented** - see §9.1 above; the `TemporaryDirectory()` context manager IS that deterministic-cleanup-at-creation pattern. The scheduler job (8.1 item 2b) remains as belt-and-braces, not the primary fix.
 
-### 9.6 Gemini Deep Research — multiple meta-architectural critiques
+### 9.6 Gemini Deep Research - multiple meta-architectural critiques
 
 This review went broader than directory-structure feedback into deployment/security territory. Honest item-by-item:
 
-**OneDrive as the project root is an antipattern.** Strongly agreed. The file-locking and path-resolution issues are real; I've personally hit them during this session's debugging. The project's `data/amnesty.db` (SQLite) is particularly at risk — OneDrive holding a file lock during a transaction commit can corrupt the DB. **Carried forward**: when the project moves to a server environment, get it off OneDrive entirely; for now, the `.gitignore` excludes the worst offenders (`.venv/`, `data/amnesty.db`, `data/tokens.json`) from sync.
+**OneDrive as the project root is an antipattern.** Strongly agreed. The file-locking and path-resolution issues are real; I've personally hit them during this session's debugging. The project's `data/amnesty.db` (SQLite) is particularly at risk - OneDrive holding a file lock during a transaction commit can corrupt the DB. **Carried forward**: when the project moves to a server environment, get it off OneDrive entirely; for now, the `.gitignore` excludes the worst offenders (`.venv/`, `data/amnesty.db`, `data/tokens.json`) from sync.
 
-**Anthropic SDK is on `0.89.0`, current is `0.104.x`.** The actual currently-installed version per `pip list` would need verification (the SDK is pinned in `pyproject.toml`). Either way, periodic dependency refresh is a real operational practice — **carried forward as a follow-up**: run `pip list --outdated` once a quarter and bump major-version-stable libs that have security or feature wins.
+**Anthropic SDK is on `0.89.0`, current is `0.104.x`.** The actual currently-installed version per `pip list` would need verification (the SDK is pinned in `pyproject.toml`). Either way, periodic dependency refresh is a real operational practice - **carried forward as a follow-up**: run `pip list --outdated` once a quarter and bump major-version-stable libs that have security or feature wins.
 
-**`on_raw_reaction_add` over `on_reaction_add` for cache-evicted message handling.** Useful Discord-specific advice. Not currently relevant — Phase 4 of the Discord modernization plan (deferred per user's edits) was where reactions would have come in. If/when we add reaction-driven flows, we'll use the raw events.
+**`on_raw_reaction_add` over `on_reaction_add` for cache-evicted message handling.** Useful Discord-specific advice. Not currently relevant - Phase 4 of the Discord modernization plan (deferred per user's edits) was where reactions would have come in. If/when we add reaction-driven flows, we'll use the raw events.
 
 **Microservices / OpenRouter abstraction.** Premature for a 1-server, internally-deployed bot. Worth revisiting only if Amnesty Greece's Discord install count goes above ~5 servers or we hit Anthropic rate limits in production. Not a near-term concern.
 
-**APScheduler must be `AsyncIOScheduler`.** Already is — `src/core/scheduler.py` uses `AsyncIOScheduler(timezone="Europe/Athens")` exactly because the bot's event loop would stall on a `BlockingScheduler`. Critique already addressed before it was raised.
+**APScheduler must be `AsyncIOScheduler`.** Already is - `src/core/scheduler.py` uses `AsyncIOScheduler(timezone="Europe/Athens")` exactly because the bot's event loop would stall on a `BlockingScheduler`. Critique already addressed before it was raised.
 
 **Multi-process job locking / distributed job store.** Single-process deployment today, so this is over-engineering. The day we run more than one worker process, switch to a PostgreSQL job store + Redis-based distributed lock. Until then, in-memory APScheduler is correct.
 
-**Cryptographic primitives (Rust-backed `cryptography` library).** No action — the library is what it is; nothing to change.
+**Cryptographic primitives (Rust-backed `cryptography` library).** No action - the library is what it is; nothing to change.
 
-**Discord least-privilege intents.** Already done. The bot requests `Intents.default() + messages + message_content + guild_scheduled_events + members`. No `Administrator` is granted (despite the slash-command groups declaring `default_permissions=Administrator` — that's UI gating, not bot-level admin).
+**Discord least-privilege intents.** Already done. The bot requests `Intents.default() + messages + message_content + guild_scheduled_events + members`. No `Administrator` is granted (despite the slash-command groups declaring `default_permissions=Administrator` - that's UI gating, not bot-level admin).
 
-**Prompt injection / input sanitization.** Worth a hardening pass. **Carried forward** for a dedicated security review session — out of scope for code structure cleanup.
+**Prompt injection / input sanitization.** Worth a hardening pass. **Carried forward** for a dedicated security review session - out of scope for code structure cleanup.
 
 **Secrets in HashiCorp Vault instead of `.env`.** Over-engineering for the current deployment scale. `.env` + `.gitignore` is correct for a single-host self-hosted deployment. Vault would make sense if multi-host or if production secrets needed rotation by non-engineers.
 
 ### 9.7 Closing meta-take
 
 The four reviewers caught:
-- One genuine code-quality improvement (the `TemporaryDirectory` idiom) — **landed**
-- Two genuine framing errors in the original review (audit.py cohesion-vs-length, path-issue root cause) — **acknowledged in this update**
-- One legitimate philosophical disagreement (prompts placement) — **standing my ground**
-- Several broader-scope recommendations (OneDrive removal, SDK refresh, security hardening) — **carried forward as separate work**
+- One genuine code-quality improvement (the `TemporaryDirectory` idiom) - **landed**
+- Two genuine framing errors in the original review (audit.py cohesion-vs-length, path-issue root cause) - **acknowledged in this update**
+- One legitimate philosophical disagreement (prompts placement) - **standing my ground**
+- Several broader-scope recommendations (OneDrive removal, SDK refresh, security hardening) - **carried forward as separate work**
 
 The review was useful precisely because it disagreed with me on specifics. Worth doing again next major-debt-paydown session.
 
-_— Claude (second pass, 2026-05-26)_
+_- Claude (second pass, 2026-05-26)_
 
 ## Claude Code Chat
 What the report covers
-Section 1 — At a glance — the actual project tree filtered down to ~10 top-level dirs, no .venv / __pycache__ noise.
+Section 1 - At a glance - the actual project tree filtered down to ~10 top-level dirs, no .venv / __pycache__ noise.
 
-Section 2 — What works (5 items)
+Section 2 - What works (5 items)
 
 src/ layout
 Layered core/ → workflows/ → cli/+api/ split
 integrations/ properly separated from workflows/ (the "don't ever blur this boundary" point at the end)
 Tests have fixtures/ + discord/ subdirs
 Brand assets in their own tree
-Section 3 — Real issues (10 items, ranked by severity)
+Section 3 - Real issues (10 items, ranked by severity)
 
-⛔ data/inbox/ has 27+ orphaned tempdirs — actual leak bug from email_intake.py's tempfile.mkdtemp(...) that never gets cleaned up
-data/ is a kitchen sink — mixes DB, secrets, tempfiles, templates, prompts, reports, output, and stale tmp files in one folder
-Greek characters in the project path — already caused cp1253 encoding errors during this session
-src/core/audit.py overloaded — 460+ lines, owns 10+ tables across unrelated domains
+⛔ data/inbox/ has 27+ orphaned tempdirs - actual leak bug from email_intake.py's tempfile.mkdtemp(...) that never gets cleaned up
+data/ is a kitchen sink - mixes DB, secrets, tempfiles, templates, prompts, reports, output, and stale tmp files in one folder
+Greek characters in the project path - already caused cp1253 encoding errors during this session
+src/core/audit.py overloaded - 460+ lines, owns 10+ tables across unrelated domains
 src/cli/commands.py is 1500+ lines
-tests/ is flat (17 files at root) — won't scale past ~30
+tests/ is flat (17 files at root) - won't scale past ~30
 docs/ has misfiled JS script + 3 root-level .md files
 scripts/ has 4 one-off scripts of which 3 are clearly stale
 src/integrations/ mixes deep (discord/) and flat (4 separate M365 files duplicating auth logic)
 __pycache__ visual noise (no fix needed)
-Section 4 — Hidden wins (5) — things to preserve when refactoring
+Section 4 - Hidden wins (5) - things to preserve when refactoring
 
 Minimal workflow base class
 Event bus as a named primitive
 Discord brand.py consolidation
 Test isolation
 .env + config.yaml + Pydantic split
-Section 5 — Prioritized action list with effort/risk/value per item. Items 1-5 are 50 minutes total, zero risk. Items 6-10 are real refactors to defer until motivated.
+Section 5 - Prioritized action list with effort/risk/value per item. Items 1-5 are 50 minutes total, zero risk. Items 6-10 are real refactors to defer until motivated.
 
-Section 6 — What NOT to change — the 5 things I'd defend if challenged in a code review.
+Section 6 - What NOT to change - the 5 things I'd defend if challenged in a code review.
 
-Section 7 — Closing take — overall assessment + the one principle I'd most defend.
+Section 7 - Closing take - overall assessment + the one principle I'd most defend.
 
 The single most important finding
-The data/inbox/m365_intake_* tempdir leak. It's a real bug I wrote during Phase 3. Each successful email-route archive run creates a tempdir that never gets cleaned up. There are 27 from May 26 alone. If you want, I can fix it as a one-line follow-up commit right now — it's a try/finally + shutil.rmtree away.
+The data/inbox/m365_intake_* tempdir leak. It's a real bug I wrote during Phase 3. Each successful email-route archive run creates a tempdir that never gets cleaned up. There are 27 from May 26 alone. If you want, I can fix it as a one-line follow-up commit right now - it's a try/finally + shutil.rmtree away.
 
 can you do all these fixes and cleanups? and update the code review md after verifying they are properly addressed and nothing broke?
 
@@ -2096,7 +2096,7 @@ Updated todos
 Updated todos
 Updated todos
 Updated todos
-Starting with Task #1 — the safest one:
+Starting with Task #1 - the safest one:
 
 
 Ran a command, used a tool
@@ -2111,7 +2111,7 @@ no tmp_ orphans (good)
 Task #1 done. Inbox empty, orphans gone.
 
 Updated todos
-Task #2 — fix the tempdir leak:
+Task #2 - fix the tempdir leak:
 
 
 Searched code, read a file, used a tool
@@ -2128,7 +2128,7 @@ output_mode: content
 221:    pdf_path = tmpdir / pdf_name
 Read
 email_intake.py
-(213–237, 213–442)
+(213-237, 213-442)
 C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI in AI\src\workflows\email_intake.py
         return {"outcome": "no_pdf"}
 
@@ -2142,7 +2142,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
     await inbox.download_attachment(message_id, pdf_meta["id"], pdf_path)
 
     # Test-sender check: emails from settings.testing.test_email are routed
-    # through the archive workflow in TEST MODE — no SharePoint upload, no
+    # through the archive workflow in TEST MODE - no SharePoint upload, no
     # πρωτόκολλο write, and the workflow rolls back on completion.  This
     # lets the developer drive a real end-to-end run from a personal inbox
     # without polluting production state.
@@ -2168,7 +2168,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
     await inbox.download_attachment(message_id, pdf_meta["id"], pdf_path)
 
     # Test-sender check: emails from settings.testing.test_email are routed
-    # through the archive workflow in TEST MODE — no SharePoint upload, no
+    # through the archive workflow in TEST MODE - no SharePoint upload, no
     # πρωτόκολλο write, and the workflow rolls back on completion.  This
     # lets the developer drive a real end-to-end run from a personal inbox
     # without polluting production state.
@@ -2182,7 +2182,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
             details={"reason": "sender matches settings.testing.test_email"},
         )
         logger.info(
-            "Email from %s matches testing.test_email — forcing TEST MODE",
+            "Email from %s matches testing.test_email - forcing TEST MODE",
             sender_email,
         )
 
@@ -2214,7 +2214,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         return {"outcome": "failed", "workflow_id": wf.workflow_id, "error": str(e)}
 
     if result.get("status") != "completed":
-        # Special case: Phase 4 collision gate — workflow is parked awaiting
+        # Special case: Phase 4 collision gate - workflow is parked awaiting
         # secgen's `archive resolve` decision.  Reply with a clear "queued for
         # review" message rather than a generic failure.
         pending_collision = (wf.context or {}).get("pending_collision")
@@ -2244,7 +2244,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
                     to=sender_email,
                     workflow="email_intake",
                 )
-            except Exception as e:  # pragma: no cover — best-effort
+            except Exception as e:  # pragma: no cover - best-effort
                 logger.warning("Failed to send collision-pending reply: %s", e)
             log_action(
                 workflow="email_intake",
@@ -2263,7 +2263,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
                 "pending_collision": pending_collision,
             }
 
-        # Workflow failed cleanly — record + reply
+        # Workflow failed cleanly - record + reply
         mark_email_seen(imid, workflow_id=wf.workflow_id, outcome="failed",
                         notes=result.get("error", "workflow did not complete"))
         await _send_failure_reply(
@@ -2273,11 +2273,11 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         )
         return {"outcome": "failed", "workflow_id": wf.workflow_id}
 
-    # Success — send the confirmation reply
+    # Success - send the confirmation reply
     ctx = wf.context
     llm_result = ctx.get("llm_result") or {}
     test_banner = (
-        "<b>[TEST MODE — δεν αρχειοθετήθηκε πραγματικά. "
+        "<b>[TEST MODE - δεν αρχειοθετήθηκε πραγματικά. "
         "Καμία εγγραφή δεν προστέθηκε στο πρωτόκολλο και κανένα αρχείο "
         "δεν ανέβηκε στο SharePoint.]</b><br><br>"
         if test_mode else ""
@@ -2290,11 +2290,11 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
             test_mode_banner=test_banner,
             proto=ctx.get("protocol_number", "?"),
             title=llm_result.get("title", "?"),
-            labels=", ".join(llm_result.get("labels", [])) or "—",
-            kuria_simeia=llm_result.get("key_points", "") or "—",
-            folder=ctx.get("remote_folder", "—"),
+            labels=", ".join(llm_result.get("labels", [])) or "-",
+            kuria_simeia=llm_result.get("key_points", "") or "-",
+            folder=ctx.get("remote_folder", "-"),
             workflow_id=wf.workflow_id,
-            revision_until=ctx.get("revision_open_until", "—"),
+            revision_until=ctx.get("revision_open_until", "-"),
             share_link=ctx.get("share_link") or "",
         )
         await mail.send_reply(
@@ -2304,7 +2304,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
             to=sender_email,
             workflow="email_intake",
         )
-    except Exception as e:  # pragma: no cover — best-effort
+    except Exception as e:  # pragma: no cover - best-effort
         logger.warning("Failed to send confirmation reply for %s: %s", imid, e)
 
     try:
@@ -2313,7 +2313,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         logger.warning("Failed to mark message as read: %s", e)
 
     # Test-mode runs: roll back so the reserved protocol number is released and
-    # the workflow_state row is marked cancelled — mirrors what the CLI
+    # the workflow_state row is marked cancelled - mirrors what the CLI
     # `archive submit --test` flow does when the user presses Enter at the
     # cleanup prompt.
     if test_mode:
@@ -2326,7 +2326,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
                 target=sender_email,
                 details={"workflow_id": wf.workflow_id},
             )
-        except Exception as e:  # pragma: no cover — best-effort
+        except Exception as e:  # pragma: no cover - best-effort
             logger.warning("Test-mode rollback failed for %s: %s", wf.workflow_id, e)
 
     mark_email_seen(
@@ -2373,7 +2373,7 @@ async def run_safety_poll() -> dict[str, Any]:
         try:
             result = await process_inbox_message(msg, source="safety_poll")
             counts[result["outcome"]] = counts.get(result["outcome"], 0) + 1
-        except Exception as e:  # pragma: no cover — defensive
+        except Exception as e:  # pragma: no cover - defensive
             logger.exception("Safety poll error processing message: %s", e)
             counts["error"] = counts.get("error", 0) + 1
 
@@ -2437,7 +2437,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         try:
             shutil.rmtree(tmpdir, ignore_errors=True)
             logger.debug("Cleaned up tempdir %s", tmpdir)
-        except Exception as exc:  # pragma: no cover — best-effort cleanup
+        except Exception as exc:  # pragma: no cover - best-effort cleanup
             logger.warning("Failed to remove tempdir %s: %s", tmpdir, exc)
 
 
@@ -2459,7 +2459,7 @@ async def _process_after_download(
     this in a clean ``try / finally`` that guarantees tempdir cleanup.
     """
     # Test-sender check: emails from settings.testing.test_email are routed
-The inline code after my insertion is now stranded — it needs to become the body of _process_after_download. Let me look at the file and fix this properly:
+The inline code after my insertion is now stranded - it needs to become the body of _process_after_download. Let me look at the file and fix this properly:
 
 
 Read a file, ran a command
@@ -2476,7 +2476,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
     this in a clean ``try / finally`` that guarantees tempdir cleanup.
     """
     # Test-sender check: emails from settings.testing.test_email are routed
-    # through the archive workflow in TEST MODE — no SharePoint upload, no
+    # through the archive workflow in TEST MODE - no SharePoint upload, no
     # πρωτόκολλο write, and the workflow rolls back on completion.  This
     # lets the developer drive a real end-to-end run from a personal inbox
     # without polluting production state.
@@ -2490,7 +2490,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
             details={"reason": "sender matches settings.testing.test_email"},
         )
         logger.info(
-            "Email from %s matches testing.test_email — forcing TEST MODE",
+            "Email from %s matches testing.test_email - forcing TEST MODE",
             sender_email,
         )
 
@@ -2522,7 +2522,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         return {"outcome": "failed", "workflow_id": wf.workflow_id, "error": str(e)}
 
     if result.get("status") != "completed":
-        # Special case: Phase 4 collision gate — workflow is parked awaiting
+        # Special case: Phase 4 collision gate - workflow is parked awaiting
         # secgen's `archive resolve` decision.  Reply with a clear "queued for
         # review" message rather than a generic failure.
         pending_collision = (wf.context or {}).get("pending_collision")
@@ -2552,7 +2552,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
                     to=sender_email,
                     workflow="email_intake",
                 )
-            except Exception as e:  # pragma: no cover — best-effort
+            except Exception as e:  # pragma: no cover - best-effort
                 logger.warning("Failed to send collision-pending reply: %s", e)
             log_action(
                 workflow="email_intake",
@@ -2571,7 +2571,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
                 "pending_collision": pending_collision,
             }
 
-        # Workflow failed cleanly — record + reply
+        # Workflow failed cleanly - record + reply
         mark_email_seen(imid, workflow_id=wf.workflow_id, outcome="failed",
                         notes=result.get("error", "workflow did not complete"))
         await _send_failure_reply(
@@ -2581,11 +2581,11 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         )
         return {"outcome": "failed", "workflow_id": wf.workflow_id}
 
-    # Success — send the confirmation reply
+    # Success - send the confirmation reply
     ctx = wf.context
     llm_result = ctx.get("llm_result") or {}
     test_banner = (
-        "<b>[TEST MODE — δεν αρχειοθετήθηκε πραγματικά. "
+        "<b>[TEST MODE - δεν αρχειοθετήθηκε πραγματικά. "
         "Καμία εγγραφή δεν προστέθηκε στο πρωτόκολλο και κανένα αρχείο "
         "δεν ανέβηκε στο SharePoint.]</b><br><br>"
         if test_mode else ""
@@ -2598,11 +2598,11 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
             test_mode_banner=test_banner,
             proto=ctx.get("protocol_number", "?"),
             title=llm_result.get("title", "?"),
-            labels=", ".join(llm_result.get("labels", [])) or "—",
-            kuria_simeia=llm_result.get("key_points", "") or "—",
-            folder=ctx.get("remote_folder", "—"),
+            labels=", ".join(llm_result.get("labels", [])) or "-",
+            kuria_simeia=llm_result.get("key_points", "") or "-",
+            folder=ctx.get("remote_folder", "-"),
             workflow_id=wf.workflow_id,
-            revision_until=ctx.get("revision_open_until", "—"),
+            revision_until=ctx.get("revision_open_until", "-"),
             share_link=ctx.get("share_link") or "",
         )
         await mail.send_reply(
@@ -2612,7 +2612,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
             to=sender_email,
             workflow="email_intake",
         )
-    except Exception as e:  # pragma: no cover — best-effort
+    except Exception as e:  # pragma: no cover - best-effort
         logger.warning("Failed to send confirmation reply for %s: %s", imid, e)
 
     try:
@@ -2621,7 +2621,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
         logger.warning("Failed to mark message as read: %s", e)
 
     # Test-mode runs: roll back so the reserved protocol number is released and
-    # the workflow_state row is marked cancelled — mirrors what the CLI
+    # the workflow_state row is marked cancelled - mirrors what the CLI
     # `archive submit --test` flow does when the user presses Enter at the
     # cleanup prompt.
     if test_mode:
@@ -2634,7 +2634,7 @@ C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI
                 target=sender_email,
                 details={"workflow_id": wf.workflow_id},
             )
-        except Exception as e:  # pragma: no cover — best-effort
+        except Exception as e:  # pragma: no cover - best-effort
             logger.warning("Test-mode rollback failed for %s: %s", wf.workflow_id, e)
 
     mark_email_seen(
@@ -2814,7 +2814,7 @@ async def _inbox_tmpdir_cleanup_job() -> None:
             if child.stat().st_mtime < cutoff:
                 _shutil.rmtree(child, ignore_errors=True)
                 removed += 1
-        except Exception as exc:  # pragma: no cover — best-effort
+        except Exception as exc:  # pragma: no cover - best-effort
             logger.debug("inbox tmpdir cleanup: skip %s (%s)", child, exc)
     if removed:
         logger.info(
@@ -2842,7 +2842,7 @@ Read a file, searched code, edited a file
 Read
 test_email_intake.py
 C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστία\AI in AI\tests\test_email_intake.py
-"""Phase 3 tests — email-route intake, webhook handler, subject matcher."""
+"""Phase 3 tests - email-route intake, webhook handler, subject matcher."""
 from __future__ import annotations
 
 import json
@@ -2948,7 +2948,7 @@ $ cd "C:\Users\Dell\OneDrive\Υπολογιστής\Διεθνής Αμνηστ�
 All 30 email_intake tests pass including the new leak regression. Task #2 done:
 
 Updated todos
-Task #3 — reorganize docs/ + scripts/:
+Task #3 - reorganize docs/ + scripts/:
 
 
 Ran a command, used a tool
@@ -3079,7 +3079,7 @@ Below is the fourth-degree meta-review of the code by...
 ## **Executive Summary**
 
 The ensuing document provides a definitive, final-degree technical review of the "AI IN AI" software project based on the extracted codebase structure, dependency matrices, and environmental configuration parameters. The analysis interrogates the architectural decisions, asynchronous networking paradigms, large language model (LLM) integrations, event-driven bot frameworks, and critical security postures encapsulated within the provided directory tree.1 While the raw source code within the specific Python files remains unavailable for line-by-line static analysis 1, the foundational libraries, directory structure, and execution environment provide a highly detailed topological map of the application's intent and technical maturity. By cross-referencing the project's foundational components against contemporary software engineering best practices, cloud-native deployment standards, and high-security operational requirements, this report delivers an exhaustive evaluation of the system's current state and its trajectory.  
-The application is identified as an asynchronous Python-based artificial intelligence integration, deploying Anthropic's Claude framework through a Discord interface.1 The operational context—implied by the execution path indicating a deployment associated with Amnesty International—demands an exceptionally rigorous evaluation of cryptographic handling, data privacy, and infrastructural resilience.1 The review synthesizes findings on the environmental antipatterns observed, specifically the use of Microsoft OneDrive for executing active Python virtual environments, the concurrency models enabled by the aiohttp and anyio toolchains, and the task orchestration mechanisms governed by APScheduler.6 The objective of this review is to deconstruct the current deployment architecture, expose latent vulnerabilities, and provide a comprehensive target operating model that aligns with enterprise-grade security and scalability requirements.
+The application is identified as an asynchronous Python-based artificial intelligence integration, deploying Anthropic's Claude framework through a Discord interface.1 The operational context-implied by the execution path indicating a deployment associated with Amnesty International-demands an exceptionally rigorous evaluation of cryptographic handling, data privacy, and infrastructural resilience.1 The review synthesizes findings on the environmental antipatterns observed, specifically the use of Microsoft OneDrive for executing active Python virtual environments, the concurrency models enabled by the aiohttp and anyio toolchains, and the task orchestration mechanisms governed by APScheduler.6 The objective of this review is to deconstruct the current deployment architecture, expose latent vulnerabilities, and provide a comprehensive target operating model that aligns with enterprise-grade security and scalability requirements.
 
 ## **1\. Environmental Infrastructure and File System Architecture**
 
@@ -3097,7 +3097,7 @@ However, the structural integrity of a virtual environment relies heavily on ten
 
 ### **2.1 Microsoft OneDrive and Python Compilation Conflicts**
 
-The deployment of a live Python project—complete with an active virtual environment (.venv), temporary caches (.pytest\_cache), and configuration directories (.claude)—within a Microsoft OneDrive synchronized directory represents a severe architectural antipattern.1 The intersection of Python's dynamic compilation behavior and OneDrive's block-level synchronization engine inevitably generates critical operational failures, data corruption, and intractable runtime exceptions.  
+The deployment of a live Python project-complete with an active virtual environment (.venv), temporary caches (.pytest\_cache), and configuration directories (.claude)-within a Microsoft OneDrive synchronized directory represents a severe architectural antipattern.1 The intersection of Python's dynamic compilation behavior and OneDrive's block-level synchronization engine inevitably generates critical operational failures, data corruption, and intractable runtime exceptions.  
 Cloud storage platforms rely on system-level file watchers and Volume Shadow Copy Services (VSS) to detect file modifications and initiate background uploads to remote servers. When a Python script executes, the interpreter dynamically compiles .py source files into .pyc bytecode files within \_\_pycache\_\_ directories, actively and continuously modifying the file system state. Concurrently, external libraries may update SQLite databases, write to log files, generate cache artifacts, or modify state tracking variables.6
 
 | Failure Mode | Mechanism of Action | Operational Consequence |
@@ -3124,7 +3124,7 @@ The aiohttp framework circumvents this limitation by yielding control back to th
 ### **3.2 Latency Reduction and Structured Concurrency**
 
 The specific integration of aiohappyeyeballs demonstrates a nuanced approach to network latency optimization.1 The Happy Eyeballs routing algorithm, formally defined in RFC 8305, provides a mechanism to establish TCP connections over both IPv4 and IPv6 concurrently. Instead of attempting a connection over one protocol and waiting for a timeout before attempting the other, this algorithm favors the connection that completes the handshake with the lowest latency. This significantly reduces the time-to-first-byte (TTFB) during API requests, which is crucial for minimizing perceived latency in real-time bot responsiveness.1  
-Furthermore, the utilization of anyio suggests an architectural mandate for structured concurrency and cross-compatibility between different event loop implementations.1 anyio provides an abstraction layer that allows asynchronous code to function seamlessly on both the standard asyncio framework and alternative frameworks like Trio. More importantly, structured concurrency enforces strict task grouping and cancellation semantics. If a parent asynchronous task—such as processing a complex user command—is cancelled or fails, anyio guarantees the immediate and clean cancellation of all nested child tasks, effectively eliminating memory leaks and orphaned network sockets within highly concurrent execution graphs.
+Furthermore, the utilization of anyio suggests an architectural mandate for structured concurrency and cross-compatibility between different event loop implementations.1 anyio provides an abstraction layer that allows asynchronous code to function seamlessly on both the standard asyncio framework and alternative frameworks like Trio. More importantly, structured concurrency enforces strict task grouping and cancellation semantics. If a parent asynchronous task-such as processing a complex user command-is cancelled or fails, anyio guarantees the immediate and clean cancellation of all nested child tasks, effectively eliminating memory leaks and orphaned network sockets within highly concurrent execution graphs.
 
 ## **4\. Data Serialization, Type Hinting, and Input Normalization**
 
@@ -3163,7 +3163,7 @@ Furthermore, repository commit logs for the Anthropic SDK post-version 0.89.0 in
 
 ### **5.3 Token Streaming and Perceived Latency**
 
-The structural analysis reveals the presence of streaming modules within the Anthropic library setup.1 Streaming is an essential, non-negotiable paradigm for LLM integration within chat interfaces. Rather than buffering the entire generated response—which may contain up to thousands of output tokens and take substantial time to generate completely—the streaming module decodes server-sent events (SSE) in real-time. By piping the output of the anthropic streaming iterators directly into the discord client's message edit methods, the application can mimic real-time human typing. This architectural choice significantly improves the user experience and prevents client-side gateway timeouts during complex, high-reasoning query resolutions.
+The structural analysis reveals the presence of streaming modules within the Anthropic library setup.1 Streaming is an essential, non-negotiable paradigm for LLM integration within chat interfaces. Rather than buffering the entire generated response-which may contain up to thousands of output tokens and take substantial time to generate completely-the streaming module decodes server-sent events (SSE) in real-time. By piping the output of the anthropic streaming iterators directly into the discord client's message edit methods, the application can mimic real-time human typing. This architectural choice significantly improves the user experience and prevents client-side gateway timeouts during complex, high-reasoning query resolutions.
 
 ## **6\. Discord Bot Framework and Event Orchestration**
 
@@ -3173,17 +3173,17 @@ The integration of the discord library (specifically discord.py) indicates that 
 
 Discord operates on a persistent, full-duplex WebSocket connection. The library manages the parsing of low-level JSON payloads received over this socket, transforming them into high-level Python objects representing messages, users, and guild states. The inclusion of the app\_commands submodule within the project structure highlights a mature architectural decision to utilize Discord's Slash Command infrastructure.1  
 Slash commands represent a significant security and performance evolution over traditional prefix-based message parsing architectures. Traditional bots rely on reading every message in a channel, necessitating the highly privileged MESSAGE\_CONTENT intent, parsing the text for a specific prefix, and then executing the associated logic.16 This method is computationally expensive, as it forces the bot to process immense volumes of irrelevant conversational data, and it presents a significant privacy risk.  
-Conversely, app\_commands register directly with Discord's backend infrastructure. When a user invokes a command, Discord sends an interaction payload directly to the bot. This allows the application to operate completely blind to ambient channel chatter, tightly aligning with the principle of least privilege—a mandatory posture for a high-security environment affiliated with an NGO.4
+Conversely, app\_commands register directly with Discord's backend infrastructure. When a user invokes a command, Discord sends an interaction payload directly to the bot. This allows the application to operate completely blind to ambient channel chatter, tightly aligning with the principle of least privilege-a mandatory posture for a high-security environment affiliated with an NGO.4
 
 ### **6.2 State Management and Caching Volatility**
 
 A critical operational challenge inherent in building robust Discord infrastructure using Python is cache volatility.3 The discord.py framework maintains an internal state cache representing the current state of the server to avoid bombarding the API with redundant HTTP requests. However, to conserve physical memory, this cache is strictly ephemeral.  
-If the bot attempts to process a reaction event—such as a user reacting with a specific approval emoji to trigger an AI action—on a message that has been evicted from the application's RAM cache, the standard on\_reaction\_add event will silently fail without throwing an exception.3 To circumvent this architectural blind spot, the system must utilize raw events, such as on\_raw\_reaction\_add.3 Raw events bypass the internal cache entirely, delivering the immutable payload data directly from the WebSocket stream. This is particularly vital for approval-gated AI operations, where an administrator might react to a generated message hours after the message was originally created, long after the object has been purged from the active memory hierarchy.
+If the bot attempts to process a reaction event-such as a user reacting with a specific approval emoji to trigger an AI action-on a message that has been evicted from the application's RAM cache, the standard on\_reaction\_add event will silently fail without throwing an exception.3 To circumvent this architectural blind spot, the system must utilize raw events, such as on\_raw\_reaction\_add.3 Raw events bypass the internal cache entirely, delivering the immutable payload data directly from the WebSocket stream. This is particularly vital for approval-gated AI operations, where an administrator might react to a generated message hours after the message was originally created, long after the object has been purged from the active memory hierarchy.
 
 ### **6.3 Architecture Scalability and Vendor Independence**
 
 While discord.py provides a highly functional monolithic structure, tightly coupling the Discord event listener, the background cron jobs, and the Anthropic API client into a single process instance presents significant long-term scaling bottlenecks.18 As the bot's usage scales across multiple servers, the monolithic architecture becomes constrained by Python's Global Interpreter Lock (GIL) and event loop latency.  
-A highly optimal, production-grade architecture separates the bot interface from the AI inference engine entirely. By utilizing microservices, the system can independently scale the WebSocket listener separately from the LLM execution threads, which are primarily bound by Anthropic's external API rate limits.18 Furthermore, integrating intermediate abstraction layers or aggregator APIs—such as OpenRouter—can protect the application from vendor lock-in. OpenRouter standardizes inputs across various providers (Anthropic, OpenAI, Meta), offering failover mechanisms if the primary Anthropic API experiences regional downtime or rate-limiting events, thereby guaranteeing continuous service availability.16
+A highly optimal, production-grade architecture separates the bot interface from the AI inference engine entirely. By utilizing microservices, the system can independently scale the WebSocket listener separately from the LLM execution threads, which are primarily bound by Anthropic's external API rate limits.18 Furthermore, integrating intermediate abstraction layers or aggregator APIs-such as OpenRouter-can protect the application from vendor lock-in. OpenRouter standardizes inputs across various providers (Anthropic, OpenAI, Meta), offering failover mechanisms if the primary Anthropic API experiences regional downtime or rate-limiting events, thereby guaranteeing continuous service availability.16
 
 ## **7\. Background Task Scheduling and Synchronization**
 
@@ -3192,7 +3192,7 @@ The utilization of the apscheduler package (version 3.11.2) introduces the capab
 ### **7.1 Scheduler Implementations: The Asynchronous Imperative**
 
 APScheduler provides multiple backend implementations tailored for specific execution environments, fundamentally diverging between synchronous blocking execution and asynchronous event loop integration.7  
-The BlockingScheduler is designed to run in the main thread and execute tasks sequentially. If a scheduled task involves a high-latency I/O operation—such as compiling a daily summary of server activity via the Anthropic API—the entire scheduler freezes until the task completes.7 In an application simultaneously running a Discord bot, invoking a BlockingScheduler would completely stall the asyncio event loop required by the bot, causing the WebSocket to miss heartbeat acknowledgments, resulting in immediate disconnection from the Discord gateway.7  
+The BlockingScheduler is designed to run in the main thread and execute tasks sequentially. If a scheduled task involves a high-latency I/O operation-such as compiling a daily summary of server activity via the Anthropic API-the entire scheduler freezes until the task completes.7 In an application simultaneously running a Discord bot, invoking a BlockingScheduler would completely stall the asyncio event loop required by the bot, causing the WebSocket to miss heartbeat acknowledgments, resulting in immediate disconnection from the Discord gateway.7  
 Therefore, the only viable architectural pathway for this system is the implementation of the AsyncIOScheduler.7 This scheduler injects its timing mechanisms natively into the running asyncio event loop utilized by discord.py. When a job is scheduled, the AsyncIOScheduler calculates the optimal delay and utilizes native asyncio delayed execution calls to queue the function without blocking the main thread.19 This paradigm ensures that the bot maintains real-time responsiveness on the communication platform while concurrently processing heavy scheduled workloads in the background.
 
 ### **7.2 Multiprocessing Locks and Distributed Job Stores**
@@ -3206,13 +3206,13 @@ The combination of cryptography (version 46.0.6), certifi (version 2026.2.25), a
 
 ### **8.1 Low-Level Cryptographic Primitives and the Rust Transition**
 
-The cryptography library serves as the bedrock for all secure communications and data protection mechanisms within the application. Version 46.0.6 relies on a hybrid architecture, utilizing standard Python bindings for high-level APIs while delegating computationally intensive cryptographic operations—such as AES-GCM encryption for stored data, RSA key generation, and elliptic curve Diffie-Hellman exchanges—to low-level compiled binaries.1  
-A critical detail within the directory structure is the presence of \_rust submodules alongside legacy OpenSSL bindings.1 The integration of the Rust programming language for cryptographic primitives represents a monumental paradigm shift in foundational memory safety. Rust's strict compiler, utilizing ownership and borrow-checking mechanics, mathematically eliminates entire classifications of memory corruption vulnerabilities—such as buffer overflows, null pointer dereferences, and use-after-free bugs—that have historically plagued pure C-based cryptographic implementations. By leveraging these Rust extensions, the application is fortified against low-level exploitation attempts aimed at extracting sensitive keys from runtime memory.
+The cryptography library serves as the bedrock for all secure communications and data protection mechanisms within the application. Version 46.0.6 relies on a hybrid architecture, utilizing standard Python bindings for high-level APIs while delegating computationally intensive cryptographic operations-such as AES-GCM encryption for stored data, RSA key generation, and elliptic curve Diffie-Hellman exchanges-to low-level compiled binaries.1  
+A critical detail within the directory structure is the presence of \_rust submodules alongside legacy OpenSSL bindings.1 The integration of the Rust programming language for cryptographic primitives represents a monumental paradigm shift in foundational memory safety. Rust's strict compiler, utilizing ownership and borrow-checking mechanics, mathematically eliminates entire classifications of memory corruption vulnerabilities-such as buffer overflows, null pointer dereferences, and use-after-free bugs-that have historically plagued pure C-based cryptographic implementations. By leveraging these Rust extensions, the application is fortified against low-level exploitation attempts aimed at extracting sensitive keys from runtime memory.
 
 ### **8.2 Transport Layer Security and OS-Level Interfaces**
 
 The certifi package provides the rigorously curated bundle of Root Certificates required to validate the SSL/TLS chains of trust when connecting to external endpoints, such as the Anthropic inference servers and the Discord API gateway.1 Without an up-to-date certifi bundle, the aiohttp client could easily fall victim to Man-in-the-Middle (MitM) attacks. In such a scenario, sophisticated malicious actors could intercept the TLS handshake and replace the legitimate server's certificate with a forged signature, potentially exposing the raw, unencrypted Anthropic API keys in transit. Maintaining the latest certifi release is a non-negotiable requirement for operational security.  
-Furthermore, the inclusion of cffi (C Foreign Function Interface) allows the Python interpreter to interface dynamically with standard operating system libraries.1 This mechanism is heavily utilized by the cryptography stack to interface directly with the host OS's entropy pool—such as /dev/urandom on POSIX-compliant systems or the CryptGenRandom API on Windows architectures. Ensuring high-quality entropy is paramount for generating secure cryptographic nonces, initialization vectors, and session tokens that resist algorithmic prediction.
+Furthermore, the inclusion of cffi (C Foreign Function Interface) allows the Python interpreter to interface dynamically with standard operating system libraries.1 This mechanism is heavily utilized by the cryptography stack to interface directly with the host OS's entropy pool-such as /dev/urandom on POSIX-compliant systems or the CryptGenRandom API on Windows architectures. Ensuring high-quality entropy is paramount for generating secure cryptographic nonces, initialization vectors, and session tokens that resist algorithmic prediction.
 
 ## **9\. Platform Security and Attack Surface Reduction**
 
@@ -3278,7 +3278,7 @@ The primary barriers obstructing optimal stability and enterprise-grade security
 7. Job Scheduling in Python with APScheduler | Better Stack Community, accessed on May 26, 2026, [https://betterstack.com/community/guides/scaling-python/apscheduler-scheduled-tasks/](https://betterstack.com/community/guides/scaling-python/apscheduler-scheduled-tasks/)  
 8. Building a Model Context Protocol (MCP) server for Discord \- Speakeasy, accessed on May 26, 2026, [https://www.speakeasy.com/blog/build-a-mcp-server-tutorial](https://www.speakeasy.com/blog/build-a-mcp-server-tutorial)  
 9. OneDrive always fails to Sync when updating with Python : r/learnpython \- Reddit, accessed on May 26, 2026, [https://www.reddit.com/r/learnpython/comments/1bzg763/onedrive\_always\_fails\_to\_sync\_when\_updating\_with/](https://www.reddit.com/r/learnpython/comments/1bzg763/onedrive_always_fails_to_sync_when_updating_with/)  
-10. Folders from OneDrive resolve incorrect fullname if subpaths · Issue \#2017 \- GitHub, accessed on May 26, 2026, [https://github.com/xlwings/xlwings/issues/2017](https://github.com/xlwings/xlwings/issues/2017)  
+10. Folders from OneDrive resolve incorrect fullname if subpaths - Issue \#2017 \- GitHub, accessed on May 26, 2026, [https://github.com/xlwings/xlwings/issues/2017](https://github.com/xlwings/xlwings/issues/2017)  
 11. pycharm \- .py files not opening since One drive is synced \- Stack Overflow, accessed on May 26, 2026, [https://stackoverflow.com/questions/68970712/py-files-not-opening-since-one-drive-is-synced](https://stackoverflow.com/questions/68970712/py-files-not-opening-since-one-drive-is-synced)  
 12. onedrive-sync-client \- PyPI, accessed on May 26, 2026, [https://pypi.org/project/onedrive-sync-client/](https://pypi.org/project/onedrive-sync-client/)  
 13. anthropic-sdk-python/CHANGELOG.md at main \- GitHub, accessed on May 26, 2026, [https://github.com/anthropics/anthropic-sdk-python/blob/main/CHANGELOG.md](https://github.com/anthropics/anthropic-sdk-python/blob/main/CHANGELOG.md)  
@@ -3286,11 +3286,11 @@ The primary barriers obstructing optimal stability and enterprise-grade security
 15. Claude Opus 4.7 \- Anthropic, accessed on May 26, 2026, [https://www.anthropic.com/claude/opus](https://www.anthropic.com/claude/opus)  
 16. Best AI Discord Bots in 2026, accessed on May 26, 2026, [https://quickchat.ai/post/best-ai-discord-bots](https://quickchat.ai/post/best-ai-discord-bots)  
 17. Essential Discord Security Checklist: Protecting Your Server from Leaks \- Remove.tech, accessed on May 26, 2026, [https://www.remove.tech/creator-blog/essential-discord-security-checklist-protecting-your-server-from-leaks](https://www.remove.tech/creator-blog/essential-discord-security-checklist-protecting-your-server-from-leaks)  
-18. How I Built a Production-Grade Discord Bot with 11 Microservices and Local LLM — Zero API Costs, Enterprise Architecture | by Jordan Andrade | Medium, accessed on May 26, 2026, [https://medium.com/@jaandrade25/how-i-built-a-production-grade-discord-bot-with-11-microservices-and-local-llm-zero-api-costs-fdfa3a57a0ee](https://medium.com/@jaandrade25/how-i-built-a-production-grade-discord-bot-with-11-microservices-and-local-llm-zero-api-costs-fdfa3a57a0ee)  
+18. How I Built a Production-Grade Discord Bot with 11 Microservices and Local LLM - Zero API Costs, Enterprise Architecture | by Jordan Andrade | Medium, accessed on May 26, 2026, [https://medium.com/@jaandrade25/how-i-built-a-production-grade-discord-bot-with-11-microservices-and-local-llm-zero-api-costs-fdfa3a57a0ee](https://medium.com/@jaandrade25/how-i-built-a-production-grade-discord-bot-with-11-microservices-and-local-llm-zero-api-costs-fdfa3a57a0ee)  
 19. Python APScheduler \- How does AsyncIOScheduler work? \- Stack Overflow, accessed on May 26, 2026, [https://stackoverflow.com/questions/63001954/python-apscheduler-how-does-asyncioscheduler-work](https://stackoverflow.com/questions/63001954/python-apscheduler-how-does-asyncioscheduler-work)  
 20. Python Automation: A Complete Guide \- DataCamp, accessed on May 26, 2026, [https://www.datacamp.com/tutorial/python-automation](https://www.datacamp.com/tutorial/python-automation)  
 21. APScheduler to call an async function \- Stack Overflow, accessed on May 26, 2026, [https://stackoverflow.com/questions/68217756/apscheduler-to-call-an-async-function](https://stackoverflow.com/questions/68217756/apscheduler-to-call-an-async-function)  
-22. how to use apscheduler with multiple workers · Issue \#1011 \- GitHub, accessed on May 26, 2026, [https://github.com/sanic-org/sanic/issues/1011](https://github.com/sanic-org/sanic/issues/1011)  
+22. how to use apscheduler with multiple workers - Issue \#1011 \- GitHub, accessed on May 26, 2026, [https://github.com/sanic-org/sanic/issues/1011](https://github.com/sanic-org/sanic/issues/1011)  
 23. The Ultimate 2026 Guide to Discord Verification Bots: Security, AI, and Privacy \- Skywork, accessed on May 26, 2026, [https://skywork.ai/skypage/en/discord-verification-bots/2035943014748663808](https://skywork.ai/skypage/en/discord-verification-bots/2035943014748663808)  
 24. Building a Secure Discord Server: A Multi-Bot Approach \- CommunityOne, accessed on May 26, 2026, [https://blog.communityone.io/building-a-secure-discord-server-a-multi-bot-approach-2/](https://blog.communityone.io/building-a-secure-discord-server-a-multi-bot-approach-2/)
 

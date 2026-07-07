@@ -1,4 +1,4 @@
-# FOUNDATION PLAN — AI Automation Platform for Amnesty International Greece
+# FOUNDATION PLAN - AI Automation Platform for Amnesty International Greece
 
 > Working document. Author: Γεώργιος Αθανασίας (Γενικός Γραμματέας).
 > Last updated: 2026-04-03.
@@ -10,7 +10,7 @@
 
 ### 1.1 Purpose
 
-Build a modular automation platform that assists the Board of Directors (ΔΣ) of Amnesty International Greece in administrative governance tasks — document generation, meeting management, member communications, and archival — using AI (Claude API) and integration with existing tools (Microsoft 365, Google Workspace, Zoom, Brevo, Discord).
+Build a modular automation platform that assists the Board of Directors (ΔΣ) of Amnesty International Greece in administrative governance tasks - document generation, meeting management, member communications, and archival - using AI (Claude API) and integration with existing tools (Microsoft 365, Google Workspace, Zoom, Brevo, Discord).
 
 ### 1.2 Guiding Principles
 
@@ -48,7 +48,7 @@ Build a modular automation platform that assists the Board of Directors (ΔΣ) o
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    ORCHESTRATION LAYER                   │
-│                  (Python — FastAPI app)                  │
+│                  (Python - FastAPI app)                  │
 │                                                         │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
 │  │ Workflow  │  │  Claude   │  │  Audit   │             │
@@ -94,7 +94,7 @@ Build a modular automation platform that assists the Board of Directors (ΔΣ) o
 |---|---|---|
 | **Core framework** | Python 3.11+ / FastAPI | Lightweight async web framework. Handles webhook endpoints, serves as the backbone for all workflow logic. |
 | **Workflow engine** | Custom Python module | Stateful workflow runner. Each workflow (e.g., "board meeting invitation") is a sequence of steps with checkpoints for human approval. |
-| **Claude client** | `anthropic` Python SDK | Handles all LLM calls — document drafting, summarization, analysis. Uses Claude Sonnet for cost efficiency. |
+| **Claude client** | `anthropic` Python SDK | Handles all LLM calls - document drafting, summarization, analysis. Uses Claude Sonnet for cost efficiency. |
 | **Audit logger** | Python `logging` + SQLite | Every action (API call, document generated, email sent, approval given) is logged with timestamp, actor, and outcome. |
 
 #### Integration Layer
@@ -173,7 +173,7 @@ ai-in-ai/
 │   │   ├── docx_generator.py  # DOCX creation from templates
 │   │   └── templates.py       # Template fetching and management
 │   │
-│   ├── translations/          # Placeholder — future translation API integration
+│   ├── translations/          # Placeholder - future translation API integration
 │   │   └── __init__.py        # (EN→EL for international movement texts)
 │   │
 │   └── cli/
@@ -210,7 +210,7 @@ ai-in-ai/
 
 **Why SQLite (not Postgres)?** This platform serves 3 users maximum. SQLite is zero-config, file-based, easy to back up, and more than sufficient. If you ever need to migrate, the schema will be simple enough to port in an hour.
 
-**Why CLI-first (not web UI)?** Fastest to build, easiest to debug, most auditable. You can always add a web layer later — FastAPI makes this trivial since the backend is already an HTTP server.
+**Why CLI-first (not web UI)?** Fastest to build, easiest to debug, most auditable. You can always add a web layer later - FastAPI makes this trivial since the backend is already an HTTP server.
 
 **Why store templates on Google Drive?** The Board already uses Google Docs for templates. Pulling them via API avoids maintaining duplicate copies and ensures templates are always current. Google Drive API can export Docs directly as PDF, so we can download pixel-accurate PDFs without any local rendering pipeline.
 
@@ -222,7 +222,7 @@ ai-in-ai/
 
 | Option | Free Tier | Limitations | Verdict |
 |---|---|---|---|
-| **Oracle Cloud Free Tier** | 2 AMD VMs (1 GB RAM each), always free | ARM instances have waitlist; AMD is reliable | **Best option** — genuinely always-free, sufficient specs |
+| **Oracle Cloud Free Tier** | 2 AMD VMs (1 GB RAM each), always free | ARM instances have waitlist; AMD is reliable | **Best option** - genuinely always-free, sufficient specs |
 | **Google Cloud Free Tier** | f1-micro (0.6 GB RAM), always free | Very limited RAM; tight for Python + FastAPI | Viable but tight |
 | **Fly.io** | 3 shared VMs (256 MB each) | Apps sleep after inactivity; limited storage | Good for webhooks, not persistent workers |
 | **Local machine** | Free | Must be running; no static IP for webhooks | Fine for development/testing only |
@@ -259,10 +259,10 @@ The platform processes personal data of Board members and Section members. As Am
 
 #### Required Documentation (to create before launch)
 
-- [ ] Data Processing Record (Αρχείο Δραστηριοτήτων Επεξεργασίας) — Art. 30 GDPR
+- [ ] Data Processing Record (Αρχείο Δραστηριοτήτων Επεξεργασίας) - Art. 30 GDPR
 - [ ] Privacy notice update for members regarding AI-assisted processing
 - [ ] Data Processing Agreement (DPA) review for: Anthropic (Claude API), Zoom, Brevo, Microsoft, Google
-- [ ] Data Protection Impact Assessment (DPIA) — recommended given AI processing of governance data
+- [ ] Data Protection Impact Assessment (DPIA) - recommended given AI processing of governance data
 
 ### 3.2 AI-Specific Governance
 
@@ -359,7 +359,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
 
 ---
 
-### Phase 0 — Infrastructure Setup
+### Phase 0 - Infrastructure Setup
 
 **Goal:** Platform skeleton is running. All APIs are authenticated. One end-to-end test proves the pipeline works (Claude drafts something → saves to OneDrive → sends test email).
 
@@ -377,7 +377,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
    - Brevo: Generate API key, set up sender identity verification
    - Discord Developer Portal: Create bot application, configure intents (members, messages, guilds), generate bot token
 
-   **Deliverable:** Step-by-step guide for each API in `docs/api_setup/` — so this process is documented and reproducible.
+   **Deliverable:** Step-by-step guide for each API in `docs/api_setup/` - so this process is documented and reproducible.
 
 0.2b. **Brevo template design**
    - Design all newsletter templates needed for Phase 1+ (Board meeting invitation, meeting reminder, circular, GA invitation, etc.)
@@ -397,11 +397,11 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
 
 ---
 
-### Phase 1 — Board Meeting Invitation Workflow
+### Phase 1 - Board Meeting Invitation Workflow
 
 **Goal:** The complete invitation flow from Intro.md works end-to-end: read agenda from Google Sheets → Claude drafts PDF → user approves → archive to OneDrive + schedule Zoom + send Brevo newsletter + send board email + schedule reminder.
 
-**Why first?** It touches almost every integration (Google Sheets, Claude, OneDrive, Zoom, Brevo, Gmail) but the document itself is formulaic — low risk, high learning value.
+**Why first?** It touches almost every integration (Google Sheets, Claude, OneDrive, Zoom, Brevo, Gmail) but the document itself is formulaic - low risk, high learning value.
 
 **Tasks:**
 
@@ -423,7 +423,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
    - All steps logged to audit trail
 
 1.3. **PDF generation**
-   - Implement `documents/pdf_generator.py` — convert Claude's structured output to formatted PDF matching the institutional template style
+   - Implement `documents/pdf_generator.py` - convert Claude's structured output to formatted PDF matching the institutional template style
 
 1.4. **Testing with real data**
    - Run the workflow for the next actual Board meeting
@@ -434,7 +434,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
 
 ---
 
-### Phase 2 — Board Meeting Minutes Workflow
+### Phase 2 - Board Meeting Minutes Workflow
 
 **Goal:** After a Board meeting, process the Zoom transcript into draft minutes following the institutional template, share for review, and handle finalization.
 
@@ -452,7 +452,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
      - Extract decisions and record them distinctly
      - Identify attendees from transcript
      - Follow the institutional template structure exactly
-     - Write in formal Greek (matching existing minutes style — use archived minutes as few-shot examples)
+     - Write in formal Greek (matching existing minutes style - use archived minutes as few-shot examples)
    - Implement DOCX generation (`documents/docx_generator.py`)
 
 2.3. **Workflow implementation** (`workflows/board_meeting_minutes.py`)
@@ -473,7 +473,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
 
 ---
 
-### Phase 3 — Circulars (General + Special)
+### Phase 3 - Circulars (General + Special)
 
 **Goal:** Automate quarterly general circulars and ad-hoc special circulars, from drafting through distribution.
 
@@ -498,7 +498,7 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
 
 ---
 
-### Phase 4 — General Assembly Lifecycle
+### Phase 4 - General Assembly Lifecycle
 
 **Goal:** Full General Assembly support: invitation → preparation protocol (activity report, supporting documents, reminders) → minutes → decision recording.
 
@@ -507,46 +507,46 @@ Timeline is working time, not calendar time. Assumes ~10-15 hours/week available
 **Tasks:**
 
 4.1. **GA invitation workflow** (adapt from Board invitation, with different template and regulatory checks)
-4.2. **Preparation protocol** — automated checklist that tracks:
+4.2. **Preparation protocol** - automated checklist that tracks:
    - Activity report generation (reuse data from Board minutes, circulars)
    - Required document compilation and distribution
    - Reminder scheduling (at key milestones before the GA date)
    - Presidium election call (via Brevo)
 4.3. **GA minutes workflow** (adapt from Board minutes, with different template)
-4.4. **Timeline enforcement** — platform validates that notice periods and deadlines mandated by the Καταστατικό are respected
+4.4. **Timeline enforcement** - platform validates that notice periods and deadlines mandated by the Καταστατικό are respected
 
 **Exit criteria:** Full GA lifecycle tested. Timeline checks prevent regulatory violations. Activity report generation produces usable first draft.
 
 ---
 
-### Phase 5 — Discord Forum Management
+### Phase 5 - Discord Forum Management
 
 **Goal:** Automated forum management: post announcements, verify member join requests, basic moderation support.
 
 **Tasks:**
 
-5.1. **Discord bot setup** — configure bot with appropriate permissions
-5.2. **Announcement posting** — when a newsletter is sent via Brevo, cross-post a summary to the Discord forum
-5.3. **Member verification** — when a join request comes in, check against Μητρώο Μελών. If match: approve. If no match: flag for manual review (never auto-reject)
-5.4. **Forum analytics** — basic metrics on engagement, active threads, member activity
+5.1. **Discord bot setup** - configure bot with appropriate permissions
+5.2. **Announcement posting** - when a newsletter is sent via Brevo, cross-post a summary to the Discord forum
+5.3. **Member verification** - when a join request comes in, check against Μητρώο Μελών. If match: approve. If no match: flag for manual review (never auto-reject)
+5.4. **Forum analytics** - basic metrics on engagement, active threads, member activity
 
 **Exit criteria:** Bot runs reliably. Announcements posted automatically after approval. Member verification works with escalation path.
 
 ---
 
-### Phase 6 — General Support & Refinement
+### Phase 6 - General Support & Refinement
 
 **Goal:** Claude as an ongoing governance assistant, continuously improving.
 
 **Tasks:**
 
-6.1. **Knowledge base** — ingest Καταστατικό, Εσωτερικοί Κανονισμοί, and key strategic documents into a structured reference that Claude can query
-6.2. **Proactive reminders** — platform alerts when:
+6.1. **Knowledge base** - ingest Καταστατικό, Εσωτερικοί Κανονισμοί, and key strategic documents into a structured reference that Claude can query
+6.2. **Proactive reminders** - platform alerts when:
    - Monthly Board meeting hasn't been scheduled
    - Quarterly circular is due
    - Document deadlines are approaching
-6.3. **Prompt refinement** — analyze all Claude outputs to date, identify patterns of needed corrections, improve prompts
-6.4. **Documentation** — comprehensive docs for platform maintenance and handover
+6.3. **Prompt refinement** - analyze all Claude outputs to date, identify patterns of needed corrections, improve prompts
+6.4. **Documentation** - comprehensive docs for platform maintenance and handover
 
 **This phase has no end date.** It's the ongoing operation and improvement of the platform.
 
@@ -558,17 +558,17 @@ The order in which APIs should be set up, based on which workflows need them:
 
 ```
 Priority 1 (needed for Phase 0 smoke test):
-├── Anthropic (Claude API)     — needed for everything
-├── Google Drive/Sheets API    — needed for template + agenda reading
-└── Gmail API                  — needed for board email
+├── Anthropic (Claude API)     - needed for everything
+├── Google Drive/Sheets API    - needed for template + agenda reading
+└── Gmail API                  - needed for board email
 
 Priority 2 (needed for Phase 1):
-├── Microsoft Graph (OneDrive) — needed for document archival
-├── Zoom API                   — needed for meeting scheduling
-└── Brevo API                  — needed for newsletter distribution
+├── Microsoft Graph (OneDrive) - needed for document archival
+├── Zoom API                   - needed for meeting scheduling
+└── Brevo API                  - needed for newsletter distribution
 
 Priority 3 (needed for Phase 5):
-└── Discord Bot                — needed for forum management
+└── Discord Bot                - needed for forum management
 ```
 
 ### OAuth Token Management
@@ -634,17 +634,17 @@ After 3 months of operation, evaluate:
 
 *Resolved questions from initial planning.*
 
-1. **Template format** — RESOLVED: Templates stay as Google Docs. The Google Drive API supports exporting Docs directly as PDF (`export` endpoint with `application/pdf` mime type), so we get the best of both worlds: Board edits in a familiar interface, platform downloads pixel-accurate PDFs programmatically. No need for local LaTeX or markdown templates.
+1. **Template format** - RESOLVED: Templates stay as Google Docs. The Google Drive API supports exporting Docs directly as PDF (`export` endpoint with `application/pdf` mime type), so we get the best of both worlds: Board edits in a familiar interface, platform downloads pixel-accurate PDFs programmatically. No need for local LaTeX or markdown templates.
 
-2. **Transcript source** — RESOLVED: Primary path is Zoom API transcripts. Secondary fallback: manual upload of a transcript file (generated via Word's transcribe feature from the Zoom audio recording). The Phase 2 workflow must support both paths — implement a `transcript_source` parameter that accepts either `zoom_api` or `manual_upload`.
+2. **Transcript source** - RESOLVED: Primary path is Zoom API transcripts. Secondary fallback: manual upload of a transcript file (generated via Word's transcribe feature from the Zoom audio recording). The Phase 2 workflow must support both paths - implement a `transcript_source` parameter that accepts either `zoom_api` or `manual_upload`.
 
-3. **Brevo templates** — RESOLVED: All Brevo newsletter templates will be designed from scratch by the operator. This is a prerequisite task before Phase 1 goes live. Add to Phase 0 checklist.
+3. **Brevo templates** - RESOLVED: All Brevo newsletter templates will be designed from scratch by the operator. This is a prerequisite task before Phase 1 goes live. Add to Phase 0 checklist.
 
-4. **Board communication about AI** — RESOLVED: Board is already informed and supportive. No separate communication plan needed. Proceed with implementation.
+4. **Board communication about AI** - RESOLVED: Board is already informed and supportive. No separate communication plan needed. Proceed with implementation.
 
-5. **Git hosting** — RESOLVED: Private GitHub repository. Free tier, automatic backups, and collaboration-ready.
+5. **Git hosting** - RESOLVED: Private GitHub repository. Free tier, automatic backups, and collaboration-ready.
 
-6. **Bilingual support** — RESOLVED: The Εσωτερικοί Κανονισμοί only requires translation of international movement texts (English → Greek), not bilingual generation of all documents. Translation is not a priority for initial implementation. The architecture should leave room for a translation API integration later (e.g., DeepL or Google Translate API) but no implementation now. Add a `translations/` module placeholder in the project structure.
+6. **Bilingual support** - RESOLVED: The Εσωτερικοί Κανονισμοί only requires translation of international movement texts (English → Greek), not bilingual generation of all documents. Translation is not a priority for initial implementation. The architecture should leave room for a translation API integration later (e.g., DeepL or Google Translate API) but no implementation now. Add a `translations/` module placeholder in the project structure.
 
 ### All Questions Resolved
 
@@ -675,11 +675,11 @@ Items that are intentionally under-specified in this foundation plan. They will 
 Immediate actions to start Phase 0:
 
 1. **Create the private GitHub repository** with the project structure from §2.3
-2. **Register for API access** starting with Priority 1 (Anthropic, Google Cloud) — this often takes a few days for approval
-3. **Write `config.py` and `audit.py`** — the two foundational modules everything else depends on
-4. **Set up the development environment** — Python venv, dependencies, linting (ruff), formatting (black)
-5. **Design Brevo newsletter templates** — prerequisite for any workflow that sends newsletters
-6. **Begin API setup guides** — document each registration process in `docs/api_setup/` as you go
+2. **Register for API access** starting with Priority 1 (Anthropic, Google Cloud) - this often takes a few days for approval
+3. **Write `config.py` and `audit.py`** - the two foundational modules everything else depends on
+4. **Set up the development environment** - Python venv, dependencies, linting (ruff), formatting (black)
+5. **Design Brevo newsletter templates** - prerequisite for any workflow that sends newsletters
+6. **Begin API setup guides** - document each registration process in `docs/api_setup/` as you go
 
 ---
 

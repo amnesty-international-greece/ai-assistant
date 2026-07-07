@@ -2,22 +2,22 @@
 
 Three entry points, all async:
 
-* ``classify_document`` — first-pass extraction.  Pulls live taxonomy +
+* ``classify_document`` - first-pass extraction.  Pulls live taxonomy +
   categories from the πρωτόκολλο xlsx and asks the LLM to propose a
   ``{title, labels, key_points, existing_protocol, category_matched,
   confidence, reasoning_brief}`` dict.
-* ``refine_against_recent`` — second pass for low-confidence / ad-hoc
+* ``refine_against_recent`` - second pass for low-confidence / ad-hoc
   classifications.  Anchors the choices to the archive's recent style.
-* ``parse_user_feedback`` — used by ``ai-assistant archive review`` to convert
+* ``parse_user_feedback`` - used by ``ai-assistant archive review`` to convert
   free-text feedback into structured amendments
   (``intent``: acknowledge / amend / cancel / unrelated).
 
 All three reuse ``ClaudeClient`` (which routes to Gemini per ``llm.provider``
-in config.yaml — Phase 1 default is Gemini).
+in config.yaml - Phase 1 default is Gemini).
 
 The prompts live in this module as plain Python strings, deliberately kept
 short and editable.  They're not in ``assets/email_templates/`` because they're
-not user-facing copy — they're internal instructions to the model.
+not user-facing copy - they're internal instructions to the model.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Prompt templates — kept inline for editability; no f-string in the bodies so
+# Prompt templates - kept inline for editability; no f-string in the bodies so
 # the literal curly braces in the JSON skeleton don't trip on placeholders.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -62,17 +62,17 @@ CANONICAL PATTERNS (live from Κατηγορίες tab)
 GENERAL RULES
 =============
 - Pick 1 to 3 tags typically (4 only for truly cross-cutting documents).
-- Aim for consistency with the rest of the archive — match the style of
+- Aim for consistency with the rest of the archive - match the style of
   titles, tag combinations, and Κύρια Σημεία used in recent entries.
 - For documents originally in English, keep their original-language title.
 - Tag-specific usage rules are in each tag's description (TAXONOMY section
-  above) — follow them.
-- **Title selection (CRITICAL — read carefully):**
+  above) - follow them.
+- **Title selection (CRITICAL - read carefully):**
   • If the filename has the format ``[YYYY_NNN] <Title>.pdf``, use **the
     exact text between the bracket and the extension** as the title.
-    Don't paraphrase, don't substitute names, don't translate — copy it
+    Don't paraphrase, don't substitute names, don't translate - copy it
     verbatim.
-  • The Sender field is who SUBMITTED the document — they're rarely the
+  • The Sender field is who SUBMITTED the document - they're rarely the
     *subject* of the document.  Do NOT put the sender's name into the
     title unless the PDF text itself confirms they're the subject (e.g.
     a candidacy paper named "Υποψηφιότητα - <Name>" where <Name> matches
@@ -105,7 +105,7 @@ Strict JSON, no preamble, no markdown fences:
 _PROMPT_REFINE = """\
 You are the archival assistant for the Greek section of Amnesty International.
 A first pass already produced a draft classification for the document below.
-Your job is to refine it so it matches the archive's existing conventions —
+Your job is to refine it so it matches the archive's existing conventions -
 the recent entries shown.  Adjust title casing/abbreviations, tag combinations,
 and Κύρια Σημεία verbosity to match the style of the RECENT EXAMPLES.  Keep the
 same fields as the first pass.
@@ -156,7 +156,7 @@ SECGEN'S MESSAGE
 POSSIBLE INTENTS
 ================
 - "acknowledge": SecGen is confirming the entry is correct (e.g. "ok", "thanks",
-  "looks good") — no changes needed.
+  "looks good") - no changes needed.
 - "amend": SecGen wants a field changed (title, labels, key_points, protocol_id).
 - "cancel": SecGen wants the archive entry removed entirely.
 - "unrelated": the message isn't about this archive entry at all.
@@ -230,7 +230,7 @@ def _format_recent_block(entries: list[dict[str, str]]) -> str:
     lines: list[str] = []
     for e in entries:
         lines.append(
-            f"  - [{e.get('proto', '')}] {e.get('date', '')} — {e.get('title', '')}"
+            f"  - [{e.get('proto', '')}] {e.get('date', '')} - {e.get('title', '')}"
         )
         lines.append(f"    Tags:   {e.get('tags', '')}")
         if e.get("key_points"):
@@ -262,14 +262,14 @@ async def classify_document(
 
     Pulls live taxonomy + categories via OneDriveClient if the caller doesn't
     provide them (tests pass them explicitly to avoid a real network call).
-    Returns the parsed JSON dict from the prompt — missing fields are filled
+    Returns the parsed JSON dict from the prompt - missing fields are filled
     with sensible defaults so downstream callers don't need to handle absence.
     """
     if taxonomy is None or categories is None:
         # Lazy import to keep this module light when callers (tests) inject.
         from src.integrations.onedrive import OneDriveClient
         client = OneDriveClient()
-        # One download covers both tabs — halves the SharePoint round-trips
+        # One download covers both tabs - halves the SharePoint round-trips
         # this step makes (previously 2× ~100 KB → 1×).
         if taxonomy is None and categories is None:
             taxonomy, categories = await client.read_taxonomy_and_categories()
@@ -281,7 +281,7 @@ async def classify_document(
     pdf_warning = ""
     if pdf_metadata and pdf_metadata.get("is_scan"):
         pdf_warning = (
-            "NOTE: PDF appears to be a scan — text extraction limited. "
+            "NOTE: PDF appears to be a scan - text extraction limited. "
             "Lean on filename / sender / subject when deciding."
         )
 

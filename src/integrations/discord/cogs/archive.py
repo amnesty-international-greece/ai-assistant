@@ -1,4 +1,4 @@
-"""/archive cog — Discord-side archive workflow surface (B3).
+"""/archive cog - Discord-side archive workflow surface (B3).
 
 Provides:
   • ``/archive submit file [title] [proto] [tags] [sender]``
@@ -40,7 +40,7 @@ from src.integrations.discord.state import BotStateStore
 logger = logging.getLogger(__name__)
 
 
-# Custom_id prefixes — Discord uses these to route button clicks back to our
+# Custom_id prefixes - Discord uses these to route button clicks back to our
 # View class even after a bot restart.  Format: ``archive:<action>:<wf_id>``.
 _CUSTOM_ID_AMEND = "archive:amend"
 _CUSTOM_ID_CANCEL = "archive:cancel"
@@ -50,10 +50,10 @@ def _is_board_member(member: discord.Member | discord.User | None) -> bool:
     """True if the member has the configured board role."""
     role_id = (settings.discord.platform_bridge.board_meeting.board_role_id or "").strip()
     if not role_id:
-        # Not configured — fail OPEN during development, but log so SecGen
+        # Not configured - fail OPEN during development, but log so SecGen
         # knows to set it.  In production this should be set.
         logger.warning(
-            "_is_board_member: board_role_id not configured; allowing — "
+            "_is_board_member: board_role_id not configured; allowing - "
             "set discord.platform_bridge.board_meeting.board_role_id in config.yaml",
         )
         return True
@@ -164,7 +164,7 @@ class _ConfirmCancelView(discord.ui.View):
 
         Discord interactions time out at 3 seconds.  The rollback below can
         take 60s+ when it talks to SharePoint, so we MUST defer the response
-        before doing any I/O — otherwise the user sees "This interaction
+        before doing any I/O - otherwise the user sees "This interaction
         failed" AND Discord may re-fire the button (causing duplicate
         rollbacks, which was a real production incident on 2026-05-27).
         """
@@ -175,10 +175,10 @@ class _ConfirmCancelView(discord.ui.View):
         try:
             await interaction.response.defer(ephemeral=True)
         except discord.errors.InteractionResponded:
-            # Already deferred (re-fire from a stale view) — bail to avoid
+            # Already deferred (re-fire from a stale view) - bail to avoid
             # duplicate side-effects.  See production incident 2026-05-27.
             logger.warning(
-                "Cancel confirm fired twice for workflow %s — ignoring re-fire",
+                "Cancel confirm fired twice for workflow %s - ignoring re-fire",
                 self.workflow_id,
             )
             return
@@ -189,7 +189,7 @@ class _ConfirmCancelView(discord.ui.View):
             child.disabled = True
         try:
             await interaction.edit_original_response(view=self)
-        except Exception:  # pragma: no cover — cosmetic
+        except Exception:  # pragma: no cover - cosmetic
             pass
 
         state = get_workflow_state(self.workflow_id)
@@ -216,7 +216,7 @@ class _ConfirmCancelView(discord.ui.View):
                 actor=str(interaction.user.id),
                 target=self.workflow_id,
             )
-            test_banner = " (TEST MODE — no SharePoint changes)" if ctx.get("test_mode") else ""
+            test_banner = " (TEST MODE - no SharePoint changes)" if ctx.get("test_mode") else ""
             await interaction.followup.send(
                 f"✅ Η αρχειοθέτηση `{self.workflow_id}` ακυρώθηκε{test_banner}.",
                 ephemeral=True,
@@ -284,7 +284,7 @@ class AmendArchiveModal(discord.ui.Modal):
         data = json.loads(state.get("data") or "{}")
         ctx = data.get("context") or {}
 
-        # Build amendments dict — only include fields that actually changed
+        # Build amendments dict - only include fields that actually changed
         amendments: dict = {}
         new_t = self.new_title.value.strip()
         if new_t and new_t != (ctx.get("llm_result") or {}).get("title", ""):
@@ -300,7 +300,7 @@ class AmendArchiveModal(discord.ui.Modal):
 
         if not amendments:
             await interaction.response.send_message(
-                "Καμία αλλαγή ανιχνεύθηκε — άφησες ό,τι ήταν.", ephemeral=True,
+                "Καμία αλλαγή ανιχνεύθηκε - άφησες ό,τι ήταν.", ephemeral=True,
             )
             return
 
@@ -331,7 +331,7 @@ class AmendArchiveModal(discord.ui.Modal):
 
 
 class ArchiveCog(commands.Cog):
-    """`/archive` slash command group — board-only PDF submissions."""
+    """`/archive` slash command group - board-only PDF submissions."""
 
     class _ArchiveCommands(app_commands.Group):
         def __init__(self, cog: "ArchiveCog") -> None:
@@ -345,7 +345,7 @@ class ArchiveCog(commands.Cog):
         @app_commands.describe(
             file="Το έγγραφο προς αρχειοθέτηση (PDF, DOCX, ODT, RTF, JPG/PNG)",
             title="Παρακάμπτει τον τίτλο που θα προτείνει το LLM",
-            proto="Χειροκίνητος αρ. πρωτ. (YYYY_NNN) — αλλιώς θα δεσμευτεί ο επόμενος",
+            proto="Χειροκίνητος αρ. πρωτ. (YYYY_NNN) - αλλιώς θα δεσμευτεί ο επόμενος",
             tags="Ετικέτες χωρισμένες με κόμμα",
             sender="Επιπλέον info για τον αποστολέα (default: ο χρήστης Discord)",
         )
@@ -436,11 +436,11 @@ class ArchiveCog(commands.Cog):
                     )
                 return
 
-            # Success — build the confirmation embed + persistent buttons
+            # Success - build the confirmation embed + persistent buttons
             llm = ctx.get("llm_result") or {}
             test_banner = ""
             if admin_test_mode:
-                test_banner = "**[TEST MODE — δεν έγινε πραγματική αρχειοθέτηση]**\n\n"
+                test_banner = "**[TEST MODE - δεν έγινε πραγματική αρχειοθέτηση]**\n\n"
 
             embed = brand_embed(
                 title="Αρχειοθέτηση Ολοκληρώθηκε",
@@ -454,7 +454,7 @@ class ArchiveCog(commands.Cog):
             embed.add_field(name="Τίτλος", value=llm.get("title", "?"), inline=True)
             embed.add_field(
                 name="Ετικέτες",
-                value=", ".join(llm.get("labels", [])) or "—",
+                value=", ".join(llm.get("labels", [])) or "-",
                 inline=False,
             )
             kp = llm.get("key_points", "")
@@ -514,7 +514,7 @@ class ArchiveCog(commands.Cog):
             logger.info(
                 "ArchiveCog: re-registered %d persistent archive view(s)", len(rows),
             )
-        except Exception as exc:  # pragma: no cover — best-effort
+        except Exception as exc:  # pragma: no cover - best-effort
             logger.warning("ArchiveCog: persistent view re-registration failed: %s", exc)
 
         # Reservation-confirmation events (renamed from old "collision" flow on
@@ -526,7 +526,7 @@ class ArchiveCog(commands.Cog):
             self._on_reservation_confirmation_needed,
         )
 
-        logger.info("ArchiveCog loaded — /archive group registered")
+        logger.info("ArchiveCog loaded - /archive group registered")
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command("archive")
@@ -544,7 +544,7 @@ class ArchiveCog(commands.Cog):
 
         Triggered when the bot detects a SecGen pre-reservation (row exists,
         no file yet) but the submitted document's title doesn't confidently
-        match the reserved row's title — defer to SecGen to confirm.
+        match the reserved row's title - defer to SecGen to confirm.
         """
         secgen_user_id = _resolve_secgen_user_id(self.bot)
         if not secgen_user_id:
@@ -565,7 +565,7 @@ class ArchiveCog(commands.Cog):
             title="📥 Επιβεβαίωση Δεσμευμένου Αρ. Πρωτοκόλλου",
             description=(
                 f"Έχει υποβληθεί αρχείο για τον αρ.πρωτ. "
-                f"`{payload.get('protocol_number')}` που έχεις δεσμεύσει — "
+                f"`{payload.get('protocol_number')}` που έχεις δεσμεύσει - "
                 f"όμως ο τίτλος του αρχείου δεν ταιριάζει σίγουρα με τον "
                 f"τίτλο της εγγραφής (match confidence {match_conf:.2f}). "
                 f"Παρακαλώ επιβεβαίωσε αν είναι το σωστό έγγραφο."
@@ -574,12 +574,12 @@ class ArchiveCog(commands.Cog):
         )
         embed.add_field(
             name="Τίτλος της εγγραφής (δικός σου)",
-            value=payload.get("existing_title", "—")[:1024],
+            value=payload.get("existing_title", "-")[:1024],
             inline=False,
         )
         embed.add_field(
             name="Τίτλος του υποβληθέντος αρχείου",
-            value=payload.get("proposed_title", "—")[:1024],
+            value=payload.get("proposed_title", "-")[:1024],
             inline=False,
         )
         embed.set_footer(text=f"Workflow ID: {workflow_id}")
@@ -614,7 +614,7 @@ def _resolve_secgen_user_id(bot: commands.Bot) -> int | None:
     contains 'γραμματ' (Greek for secretary).  Override by setting a hard-coded
     DISCORD_SECGEN_USER_ID in .env if needed (not yet wired).
     """
-    # Phase B4 stub — for now just probe by display_name matching.  Hardening
+    # Phase B4 stub - for now just probe by display_name matching.  Hardening
     # against the role + a config key lands in a follow-up.
     guild_id = settings.discord_guild_id
     if not guild_id:
@@ -632,7 +632,7 @@ def _resolve_secgen_user_id(bot: commands.Bot) -> int | None:
 class ReservationConfirmView(discord.ui.View):
     """SecGen DM buttons: confirm/reject filling a reserved πρωτόκολλο slot.
 
-    Renamed from CollisionResolveView on 2026-05-27 — the old collision-
+    Renamed from CollisionResolveView on 2026-05-27 - the old collision-
     approval flow was removed (the bot never overwrites archived files).
     This view is now used only when a SecGen pre-reservation has a title
     that doesn't confidently match the submitted document.
@@ -680,7 +680,7 @@ class ReservationConfirmView(discord.ui.View):
         )
         if result.get("status") == "completed":
             await interaction.followup.send(
-                f"✅ Επιβεβαιώθηκε — αρχειοθέτηση `{self.workflow_id}` ολοκληρώθηκε.",
+                f"✅ Επιβεβαιώθηκε - αρχειοθέτηση `{self.workflow_id}` ολοκληρώθηκε.",
                 ephemeral=True,
             )
             for child in self.children:
@@ -692,12 +692,12 @@ class ReservationConfirmView(discord.ui.View):
         else:
             await interaction.followup.send(
                 f"⚠️ Επιβεβαίωση δόθηκε αλλά η αρχειοθέτηση δεν ολοκληρώθηκε καθαρά: "
-                f"{result.get('status')} — {result.get('error', '')}",
+                f"{result.get('status')} - {result.get('error', '')}",
                 ephemeral=True,
             )
 
     @discord.ui.button(
-        label="Όχι, δεν ταιριάζει — ακύρωση",
+        label="Όχι, δεν ταιριάζει - ακύρωση",
         style=discord.ButtonStyle.danger, emoji="❌",
     )
     async def reject(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
@@ -732,7 +732,7 @@ class ReservationConfirmView(discord.ui.View):
             details={"via": "discord_dm"},
         )
         await interaction.followup.send(
-            f"❌ Απορρίφθηκε — η αρχειοθέτηση `{self.workflow_id}` ακυρώθηκε.",
+            f"❌ Απορρίφθηκε - η αρχειοθέτηση `{self.workflow_id}` ακυρώθηκε.",
             ephemeral=True,
         )
         for child in self.children:

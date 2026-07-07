@@ -28,10 +28,10 @@ def generate_docx(
 
     Args:
         content: Dictionary with document structure:
-            - title: str — Document title
-            - subtitle: str — Optional subtitle
-            - sections: list[dict] — Each with 'heading' and 'body' keys
-            - metadata: dict — Optional metadata (author, date, etc.)
+            - title: str - Document title
+            - subtitle: str - Optional subtitle
+            - sections: list[dict] - Each with 'heading' and 'body' keys
+            - metadata: dict - Optional metadata (author, date, etc.)
         output_path: Where to save the DOCX.
         template_path: Optional path to a .docx template to use as base.
         workflow: Workflow name for audit logging.

@@ -1,4 +1,4 @@
-"""Tests for src.core.tokens — unified token store."""
+"""Tests for src.core.tokens - unified token store."""
 
 from __future__ import annotations
 

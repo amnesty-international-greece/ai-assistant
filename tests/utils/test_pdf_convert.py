@@ -1,4 +1,4 @@
-"""Phase 5 — non-PDF inputs auto-converted via LibreOffice headless."""
+"""Phase 5 - non-PDF inputs auto-converted via LibreOffice headless."""
 from __future__ import annotations
 
 from pathlib import Path

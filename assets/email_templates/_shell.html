@@ -94,7 +94,7 @@
   .e-y-bar h2 {{
     font-family: "Roboto Condensed", "Roboto", "Helvetica Neue", Arial, sans-serif;
     font-weight: 900;
-    font-size: 34px;
+    font-size: 26px;
     line-height: 1.05;
     margin: 0;
     letter-spacing: -0.01em;
@@ -110,7 +110,6 @@
     line-height: 1.6;
     margin: 0 0 14px;
   }}
-  .e-body .lede {{ font-size: 17px; line-height: 1.5; }}
 
   /* Primary CTA - black on yellow */
   .e-body a.cta {{
@@ -221,7 +220,7 @@
     font-weight: 500;
   }}
 
-  /* Flame-red reason card — archive_failure */
+  /* Flame-red reason card - archive_failure */
   .e-body .reason-card {{
     background: #fff1ed;
     border-left: 4px solid #E63B11;
@@ -243,7 +242,7 @@
     margin: 0;
   }}
 
-  /* Deadline countdown strip — scheduling templates */
+  /* Deadline countdown strip - scheduling templates */
   .e-body .deadline-strip {{
     background: #FFFF00;
     border-top: 2px solid #0a0a0a;
@@ -276,9 +275,9 @@
     opacity: 0.7;
   }}
 
-  /* Numbered task list — scheduling templates */
+  /* Numbered task list - scheduling templates */
   .e-body ol.task-list {{
-    margin: 16px 0 8px;
+    margin: 12px 0 8px;
     padding-left: 0;
     list-style: none;
     counter-reset: task-counter;
@@ -286,14 +285,12 @@
   .e-body ol.task-list li {{
     counter-increment: task-counter;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
-    padding: 10px 0;
-    border-bottom: 1px solid #e8e8e8;
+    padding: 6px 0;
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.4;
   }}
-  .e-body ol.task-list li:last-child {{ border-bottom: none; }}
   .e-body ol.task-list li::before {{
     content: counter(task-counter);
     display: inline-flex;
@@ -307,7 +304,18 @@
     font-weight: 900;
     font-size: 13px;
     flex-shrink: 0;
-    margin-top: 1px;
+  }}
+  .e-body ol.task-list li span.task-text {{
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }}
+  .e-body ol.task-list li a.cta {{
+    margin: 0;
+    flex-shrink: 0;
+    min-width: 160px;
+    text-align: center;
   }}
 
   /* -- Footer (candle mark + legal) --------------------------------- */
@@ -332,7 +340,7 @@
 
   /* Outlook ignores flex - give it sensible block fallbacks via MSO. */
   @media only screen and (max-width: 600px) {{
-    .e-y-bar h2 {{ font-size: 28px; }}
+    .e-y-bar h2 {{ font-size: 22px; }}
     .e-body .info-row dl {{ grid-template-columns: 1fr; }}
     .e-body .info-row dt {{ padding-top: 6px; }}
   }}
@@ -358,8 +366,8 @@
     <div class="e-foot">
       {candle_html}
       <div style="flex:1;">
-        Διεθνής Αμνηστία - Ελληνικό Τμήμα · <a href="https://www.amnesty.gr">amnesty.gr</a><br/>
-        {footer_note}
+        {footer_note}<br/>
+        <span style="opacity:0.65;">Διεθνής Αμνηστία - Ελληνικό Τμήμα - <a href="https://www.amnesty.gr">amnesty.gr</a></span>
       </div>
     </div>
 

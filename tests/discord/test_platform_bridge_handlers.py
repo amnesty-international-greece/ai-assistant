@@ -147,7 +147,7 @@ async def test_scheduled_enqueues_reminder_in_pending_store(in_memory_db):
 
     # Should have enqueued a pending action
     now = datetime.now(timezone.utc)
-    # The meeting is 2030-01-15 18:00 UTC — well in the future from test perspective
+    # The meeting is 2030-01-15 18:00 UTC - well in the future from test perspective
     due_actions = await pending_store.due_now(now=datetime(2030, 1, 16, tzinfo=timezone.utc))
     reminder_actions = [a for a in due_actions if a.action_type == "board_meeting_reminder"]
     assert len(reminder_actions) == 1
@@ -255,7 +255,7 @@ async def test_scheduled_opens_public_thread_only_private_already_exists(in_memo
 async def test_minutes_shared_posts_to_private_board_thread_only(in_memory_db):
     """V3 modernization: minutes go ONLY to the private board thread.
 
-    Per discord_bot_modernization.md §B.2 user spec — minutes are pre-finalization
+    Per discord_bot_modernization.md §B.2 user spec - minutes are pre-finalization
     sensitive material, so they're board-only.  The public agenda thread is
     skipped even when it exists.
     """
@@ -391,7 +391,7 @@ async def test_cancelled_posts_to_thread_and_cancels_pending_action(in_memory_db
 
         await cog._on_board_meeting_cancelled(payload)
 
-    # Thread should have received a cancellation embed (V4 — Rich Embed,
+    # Thread should have received a cancellation embed (V4 - Rich Embed,
     # not raw text)
     mock_thread.send.assert_called_once()
     sent_kwargs = mock_thread.send.call_args.kwargs
@@ -503,7 +503,7 @@ async def test_minutes_shared_posts_drive_link(in_memory_db):
     """V3 modernization: minutes posted as Rich Embed + Link button, board-only.
 
     Test pre-dates the public-thread restriction, so we set up only a private
-    ``thread_board`` resource — which is exactly what the new handler expects.
+    ``thread_board`` resource - which is exactly what the new handler expects.
     """
     mock_thread = AsyncMock()
     mock_thread.send = AsyncMock()

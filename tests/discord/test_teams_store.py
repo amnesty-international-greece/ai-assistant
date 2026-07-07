@@ -1,4 +1,4 @@
-"""Tests for TeamsStore — data layer for Phase C team management."""
+"""Tests for TeamsStore - data layer for Phase C team management."""
 
 from __future__ import annotations
 

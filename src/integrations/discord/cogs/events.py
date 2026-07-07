@@ -1,12 +1,12 @@
-"""Events cog — announce Discord scheduled events to the εκδηλώσεις forum channel.
+"""Events cog - announce Discord scheduled events to the εκδηλώσεις forum channel.
 
 Post format (per user's note re: Google Group email bridge):
-- A short plain-text summary at the TOP — readable in emails forwarded from
+- A short plain-text summary at the TOP - readable in emails forwarded from
   the forum to the Google Group (where Discord embeds don't render).
-- The event URL on its own line — Discord auto-expands this into a rich
+- The event URL on its own line - Discord auto-expands this into a rich
   preview card with thumbnail, RSVP count, etc.  Email subscribers see just
   the URL, which is fine.
-- (Optionally) a brand_embed below for Discord viewers' eyes — but the URL
+- (Optionally) a brand_embed below for Discord viewers' eyes - but the URL
   expansion already gives most of the visual win, so we keep the embed
   minimal to avoid double-rendering.
 """
@@ -38,13 +38,13 @@ class EventsCog(commands.Cog):
     def _plaintext_announcement(self, event: discord.ScheduledEvent) -> str:
         """Plain-text summary for Google-Group email subscribers.
 
-        Kept short on purpose — the event URL on its own line below will get
+        Kept short on purpose - the event URL on its own line below will get
         auto-expanded by Discord into a full card for Discord viewers, so we
         don't need to duplicate the rich info here.
         """
         lines = [f"**{event.name}**"]
         if event.description:
-            # Trim long descriptions — full text is in the linked event itself
+            # Trim long descriptions - full text is in the linked event itself
             desc = event.description[:300]
             if len(event.description) > 300:
                 desc += "…"
@@ -100,11 +100,11 @@ class EventsCog(commands.Cog):
             if channel is None:
                 return
 
-            # V5: LIVE notification — short plain-text + brand embed in Amnesty
+            # V5: LIVE notification - short plain-text + brand embed in Amnesty
             # yellow with a "Join" link button when the event has a URL.
-            content = f"🔴 **LIVE** — {after.name} ξεκινά τώρα!"
+            content = f"🔴 **LIVE** - {after.name} ξεκινά τώρα!"
             embed = brand_embed(
-                title=f"🔴 LIVE — {after.name}",
+                title=f"🔴 LIVE - {after.name}",
                 description="Η εκδήλωση ξεκινά τώρα.",
                 color=AMNESTY_YELLOW,
             )

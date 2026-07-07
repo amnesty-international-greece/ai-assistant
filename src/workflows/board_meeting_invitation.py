@@ -21,6 +21,10 @@ import logging
 from datetime import date as _date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
+
+# Meeting dates/times in the agenda sheet are Athens-local wall-clock values.
+_ATHENS_TZ = ZoneInfo("Europe/Athens")
 
 from src.config import settings
 from src.core.email_templates import render_email
@@ -90,7 +94,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         without a KeyError.  The debug runner forces ``test_mode=True`` (emails
         redirect to test_email, Brevo stays draft, archive is skipped); it is
         intentionally NOT set here.  Steps that hit external APIs (M365, Zoom,
-        Google, Brevo) behave per test_mode / config — the fixture only
+        Google, Brevo) behave per test_mode / config - the fixture only
         guarantees the INPUT keys exist.
         """
         return {
@@ -99,6 +103,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             "meeting_ref_override": "ΔΣ99-2099",                   # send_scheduling_email / read_agenda sandbox ref
             "agenda_sheet_id": "",                                 # read_agenda / send_scheduling_email
             "response_deadline": "2099-06-11",                     # send_scheduling_email deadline
+            "crabfit_dates": [],                                   # send_scheduling_email: candidate dates (empty → no poll created)
             # read_agenda (skip live Sheets read; provide manual agenda)
             "_skip_read_agenda": True,                             # read_agenda: use provided agenda
             "_skip_approval_guard": True,                          # read_agenda: skip D16:D18 approval gate
@@ -120,7 +125,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             # draft_invitation / generate_pdf / archive
             "protocol_number": "2099_999",
             "invitation_replacements": {                           # generate_pdf input (normally from draft_invitation)
-                "[ΗΜΕΡΟΜΗΝΙΑ]": "15 Ιουνίου 2099",
+                "_invitation_dates_": {"issue": "6 Ιουνίου 2099", "meeting": "15 Ιουνίου 2099"},
                 "[ΤΥΠΟΣ]": "ΤΑΚΤΙΚΗΣ",
                 "[ΩΡΑ ΕΝΑΡΞΗΣ]": "18:00",
                 "[ΤΟΠΟΘΕΣΙΑ]": "διαδικτυακά μέσω της πλατφόρμας Zoom",
@@ -246,10 +251,10 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         # D5 is password-protected on the user side; ``reset_agenda_sheet``
         # updates it at the start of each cycle, so the value is always the
         # ref for THIS cycle's meeting.  Falls back to the placeholder ref
-        # only if the sheet isn't configured at all — any other read failure
+        # only if the sheet isn't configured at all - any other read failure
         # raises (because sending an email with the wrong meeting_ref would
         # corrupt the thread anchor, subject line, and downstream artefacts).
-        # Sandbox override — when ``--meeting-ref ΔΣ99-2099`` is passed (used
+        # Sandbox override - when ``--meeting-ref ΔΣ99-2099`` is passed (used
         # for safe end-to-end testing in parallel with a live cycle), bypass
         # D5 entirely so the test workflow's meeting_id never collides with
         # the live one's Discord threads / Zoom meeting / pending reminders.
@@ -281,7 +286,27 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 deadline_dt = _date.today() + timedelta(days=4)
             deadline_fmt = f"{deadline_dt.day} {_GREEK_MONTHS[deadline_dt.month]}"
         except (ValueError, TypeError, IndexError):
-            deadline_fmt = "—"
+            deadline_fmt = "-"
+
+        # ── Crab Fit availability poll ───────────────────────────────────────
+        # When candidate dates were supplied (and no explicit poll URL given),
+        # create a Crab Fit event over those dates and use its grid as the poll.
+        # Non-fatal: if creation fails, the email still sends (no-poll variant).
+        crabfit_dates = ctx.get("crabfit_dates") or []
+        crabfit_url = ""
+        if not poll_url and crabfit_dates:
+            try:
+                from src.integrations.crabfit import CrabFitClient
+                _dates = [_date.fromisoformat(s) for s in crabfit_dates]
+                _event = await CrabFitClient().create_event(
+                    name=f"Συνεδρίαση {meeting_ref}",
+                    dates=_dates,
+                    workflow=self.name,
+                )
+                poll_url = _event["url"]
+                crabfit_url = _event["url"]
+            except Exception as cf_err:
+                logger.warning("Crab Fit event creation failed (non-fatal): %s", cf_err)
 
         # ── URLs for hyperlink substitution ──────────────────────────────────
         sheet_url = (
@@ -315,16 +340,12 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             template_vars["poll_url"] = poll_url
         body_html = render_email(
             template_name,
-            kicker="Προγραμματισμός - Ημερήσια Διάταξη",
-            title=(
-                f"ΣΥΝΕΔΡΙΑΣΗ {meeting_ref}"
-                if poll_url
-                else "Ημερήσια διάταξη<br/>για την επόμενη συνεδρίαση."
-            ),
+            kicker="ΠΡΟΓΡΑΜΜΑΤΙΣΜΟΣ - ΗΜΕΡΗΣΙΑ ΔΙΑΤΑΞΗ",
+            title=f"ΣΥΝΕΔΡΙΑΣΗ {meeting_ref}",
             header_ref="ΔΣ - ΠΡΟΓΡΑΜΜΑΤΙΣΜΟΣ",
             # Shell already prefixes the org name on its own line; this is
             # the second line and should be the workflow-specific context.
-            footer_note="Εσωτερική επικοινωνία Διοικητικού Συμβουλίου",
+            footer_note="Εσωτερική επικοινωνία - Διοικητικό Συμβούλιο",
             **template_vars,
         )
 
@@ -366,7 +387,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         # ``platform_bridge`` listens for THREAD_OPENED and creates the
         # board forum thread; it also posts the email body as the first
         # message via the EMAIL_SENT companion event.  Both publications
-        # are non-fatal — the workflow has done its primary job already.
+        # are non-fatal - the workflow has done its primary job already.
         meeting_id = _derive_meeting_id({"raw_meeting_id": meeting_ref})
         try:
             from src.core.event_bus import bus
@@ -437,6 +458,8 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 "email_thread_anchor": anchor,
                 "meeting_ref": meeting_ref,
                 "raw_meeting_id": meeting_ref,
+                "poll_url": poll_url or "",
+                "crabfit_url": crabfit_url,
             },
             message=f"Scheduling email sent to {recipients_msg} (anchor={anchor})",
         )
@@ -557,7 +580,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
 
             import re as _re
 
-            # Meeting number: prefer D5 (the single source of truth — see
+            # Meeting number: prefer D5 (the single source of truth - see
             # GoogleClient.read_meeting_ref).  Falls back to the form's
             # "ΑΡΙΘΜΟΣ ΣΥΝΕΔΡΙΑΣΗΣ" cell if D5 is unreadable, then to whatever
             # the tab title contains.  Note D5 holds the full ref ΔΣXX-YYYY;
@@ -833,7 +856,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
 
             _PROTO_RE = r"^\d{4}[_-]\d+$"
             if not (protocol_number and _re.match(_PROTO_RE, protocol_number.strip())):
-                protocol_number = _fetch_next_protocol_number(self.onedrive) or ""
+                protocol_number = await _fetch_next_protocol_number(self.onedrive) or ""
 
             if not protocol_number:
                 print()
@@ -869,8 +892,15 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             else:
                 replacements["_delete_paragraphs_"] = ["Αρ. Πρωτ.: [ΑΡΙΘΜΟΣ ΠΡΩΤΟΚΟΛΛΟΥ]"]
 
+            # The template reuses [ΗΜΕΡΟΜΗΝΙΑ] twice: the top-right letterhead
+            # (the *issue* date - always today) and the body sentence (the
+            # *meeting* date).  They are filled per-occurrence, not via a single
+            # replaceAllText, since the two need different values.
             replacements.update({
-                "[ΗΜΕΡΟΜΗΝΙΑ]": greek_date,
+                "_invitation_dates_": {
+                    "issue": _format_greek_date(_date.today().isoformat()),
+                    "meeting": greek_date,
+                },
                 "[ΤΥΠΟΣ]": type_genitive,
                 "[ΩΡΑ ΕΝΑΡΞΗΣ]": meeting_time or "ΩΡΑ ΤΒΔ",
                 "[ΤΟΠΟΘΕΣΙΑ]": location_phrase,
@@ -1146,6 +1176,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         meeting_date = ctx.get("meeting_date", "")
         meeting_time = ctx.get("meeting_time", "")
         greek_date = _format_greek_date(meeting_date)
+        _email_meeting_ref = ctx.get("raw_meeting_id", "") or ""
 
         zoom_url = ctx.get("zoom_join_url", "") or "(δεν έχει οριστεί)"
         zoom_meeting_id = ctx.get("zoom_meeting_id", "") or "(δεν έχει οριστεί)"
@@ -1156,12 +1187,12 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             "invitation_board",
             # Shelled-render: wraps content in the v2 brand shell
             # (black header / yellow titlebar / candle footer).
-            kicker="Πρόσκληση Διοικητικού Συμβουλίου",
-            title=f"Επόμενη συνεδρίαση<br/>{greek_date}, {meeting_time}",
+            kicker="ΠΡΟΣΚΛΗΣΗ ΔΙΟΙΚΗΤΙΚΟΥ ΣΥΜΒΟΥΛΙΟΥ",
+            title=f"ΣΥΝΕΔΡΙΑΣΗ {_email_meeting_ref}",
             header_ref="ΔΣ - ΠΡΟΣΚΛΗΣΗ",
             # Shell already prefixes the org name on its own line; this is
             # the second line and should be the workflow-specific context.
-            footer_note="Πρόσκληση Διοικητικού Συμβουλίου · Εσωτερική επικοινωνία ΔΣ",
+            footer_note="Εσωτερική επικοινωνία - Διοικητικό Συμβούλιο",
             # Inner-template placeholders
             share_link=share_link,
             greek_date=greek_date,
@@ -1193,7 +1224,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             from src.core.event_bus import bus
             from src.core.events import EVENT_BOARD_EMAIL_SENT, BoardEmailSentPayload
             meeting_ref_for_mirror = ctx.get("raw_meeting_id", "") or ""
-            # send_reply derives its subject from the parent — mirror the
+            # send_reply derives its subject from the parent - mirror the
             # synthetic reply subject the recipient will see in their inbox.
             mirror_subject = (
                 f"Re: Συνεδρίαση {meeting_ref_for_mirror}"
@@ -1209,6 +1240,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             )
             _sheet_id = ctx.get("agenda_sheet_id") or settings.google.agenda_sheet_id
             _sheet_url = f"https://docs.google.com/spreadsheets/d/{_sheet_id}/" if _sheet_id else ""
+            _invitation_pdf_url = ctx.get("archive_share_link", "") or ""
             await bus.publish(
                 EVENT_BOARD_EMAIL_SENT,
                 BoardEmailSentPayload(
@@ -1220,6 +1252,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                     test_mode=test_mode,
                     zoom_url=ctx.get("zoom_join_url", "") or "",
                     agenda_url=_sheet_url,
+                    invitation_pdf_url=_invitation_pdf_url,
                     meeting_datetime=_meeting_dt_str,
                     agenda_summary=_agenda_summary,
                 ),
@@ -1229,6 +1262,32 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 "Could not publish board email_sent event for invitation (non-fatal): %s",
                 bus_err,
             )
+
+        # Persist to DB so the bot posts the invitation embed into the private
+        # board thread even when it was offline during the bus publish above
+        # (CLI / FastAPI webhook and bot run in separate processes).
+        try:
+            from src.integrations.discord.scheduler import PendingActionsStore
+            await PendingActionsStore().enqueue(
+                action_type="board_email_invitation_mirror",
+                payload={
+                    "meeting_id": _derive_meeting_id(ctx),
+                    "meeting_ref": meeting_ref_for_mirror,
+                    "kind": "invitation",
+                    "subject": mirror_subject,
+                    "body_html": body_html,
+                    "test_mode": test_mode,
+                    "zoom_url": ctx.get("zoom_join_url", "") or "",
+                    "agenda_url": _sheet_url,
+                    "invitation_pdf_url": _invitation_pdf_url,
+                    "meeting_datetime": _meeting_dt_str,
+                    "agenda_summary": _agenda_summary,
+                },
+                due_at=datetime.now(timezone.utc),
+            )
+            logger.info("Enqueued board_email_invitation_mirror pending action for %s", meeting_ref_for_mirror)
+        except Exception as pa_err:
+            logger.warning("Could not enqueue board_email_invitation_mirror (non-fatal): %s", pa_err)
 
         return StepResult(
             success=True,
@@ -1529,10 +1588,10 @@ async def _publish_board_meeting_scheduled(ctx: dict[str, Any]) -> None:
         try:
             if meeting_time:
                 dt_str = f"{meeting_date}T{meeting_time}:00"
-                meeting_dt = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
+                meeting_dt = datetime.fromisoformat(dt_str).replace(tzinfo=_ATHENS_TZ)
             else:
                 d = _date.fromisoformat(meeting_date)
-                meeting_dt = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+                meeting_dt = datetime(d.year, d.month, d.day, tzinfo=_ATHENS_TZ)
         except (ValueError, TypeError) as exc:
             logger.warning("_publish_board_meeting_scheduled: could not parse datetime: %s", exc)
             return
@@ -1557,20 +1616,41 @@ async def _publish_board_meeting_scheduled(ctx: dict[str, Any]) -> None:
             ),
         )
         logger.info("_publish_board_meeting_scheduled: published %s", meeting_id)
+
+        # Persist to DB so the bot creates the public agenda thread + Discord
+        # scheduled event even when it was offline during the bus publish above
+        # (CLI / FastAPI webhook and bot run in separate processes).
+        try:
+            from src.integrations.discord.scheduler import PendingActionsStore
+            await PendingActionsStore().enqueue(
+                action_type="board_meeting_scheduled",
+                payload={
+                    "meeting_id": meeting_id,
+                    "starts_at": meeting_dt.isoformat(),
+                    "zoom_url": ctx.get("zoom_join_url", "") or "",
+                    "agenda_summary": agenda_summary,
+                    "board_member_emails": board_member_emails,
+                    "test_mode": bool(ctx.get("test_mode")),
+                },
+                due_at=datetime.now(timezone.utc),
+            )
+            logger.info("Enqueued board_meeting_scheduled pending action for %s", meeting_id)
+        except Exception as pa_err:
+            logger.warning("Could not enqueue board_meeting_scheduled (non-fatal): %s", pa_err)
     except Exception as exc:
         logger.warning("Bus publish board.meeting.scheduled failed (non-fatal): %s", exc)
 
 
-def _fetch_next_protocol_number(onedrive_client) -> str:
-    import asyncio
-
+async def _fetch_next_protocol_number(onedrive_client) -> str:
     if not settings.ms_client_id or not settings.ms_tenant_id:
         logger.debug("MS credentials not configured - skipping auto protocol fetch")
         return ""
 
     try:
         year = _date.today().year
-        return asyncio.run(onedrive_client.get_next_protocol_number(year))
+        # Awaited directly - the workflow already runs inside an event loop, so
+        # asyncio.run() here would raise "cannot be called from a running loop".
+        return await onedrive_client.get_next_protocol_number(year)
     except Exception as e:
         logger.warning("Could not fetch protocol number from SharePoint Excel: %s", e)
         return ""

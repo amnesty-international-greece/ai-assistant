@@ -28,13 +28,13 @@ _DOCS = [
     ("Εσωτερικοί Κανονισμοί Ελληνικού Τμήματος Διεθνούς Αμνηστίας", "Εσωτερικοί Κανονισμοί"),
 ]
 
-# "Άρθρο 15. Τίτλος" — tolerant of the extra spaces PyPDF2 injects.
+# "Άρθρο 15. Τίτλος" - tolerant of the extra spaces PyPDF2 injects.
 _ARTICLE_RE = re.compile(r"Άρθρο\s+(\d+)\s*\.?\s*([^\n]*)")
 
 
 def _flat(text: str) -> str:
     """Flatten ALL whitespace (PyPDF2 scatters spaces and newlines between
-    syllables) to single spaces — the only reliable normalisation across both
+    syllables) to single spaces - the only reliable normalisation across both
     documents' wildly different extracted layouts."""
     return re.sub(r"\s+", " ", text).strip()
 
@@ -67,7 +67,7 @@ def _split_articles(doc_label: str, full_text: str) -> list[dict]:
     articles: list[dict] = []
     for i, (number, m) in enumerate(kept):
         end = kept[i + 1][1].start() if i + 1 < len(kept) else len(flat)
-        body = flat[m.end():end].strip(" .·—-")
+        body = flat[m.end():end].strip(" .---")
         # Title = leading clause up to the first period (titles are short:
         # "Επωνυμία", "Σκοποί", ...); fall back to the first 60 chars.
         head = body[:120]

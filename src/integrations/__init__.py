@@ -1,6 +1,6 @@
 """Integration clients for external services.
 
-The Discord bot lives in the ``discord/`` sub-package — import from there,
+The Discord bot lives in the ``discord/`` sub-package - import from there,
 not from this top-level namespace.
 """
 

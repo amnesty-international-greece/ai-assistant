@@ -140,9 +140,9 @@ def test_parse_response_empty_string_falls_back():
 
 
 def test_parse_response_extra_pipes_uses_first_split():
-    """Extra '|' characters — maxsplit=1, so only the first pipe is the separator."""
+    """Extra '|' characters - maxsplit=1, so only the first pipe is the separator."""
     classifier = make_classifier()
-    # "επικαιρότητα|0.9|extra" — second field is "0.9|extra" which can't be float.
+    # "επικαιρότητα|0.9|extra" - second field is "0.9|extra" which can't be float.
     result = classifier._parse_response(
         raw_text="επικαιρότητα|0.9|extra",
         label_to_id=LABEL_TO_ID,

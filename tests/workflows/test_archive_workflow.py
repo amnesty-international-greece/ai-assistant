@@ -336,7 +336,7 @@ async def test_rollback_in_test_mode_never_touches_sharepoint(workflow, tmp_path
     """Regression test for the 2026-05-27 production incident.
 
     In test mode, the workflow never writes to SharePoint, so the rollback
-    must NOT call delete_protocol_row or delete_file — otherwise it would
+    must NOT call delete_protocol_row or delete_file - otherwise it would
     delete REAL pre-existing rows that happen to share the protocol number
     we reserved (which is what actually happened in prod, deleting 2 rows
     before this guard was added).

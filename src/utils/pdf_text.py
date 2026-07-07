@@ -4,7 +4,7 @@ Uses PyPDF2 (already pulled in via ``src.documents.pdf_generator``).  Returns
 both the extracted text and a small metadata dict the workflow can pass to the
 LLM (encryption + scan-heuristic flags).
 
-Encrypted PDFs raise a clear Greek error message — Phase 1 doesn't decrypt
+Encrypted PDFs raise a clear Greek error message - Phase 1 doesn't decrypt
 anything.  Scanned PDFs still proceed, but the metadata flag lets the LLM
 prompt say "text extraction limited" so the model down-weights body content
 and leans on filename/sender/subject instead.
@@ -30,7 +30,7 @@ def extract_pdf_text(
     Args:
         pdf_path:  Path to the PDF on disk.
         max_chars: Truncate the returned text to this many characters
-                   (default 5000 — matches the LLM prompt budget in the
+                   (default 5000 - matches the LLM prompt budget in the
                    archive design doc).
 
     Returns:

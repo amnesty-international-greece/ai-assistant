@@ -85,7 +85,7 @@ class OneDriveClient(M365GraphAuthMixin):
 
     # Delegated scopes needed for SharePoint / OneDrive file operations.
     # offline_access is requested implicitly by MSAL when the app is configured
-    # with a token cache — do NOT include it in the scopes list passed to
+    # with a token cache - do NOT include it in the scopes list passed to
     # acquire_token_silent / acquire_token_by_authorization_code (MSAL adds it).
     _SCOPES = ["Files.ReadWrite.All"]
 
@@ -195,7 +195,7 @@ class OneDriveClient(M365GraphAuthMixin):
             )
 
         self._persist_cache()
-        logger.info("Microsoft sign-in successful — token cached.")
+        logger.info("Microsoft sign-in successful - token cached.")
 
     # ── SharePoint site resolution ────────────────────────────────────────────
 
@@ -420,7 +420,7 @@ class OneDriveClient(M365GraphAuthMixin):
     async def delete_folder(self, folder_path: str, workflow: str = "onedrive") -> None:
         """Delete a folder (recursively) from the SharePoint archive.
 
-        Same Graph endpoint as :meth:`delete_file` — Graph treats folder
+        Same Graph endpoint as :meth:`delete_file` - Graph treats folder
         deletes recursively by default.  Kept as a separate method for call-
         site clarity; use whichever reads better at the call site.
 
@@ -545,7 +545,7 @@ class OneDriveClient(M365GraphAuthMixin):
             # Re-upload to the archive root with retry-on-423 (handles the
             # case where someone has the xlsx open in Excel).
             await self._upload_protocol_workbook(tmp_path, workflow="onedrive")
-            logger.info("Protocol registry updated: %s — %s", protocol_id, title)
+            logger.info("Protocol registry updated: %s - %s", protocol_id, title)
         finally:
             try:
                 tmp_path.unlink()
@@ -565,7 +565,7 @@ class OneDriveClient(M365GraphAuthMixin):
         Each kwarg that is *not* ``None`` overwrites the corresponding column;
         passing ``None`` keeps the existing value.  Pass ``""`` to clear a
         cell explicitly.  Date and the πρωτόκολλο id itself are never touched
-        by this method — those are write-once.
+        by this method - those are write-once.
 
         Args:
             protocol_id:  Row key, e.g. ``"2026_017"``.
@@ -582,7 +582,7 @@ class OneDriveClient(M365GraphAuthMixin):
         import openpyxl
 
         if title is None and main_points is None and tags is None:
-            # No-op — don't bother downloading.
+            # No-op - don't bother downloading.
             return False
 
         year_match = _re.match(r"^(\d{4})", protocol_id)
@@ -645,12 +645,12 @@ class OneDriveClient(M365GraphAuthMixin):
         """Rename a SharePoint file in place (same folder, new name).
 
         Uses Graph's ``PATCH /drive/items/...`` with a ``{"name": ...}`` body.
-        The file's Graph ``id`` is preserved — share links etc. keep working.
+        The file's Graph ``id`` is preserved - share links etc. keep working.
 
         Args:
             remote_path: Current path **relative to archive_root**
                 (e.g. ``"Αρχείο ανά έτος/2026/[2026_017] Old.pdf"``).
-            new_name:    New filename (just the leaf — no directory).  Caller
+            new_name:    New filename (just the leaf - no directory).  Caller
                 is responsible for sanitising filesystem-hostile characters.
             workflow:    Audit-log workflow name.
 
@@ -682,7 +682,7 @@ class OneDriveClient(M365GraphAuthMixin):
 
         Used by the archive workflow's pre-existence check to decide whether
         a πρωτόκολλο row is "reserved-but-empty" (SecGen pre-claimed the
-        number, no file yet) or "already archived" (row + file both exist —
+        number, no file yet) or "already archived" (row + file both exist -
         the bot must refuse to overwrite).
 
         Args:
@@ -690,7 +690,7 @@ class OneDriveClient(M365GraphAuthMixin):
 
         Returns:
             True if at least one matching file is present, False otherwise.
-            Network errors return False (fail-open — we'd rather attempt a
+            Network errors return False (fail-open - we'd rather attempt a
             write and have SharePoint reject than refuse on a transient
             list failure).
         """
@@ -811,7 +811,7 @@ class OneDriveClient(M365GraphAuthMixin):
 
     # ── Taxonomy / categories reference data (Phase 1 archive) ────────────────
 
-    # Local safety copy of the πρωτόκολλο xlsx — refreshed on every successful
+    # Local safety copy of the πρωτόκολλο xlsx - refreshed on every successful
     # download.  Defends against accidental deletion / corruption of the file in
     # OneDrive: the most recent known-good copy is always one ``cp`` away.
     PROTOCOL_BACKUP_PATH: Path = Path("data") / "backups" / "protokollo_latest.xlsx"
@@ -820,7 +820,7 @@ class OneDriveClient(M365GraphAuthMixin):
         """Atomically replace the local backup copy of the πρωτόκολλο xlsx.
 
         Called from :meth:`_download_protocol_workbook` after each successful
-        download.  Best-effort — failures here NEVER propagate (the running
+        download.  Best-effort - failures here NEVER propagate (the running
         workflow already has its tmp copy and shouldn't crash because of a
         backup hiccup).  The atomic replace pattern (copy → temp sibling →
         ``os.replace``) means we never leave a half-written backup behind.
@@ -828,7 +828,7 @@ class OneDriveClient(M365GraphAuthMixin):
         try:
             dest = self.PROTOCOL_BACKUP_PATH
             dest.parent.mkdir(parents=True, exist_ok=True)
-            # Write to a sibling temp then atomically rename — guarantees the
+            # Write to a sibling temp then atomically rename - guarantees the
             # backup is either the previous version or the new one, never
             # partial.
             tmp_sibling = dest.with_suffix(dest.suffix + ".tmp")
@@ -838,7 +838,7 @@ class OneDriveClient(M365GraphAuthMixin):
             os.replace(tmp_sibling, dest)
             logger.debug("Refreshed πρωτόκολλο backup at %s (%d bytes)",
                          dest, dest.stat().st_size)
-        except Exception as e:  # pragma: no cover — best-effort
+        except Exception as e:  # pragma: no cover - best-effort
             logger.warning("Failed to refresh πρωτόκολλο backup: %s", e)
 
     async def _download_protocol_workbook(self) -> Path:
@@ -870,12 +870,12 @@ class OneDriveClient(M365GraphAuthMixin):
         Call this **once** at the start of a workflow run to take a fresh
         snapshot.  All subsequent reads (taxonomy, categories, recent
         entries, row lookups, max-seq) will reuse that snapshot through
-        :meth:`_workbook_path_for_read` — one network download per run
+        :meth:`_workbook_path_for_read` - one network download per run
         instead of one per read.
 
         Returns the path to the refreshed backup (so callers don't need to
         reach for :attr:`PROTOCOL_BACKUP_PATH` directly).  The caller MUST
-        NOT delete this file — it's the shared snapshot.
+        NOT delete this file - it's the shared snapshot.
         """
         tmp_path = await self._download_protocol_workbook()
         # tmp_path was copied into PROTOCOL_BACKUP_PATH as a side effect of
@@ -894,14 +894,14 @@ class OneDriveClient(M365GraphAuthMixin):
         back to a fresh download only when no backup is present yet (first
         run on a new machine).
 
-        Callers MUST NOT delete the returned path — it's the shared
+        Callers MUST NOT delete the returned path - it's the shared
         snapshot for the current workflow run.
         """
         if self.PROTOCOL_BACKUP_PATH.exists():
             return self.PROTOCOL_BACKUP_PATH
         # First run: no backup yet, download once (side-effect creates backup).
         logger.info(
-            "πρωτόκολλο backup missing — taking initial snapshot at %s",
+            "πρωτόκολλο backup missing - taking initial snapshot at %s",
             self.PROTOCOL_BACKUP_PATH,
         )
         return await self.refresh_protocol_workbook()
@@ -935,7 +935,7 @@ class OneDriveClient(M365GraphAuthMixin):
         for delay in attempts:
             if delay > 0:
                 logger.info(
-                    "πρωτόκολλο xlsx locked — retrying in %.1fs (attempt %d/%d)",
+                    "πρωτόκολλο xlsx locked - retrying in %.1fs (attempt %d/%d)",
                     delay, attempts.index(delay), len(attempts) - 1,
                 )
                 await _asyncio.sleep(delay)
@@ -951,7 +951,7 @@ class OneDriveClient(M365GraphAuthMixin):
                     raise  # Non-lock error → propagate immediately
                 last_exc = exc
                 continue
-        # All attempts exhausted — give up with a clean error
+        # All attempts exhausted - give up with a clean error
         raise ProtokolloLockedError(
             "Το πρωτόκολλο xlsx είναι κλειδωμένο (πιθανώς το έχει ανοιχτό κάποιος "
             "στο Excel). Παρακαλώ κλείστε το από Excel (επιφάνεια εργασίας ή web) "

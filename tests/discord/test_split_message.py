@@ -51,7 +51,7 @@ def test_split_one_char_over_limit_splits():
 
 
 def test_split_long_message_all_parts_within_limit():
-    # 3× the limit, no newlines — every chunk must be <= DISCORD_MESSAGE_SAFE_CHARS
+    # 3× the limit, no newlines - every chunk must be <= DISCORD_MESSAGE_SAFE_CHARS
     msg = "a" * (DISCORD_MESSAGE_SAFE_CHARS * 3)
     result = split(msg)
     for part in result:

@@ -75,7 +75,7 @@ def _make_fake_cog(
 
 
 # ---------------------------------------------------------------------------
-# Part A — UI: AddChannelView adds with empty metadata
+# Part A - UI: AddChannelView adds with empty metadata
 # ---------------------------------------------------------------------------
 
 
@@ -104,7 +104,7 @@ async def test_add_channel_view_adds_with_empty_metadata() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Part A — UI: embed shows only tag field, no label/keywords
+# Part A - UI: embed shows only tag field, no label/keywords
 # ---------------------------------------------------------------------------
 
 
@@ -142,7 +142,7 @@ async def test_table_embed_tag_is_greek_upper() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Part B — bracket-tag: direct routing (no LLM)
+# Part B - bracket-tag: direct routing (no LLM)
 # ---------------------------------------------------------------------------
 
 
@@ -161,7 +161,7 @@ def _make_classifier_with_bot(
 
 @pytest.mark.asyncio
 async def test_bracket_tag_routes_directly_without_llm() -> None:
-    """Email with [ΕΠΙΚΑΙΡΟΤΗΤΑ] routes directly — _get_client() never called."""
+    """Email with [ΕΠΙΚΑΙΡΟΤΗΤΑ] routes directly - _get_client() never called."""
     channel_id = "111"
     channel_name = "επικαιρότητα"
     channels = [_make_channel(channel_id)]
@@ -205,7 +205,7 @@ async def test_bracket_tag_mismatch_falls_back_to_llm() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Part B — bracket-tag: case- and τόνος-insensitive matching
+# Part B - bracket-tag: case- and τόνος-insensitive matching
 # ---------------------------------------------------------------------------
 
 
@@ -250,7 +250,7 @@ async def test_bracket_tag_lowercase_subject_matches() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Part B — bracket-tag: no bot injected → falls through silently
+# Part B - bracket-tag: no bot injected → falls through silently
 # ---------------------------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-"""AttachmentService — convert EmailAttachment objects to discord.File for upload."""
+"""AttachmentService - convert EmailAttachment objects to discord.File for upload."""
 from __future__ import annotations
 
 import io
@@ -27,7 +27,7 @@ class AttachmentService:
         for att in attachments:
             if len(att.data) > EMAIL_ATTACHMENT_MAX_BYTES:
                 logger.warning(
-                    "Dropping attachment %r — %d bytes exceeds limit",
+                    "Dropping attachment %r - %d bytes exceeds limit",
                     att.filename,
                     len(att.data),
                 )

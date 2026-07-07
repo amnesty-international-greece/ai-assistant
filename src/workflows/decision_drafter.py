@@ -1,4 +1,4 @@
-"""Board-decision drafter — turns meeting discussion into a canonical Greek decision.
+"""Board-decision drafter - turns meeting discussion into a canonical Greek decision.
 
 A board decision in the official minutes follows a fixed shape::
 
@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Protocol
 
 # Default location of the pre-ingested governance corpus (see
-# scripts/ingest_governance_docs.py — do NOT modify it here).
+# scripts/ingest_governance_docs.py - do NOT modify it here).
 _DEFAULT_ARTICLES_PATH = "assets/governance/articles.json"
 
 _REF_CORE_RE = re.compile(r"^\d+-\d+$")
@@ -131,7 +131,7 @@ def select_relevant_articles(
 # The seam
 # --------------------------------------------------------------------------- #
 class DecisionDrafter(Protocol):
-    """Pluggable drafter — the LLM-dependent part, isolated for testability."""
+    """Pluggable drafter - the LLM-dependent part, isolated for testability."""
 
     def draft(
         self,
@@ -230,10 +230,10 @@ _SYSTEM_PROMPT = """\
 Η απόφαση αποτελείται από:
 1) Αριθμημένα στοιχεία «έχοντας υπόψη» (considerations). ΚΑΘΕ στοιχείο πρέπει \
 να τεκμηριώνεται ΑΠΟΚΛΕΙΣΤΙΚΑ από όσα σου δίνονται:
-   - τα άρθρα που σου παρέχονται στα candidate_articles — παραπέμπεις ως \
+   - τα άρθρα που σου παρέχονται στα candidate_articles - παραπέμπεις ως \
 «του άρθρου N του {doc}» χρησιμοποιώντας ΜΟΝΟ τους αριθμούς άρθρων και τα \
 έγγραφα που σου δόθηκαν,
-   - τις προηγούμενες αποφάσεις/πρακτικά (prior_decisions) — παραπέμπεις με \
+   - τις προηγούμενες αποφάσεις/πρακτικά (prior_decisions) - παραπέμπεις με \
 τον κωδικό αναφοράς τους (π.χ. ΔΣ11-2025),
    - όσα προκύπτουν από το απόσπασμα της συζήτησης (transcript_snippet).
 2) Το διατακτικό κείμενο (decision_text) σε ΤΡΙΤΟ πρόσωπο ενεστώτα \
@@ -243,7 +243,7 @@ _SYSTEM_PROMPT = """\
 - ΜΗΝ εφευρίσκεις αριθμούς άρθρων, ονόματα εγγράφων ή κωδικούς αποφάσεων.
 - Παράπεμψε ΜΟΝΟ σε άρθρα που υπάρχουν στα candidate_articles και ΜΟΝΟ σε \
 αποφάσεις που υπάρχουν στα prior_decisions.
-- Αν δεν υπάρχει σχετικό τεκμήριο, μην το αναφέρεις καθόλου — προτίμησε \
+- Αν δεν υπάρχει σχετικό τεκμήριο, μην το αναφέρεις καθόλου - προτίμησε \
 λιγότερα αλλά αληθή στοιχεία «έχοντας υπόψη».
 
 Απάντησε ΑΠΟΚΛΕΙΣΤΙΚΑ με έγκυρο JSON αυτής της μορφής, χωρίς άλλο κείμενο:
@@ -297,10 +297,10 @@ class LLMDecisionDrafter:
         ) or "(καμία προηγούμενη απόφαση)"
 
         user_prompt = (
-            f"## Κωδικός απόφασης (decision_ref) — μην τον αλλάξεις\n{decision_ref}\n\n"
+            f"## Κωδικός απόφασης (decision_ref) - μην τον αλλάξεις\n{decision_ref}\n\n"
             f"## Θέμα ημερήσιας διάταξης (agenda_item)\n{agenda_item or '(δεν δόθηκε)'}\n\n"
             f"## Απόσπασμα συζήτησης (transcript_snippet)\n{transcript_snippet}\n\n"
-            f"## Διαθέσιμα άρθρα (candidate_articles) — μόνο αυτά επιτρέπονται\n"
+            f"## Διαθέσιμα άρθρα (candidate_articles) - μόνο αυτά επιτρέπονται\n"
             f"{articles_block}\n\n"
             f"## Προηγούμενες αποφάσεις/πρακτικά (prior_decisions)\n{priors_block}\n"
         )

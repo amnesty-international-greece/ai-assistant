@@ -1,4 +1,4 @@
-"""LLM client — supports Gemini (prototype) and Claude (production).
+"""LLM client - supports Gemini (prototype) and Claude (production).
 
 Switch providers by setting `llm.provider` in config.yaml:
   provider: gemini   # free tier, for prototyping
@@ -17,7 +17,7 @@ from src.core.audit import log_action
 
 logger = logging.getLogger(__name__)
 
-# Pricing per 1M tokens (USD) — used for cost tracking
+# Pricing per 1M tokens (USD) - used for cost tracking
 _PRICING = {
     "claude": {"input": 3.0, "output": 15.0},
     "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
@@ -29,7 +29,7 @@ _PRICING = {
 class ClaudeClient:
     """LLM client with provider abstraction.
 
-    Named ClaudeClient for backwards compatibility — all workflows import
+    Named ClaudeClient for backwards compatibility - all workflows import
     this class unchanged. Internally routes to Gemini or Claude depending
     on config.yaml `llm.provider`.
 
@@ -194,7 +194,7 @@ class ClaudeClient:
         """Load a system prompt from src/prompts/{name}.md.
 
         Path is configurable via ``settings.storage.prompts_dir`` (default
-        ``src/prompts``) — the prompts live with the code now, not in
+        ``src/prompts``) - the prompts live with the code now, not in
         ``data/``, since they're code-like artifacts versioned together
         with the workflows that consume them.
         """

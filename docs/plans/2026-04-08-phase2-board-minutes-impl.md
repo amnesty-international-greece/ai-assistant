@@ -1,8 +1,8 @@
-# Phase 2: Board Meeting Minutes — Implementation Plan
+# Phase 2: Board Meeting Minutes - Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Implement the full board meeting minutes workflow — from source selection through Claude-assisted drafting, board sharing, finalization with signatures, archiving, and decision extraction.
+**Goal:** Implement the full board meeting minutes workflow - from source selection through Claude-assisted drafting, board sharing, finalization with signatures, archiving, and decision extraction.
 
 **Architecture:** Extends the existing `BaseWorkflow` with a new `BoardMeetingMinutesWorkflow` class following the same pattern as `BoardMeetingInvitationWorkflow`. Adds Google Docs write/clear methods, Zoom recording listing, Gmail sending, Google Sheets append, and PDF signature embedding. CLI gets a `minutes` subcommand group.
 
@@ -10,7 +10,7 @@
 
 ---
 
-## Task 1: Config additions — new fields for minutes workflow
+## Task 1: Config additions - new fields for minutes workflow
 
 **Files:**
 - Modify: `config.yaml`
@@ -56,7 +56,7 @@ git commit -m "config: add minutes workflow fields (drafts folder, protokollo sh
 
 ---
 
-## Task 2: Google Drive — add Docs write/clear/rename and folder listing methods
+## Task 2: Google Drive - add Docs write/clear/rename and folder listing methods
 
 **Files:**
 - Modify: `src/integrations/google_drive.py`
@@ -263,7 +263,7 @@ git commit -m "feat(google): add Docs read/write/clear/rename + folder doc listi
 
 ---
 
-## Task 3: Zoom — add list_recordings method
+## Task 3: Zoom - add list_recordings method
 
 **Files:**
 - Modify: `src/integrations/zoom.py`
@@ -376,7 +376,7 @@ git commit -m "feat(zoom): add list_recordings for meeting transcript discovery"
 
 ---
 
-## Task 4: Google Sheets — append_rows helper for Βιβλίο Αποφάσεων and Πρωτόκολλο
+## Task 4: Google Sheets - append_rows helper for Βιβλίο Αποφάσεων and Πρωτόκολλο
 
 The `write_sheet()` method already exists and uses `spreadsheets.values.append`. We just need a thin helper to read the last row for auto-numbering.
 
@@ -543,12 +543,12 @@ def embed_signatures(
         input_pdf: Source PDF path.
         output_pdf: Output path for signed PDF.
         signatures: List of signature configs, each with:
-            - image_path: str — path to signature image (PNG/JPG)
-            - x: float — x position from left edge (points)
-            - y: float — y position from bottom edge (points)
-            - width: float — display width (points)
-            - height: float — display height (points)
-            - label: str — text label below signature (e.g., "Ο Πρόεδρος")
+            - image_path: str - path to signature image (PNG/JPG)
+            - x: float - x position from left edge (points)
+            - y: float - y position from bottom edge (points)
+            - width: float - display width (points)
+            - height: float - display height (points)
+            - label: str - text label below signature (e.g., "Ο Πρόεδρος")
         page_number: Page to sign (default -1 = last page).
         workflow: Workflow name for audit logging.
 
@@ -649,7 +649,7 @@ git commit -m "docs: enhance minutes prompt for dual-source merging"
 
 ---
 
-## Task 7: Implement BoardMeetingMinutesWorkflow — core steps 1-4
+## Task 7: Implement BoardMeetingMinutesWorkflow - core steps 1-4
 
 This is the main implementation. Replace the skeleton in `src/workflows/board_meeting_minutes.py`.
 
@@ -839,7 +839,7 @@ Key points:
 - `_step_draft_minutes`: load prompt from `data/prompts/board_minutes.md`, call Claude with both sources
 - `_step_write_draft_to_doc`: `clear_and_write_doc` + `rename_file` to `[Πρόχειρο] Πρακτικά - Συνεδρίαση {ref}`
 - `_step_approval_and_share`: send Gmail to board with Drive link
-- Steps 5-6 (finalize, extract_decisions) are `_step_finalize` and `_step_extract_decisions` — see Task 8
+- Steps 5-6 (finalize, extract_decisions) are `_step_finalize` and `_step_extract_decisions` - see Task 8
 
 **Step 4: Run tests**
 
@@ -966,7 +966,7 @@ git commit -m "feat: implement finalize + extract_decisions steps for minutes wo
 
 ---
 
-## Task 9: CLI — add `minutes` subcommand group
+## Task 9: CLI - add `minutes` subcommand group
 
 **Files:**
 - Modify: `src/cli/commands.py`
@@ -975,9 +975,9 @@ git commit -m "feat: implement finalize + extract_decisions steps for minutes wo
 
 Add `cmd_minutes()` and `cmd_minutes_finalize()` functions following the same pattern as `cmd_invite()`. Key subcommands:
 
-- `python -m src.cli minutes` — runs steps 1-4 (interactive doc/recording selection)
-- `python -m src.cli minutes finalize --meeting ΔΣ03-2026` — runs steps 5-6
-- `python -m src.cli minutes list-drafts` — lists Google Docs in the drafts folder
+- `python -m src.cli minutes` - runs steps 1-4 (interactive doc/recording selection)
+- `python -m src.cli minutes finalize --meeting ΔΣ03-2026` - runs steps 5-6
+- `python -m src.cli minutes list-drafts` - lists Google Docs in the drafts folder
 
 Parser structure:
 ```python

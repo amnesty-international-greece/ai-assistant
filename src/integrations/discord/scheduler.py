@@ -29,7 +29,7 @@ def register_action_handler(action_type: str, handler: ActionHandler) -> None:
     """Register *handler* as the dispatcher for *action_type*.
 
     Replaces any existing handler for the same type. Multiple handlers per
-    action_type are not supported — use the event bus if you need fan-out.
+    action_type are not supported - use the event bus if you need fan-out.
     """
     _HANDLERS[action_type] = handler
     logger.debug("scheduler: registered handler for %s", action_type)
@@ -127,7 +127,7 @@ class PendingActionsStore:
 
     async def cancel(self, action_id: int) -> None:
         """Mark a pending action as cancelled (uses 'done' status to keep the
-        state machine binary — the audit trail records the reason)."""
+        state machine binary - the audit trail records the reason)."""
         async with self._lock:
             conn = _get_connection()
             conn.execute(
@@ -158,7 +158,7 @@ async def run_pending_actions_worker(
                 handler = _HANDLERS.get(action.action_type)
                 if handler is None:
                     logger.warning(
-                        "scheduler: no handler registered for action_type=%s (id=%s) — marking failed",
+                        "scheduler: no handler registered for action_type=%s (id=%s) - marking failed",
                         action.action_type, action.id,
                     )
                     await store.mark_failed(action.id, f"no handler for {action.action_type}")

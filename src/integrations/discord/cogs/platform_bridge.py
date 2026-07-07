@@ -1,7 +1,7 @@
-"""Platform-bridge cog — receives events from the platform event bus and
+"""Platform-bridge cog - receives events from the platform event bus and
 projects them onto Discord (scheduled events, threads, reminders, etc.).
 
-Phase B: scaffolding only — every handler logs and exits. Phase D fills in
+Phase B: scaffolding only - every handler logs and exits. Phase D fills in
 board-meeting handlers; later phases add the rest.
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class PlatformBridgeCog(commands.Cog):
-    """Bridges platform events onto Discord. Reactive — never initiates."""
+    """Bridges platform events onto Discord. Reactive - never initiates."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -62,7 +62,7 @@ class PlatformBridgeCog(commands.Cog):
         self._resources_store = WorkflowResourcesStore()
         self._pending_store = PendingActionsStore()
 
-        # Register the reminder action handler — fires when PendingActionsStore
+        # Register the reminder action handler - fires when PendingActionsStore
         # dispatches a due "board_meeting_reminder" row. We re-publish onto the
         # event bus so the cog handler below does the real Discord work, keeping
         # the pending-actions layer free of Discord knowledge.
@@ -92,7 +92,7 @@ class PlatformBridgeCog(commands.Cog):
             existing = await self._resources_store.list_for_workflow(meeting_id)
             if any(r["resource_type"] == "thread_board" for r in existing):
                 logger.info(
-                    "PlatformBridge: thread_board already exists for %s — skipping deferred open",
+                    "PlatformBridge: thread_board already exists for %s - skipping deferred open",
                     meeting_id,
                 )
                 return
@@ -122,6 +122,77 @@ class PlatformBridgeCog(commands.Cog):
             )
 
         register_action_handler("board_meeting_thread_open", _handle_thread_open_action)
+
+        # Deferred fallback: CLI/webhook writes this action so the public agenda
+        # thread + Discord scheduled event are created even when the bot was
+        # offline during the in-proc bus publish.  Idempotent: skips if an
+        # "event" resource already exists (same-process run already handled it).
+        async def _handle_scheduled_action(payload: dict) -> None:
+            meeting_id = payload.get("meeting_id", "")
+            if not meeting_id or self._resources_store is None:
+                return
+            existing = await self._resources_store.list_for_workflow(meeting_id)
+            # Idempotent: if the scheduled event was already created in-process, skip.
+            if any(r["resource_type"] == "event" for r in existing):
+                logger.info(
+                    "PlatformBridge: scheduled event already exists for %s - skipping deferred",
+                    meeting_id,
+                )
+                return
+            from datetime import datetime as _dt
+            from src.core.events import BoardMeetingScheduledPayload
+            starts = payload.get("starts_at") or ""
+            try:
+                starts_at = _dt.fromisoformat(starts)
+            except ValueError:
+                logger.warning("PlatformBridge: bad starts_at %r in scheduled action", starts)
+                return
+            await self._on_board_meeting_scheduled(
+                BoardMeetingScheduledPayload(
+                    meeting_id=meeting_id,
+                    starts_at=starts_at,
+                    zoom_url=payload.get("zoom_url", ""),
+                    agenda_summary=payload.get("agenda_summary", ""),
+                    board_member_emails=payload.get("board_member_emails", []) or [],
+                    test_mode=bool(payload.get("test_mode", False)),
+                )
+            )
+
+        register_action_handler("board_meeting_scheduled", _handle_scheduled_action)
+
+        # Deferred fallback: CLI/webhook writes this action so the invitation
+        # embed is mirrored into the private board thread even when the bot was
+        # offline during the in-proc bus publish.  Idempotent: skips if a
+        # "mirror_invitation" marker resource already exists.
+        async def _handle_invitation_mirror_action(payload: dict) -> None:
+            meeting_id = payload.get("meeting_id", "")
+            if not meeting_id or self._resources_store is None:
+                return
+            existing = await self._resources_store.list_for_workflow(meeting_id)
+            if any(r["resource_type"] == "mirror_invitation" for r in existing):
+                logger.info(
+                    "PlatformBridge: invitation mirror already posted for %s - skipping deferred",
+                    meeting_id,
+                )
+                return
+            from src.core.events import BoardEmailSentPayload
+            await self._on_board_email_sent(
+                BoardEmailSentPayload(
+                    meeting_id=meeting_id,
+                    meeting_ref=payload.get("meeting_ref", ""),
+                    kind="invitation",
+                    subject=payload.get("subject", ""),
+                    body_html=payload.get("body_html", ""),
+                    test_mode=bool(payload.get("test_mode", False)),
+                    zoom_url=payload.get("zoom_url", ""),
+                    agenda_url=payload.get("agenda_url", ""),
+                    invitation_pdf_url=payload.get("invitation_pdf_url", ""),
+                    meeting_datetime=payload.get("meeting_datetime", ""),
+                    agenda_summary=payload.get("agenda_summary", ""),
+                )
+            )
+
+        register_action_handler("board_email_invitation_mirror", _handle_invitation_mirror_action)
 
         bus.subscribe(EVENT_BOARD_MEETING_THREAD_OPENED, self._on_board_meeting_thread_opened)
         bus.subscribe(EVENT_BOARD_EMAIL_SENT, self._on_board_email_sent)
@@ -155,18 +226,18 @@ class PlatformBridgeCog(commands.Cog):
     _EMAIL_KIND_LABEL = {
         "scheduling":      "Email προγραμματισμού",
         "invitation":      "Τελική πρόσκληση",
-        "minutes_draft":   "Πρακτικά — προσχέδιο",
-        "minutes_final":   "Πρακτικά — τελικά",
+        "minutes_draft":   "Πρακτικά - προσχέδιο",
+        "minutes_final":   "Πρακτικά - τελικά",
         "board_reply":     "Απάντηση σε email",
         "discord_bridge":  "Από το Discord",
         # Bot-authored announcement when the Director sends a briefing to
-        # members@.  The Director's raw email never reaches the board — this
+        # members@.  The Director's raw email never reaches the board - this
         # bot-composed reply on the meeting thread is what they see in both
         # email AND Discord.
         "director_briefing_announcement": "📎 Εισηγητικό Διευθυντή",
     }
 
-    # Board email address — duplicated from board_meeting_invitation workflow so
+    # Board email address - duplicated from board_meeting_invitation workflow so
     # this cog stays import-free of that module (avoids circular deps and keeps
     # the bridge self-contained).
     _BOARD_EMAIL = "board@amnesty.org.gr"
@@ -180,7 +251,7 @@ class PlatformBridgeCog(commands.Cog):
         head/style/script blocks, inline images, all tag soup.  Whitespace is
         collapsed.  The caller is expected to truncate at the Discord cap.
 
-        No external HTML library — the parsing is intentionally tiny and
+        No external HTML library - the parsing is intentionally tiny and
         regex-based.  Output is good-enough-for-board-mirror, not a
         general HTML→Markdown converter.
         """
@@ -247,7 +318,7 @@ class PlatformBridgeCog(commands.Cog):
             raw = tmpl_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             # Fall back to a sane default if the template ever goes missing.
-            raw = "📧 **{kind_label}** · `{meeting_ref}`\n**Θέμα:** {subject}\n\n{body_plain}"
+            raw = "📧 **{kind_label}** - `{meeting_ref}`\n**Θέμα:** {subject}\n\n{body_plain}"
         # Strip the leading comment block (everything up to and including the
         # marker line; tolerate missing marker by using the file as-is).
         marker = "─── template starts below"
@@ -258,7 +329,7 @@ class PlatformBridgeCog(commands.Cog):
             raw = raw[nl + 1 :] if nl != -1 else raw[marker_idx + len(marker):]
         rendered = raw.format(
             kind_label=kind_label,
-            meeting_ref=meeting_ref or "—",
+            meeting_ref=meeting_ref or "-",
             subject=subject or "(χωρίς θέμα)",
             body_plain=body_plain or "(κενό σώμα)",
         )
@@ -286,7 +357,7 @@ class PlatformBridgeCog(commands.Cog):
         )
         if not thread_resource:
             logger.warning(
-                "PlatformBridge: no thread_board resource found for meeting %s — "
+                "PlatformBridge: no thread_board resource found for meeting %s - "
                 "cannot mirror email",
                 meeting_id,
             )
@@ -331,7 +402,7 @@ class PlatformBridgeCog(commands.Cog):
         )
         if not board_channel_id:
             logger.warning(
-                "PlatformBridge: board_channel_id not configured — "
+                "PlatformBridge: board_channel_id not configured - "
                 "skipping private thread for %s",
                 payload.meeting_ref,
             )
@@ -349,7 +420,7 @@ class PlatformBridgeCog(commands.Cog):
         thread_id, channel_id = await self._open_meeting_thread(
             channel_id_str=board_channel_id,
             thread_name=thread_name,
-            thread_content=f"📂 Νέος κύκλος · {payload.meeting_ref}",
+            thread_content=f"📂 Νέος κύκλος - {payload.meeting_ref}",
             embed=embed,
             label="private board (early)",
         )
@@ -404,11 +475,20 @@ class PlatformBridgeCog(commands.Cog):
                 meeting_ref=payload.meeting_ref,
                 zoom_url=payload.zoom_url,
                 agenda_url=payload.agenda_url,
+                invitation_pdf_url=payload.invitation_pdf_url,
                 meeting_datetime=payload.meeting_datetime,
                 agenda_summary=payload.agenda_summary,
                 test_mode=payload.test_mode,
             )
             await self._post_in_board_thread(payload.meeting_id, embed=embed, view=view)
+            # Record an idempotency marker so the cross-process deferred handler
+            # (and any workflow re-run) doesn't double-post the invitation embed.
+            if self._resources_store is not None:
+                await self._resources_store.record(
+                    workflow_id=payload.meeting_id,
+                    resource_type="mirror_invitation",
+                    discord_id="posted",
+                )
 
         elif kind in ("minutes_draft", "minutes_final"):
             embed, view = embeds.minutes_mirror_embed(
@@ -420,7 +500,7 @@ class PlatformBridgeCog(commands.Cog):
             await self._post_in_board_thread(payload.meeting_id, embed=embed, view=view)
 
         else:
-            # Conversational / inbound mirrors — keep existing plain-text path
+            # Conversational / inbound mirrors - keep existing plain-text path
             kind_label = self._EMAIL_KIND_LABEL.get(kind, kind)
             if payload.test_mode:
                 kind_label = f"[TEST] {kind_label}"
@@ -449,7 +529,7 @@ class PlatformBridgeCog(commands.Cog):
         Accepts either a plain-text ``thread_content`` and/or a rich ``embed``.
         For forum channels both can be passed.  For text channels we send the
         embed-bearing message first, then thread off it.  Errors are logged but
-        never raised — thread creation is optional.
+        never raised - thread creation is optional.
         """
         if not channel_id_str:
             return None, None
@@ -480,7 +560,7 @@ class PlatformBridgeCog(commands.Cog):
                 thread = await message.create_thread(name=thread_name)
                 return str(thread.id), str(channel.id)
             logger.warning(
-                "PlatformBridge: %s channel %s is %s, not Forum/Text — skipping thread",
+                "PlatformBridge: %s channel %s is %s, not Forum/Text - skipping thread",
                 label, channel_id_str, type(channel).__name__,
             )
         except Exception as exc:
@@ -492,7 +572,7 @@ class PlatformBridgeCog(commands.Cog):
 
         Resolves the tag against the parent ForumChannel's available_tags.
         No-ops gracefully if the channel isn't a forum, the tag doesn't
-        exist, or Discord rejects the edit — tagging is cosmetic.
+        exist, or Discord rejects the edit - tagging is cosmetic.
         """
         if not tag_name:
             return
@@ -528,7 +608,7 @@ class PlatformBridgeCog(commands.Cog):
         # 1. Resolve guild
         guild_id = settings.discord_guild_id
         if not guild_id:
-            logger.error("PlatformBridge: discord_guild_id not configured — cannot create scheduled event")
+            logger.error("PlatformBridge: discord_guild_id not configured - cannot create scheduled event")
             return
         guild = self.bot.get_guild(int(guild_id))
         if guild is None:
@@ -549,7 +629,7 @@ class PlatformBridgeCog(commands.Cog):
         test_prefix = "[TEST] " if payload.test_mode else ""
         try:
             event = await guild.create_scheduled_event(
-                name=f"{test_prefix}Συνεδρίαση ΔΣ — {starts_at.strftime('%d/%m/%Y %H:%M')}",
+                name=f"{test_prefix}Συνεδρίαση ΔΣ - {starts_at.strftime('%d/%m/%Y %H:%M')}",
                 description=description,
                 start_time=starts_at,
                 end_time=starts_at + timedelta(hours=2),
@@ -567,10 +647,10 @@ class PlatformBridgeCog(commands.Cog):
             discord_id=str(event.id),
         )
 
-        # 3. Open agenda threads — one public (members-visible) and one private (board-only).
+        # 3. Open agenda threads - one public (members-visible) and one private (board-only).
         #    Both are optional; skip gracefully when not configured.
         #    V1: Rich Embed mirroring the Brevo invitation info architecture.
-        thread_name = f"{test_prefix}Συνεδρίαση ΔΣ — {starts_at.strftime('%d/%m/%Y')}"
+        thread_name = f"{test_prefix}Συνεδρίαση ΔΣ - {starts_at.strftime('%d/%m/%Y')}"
 
         embed, view = embeds.public_invitation_embed(
             starts_at=starts_at,
@@ -581,7 +661,7 @@ class PlatformBridgeCog(commands.Cog):
         # Plain-text body retained for Google-Group email subscribers who see
         # forum threads as email and won't render embeds.
         thread_content_text = (
-            f"**Πρόσκληση Συνεδρίασης ΔΣ — {starts_at.strftime('%d/%m/%Y %H:%M UTC')}**\n"
+            f"**Πρόσκληση Συνεδρίασης ΔΣ - {starts_at.strftime('%d/%m/%Y %H:%M')} (ώρα Ελλάδας)**\n"
             f"{payload.agenda_summary or '(Ημερήσια Διάταξη κατόπιν ανακοίνωσης)'}\n"
             f"{f'Zoom: {payload.zoom_url}' if payload.zoom_url else ''}"
         )
@@ -649,7 +729,7 @@ class PlatformBridgeCog(commands.Cog):
                 )
         else:
             logger.warning(
-                "PlatformBridge: no thread_board resource for %s — the "
+                "PlatformBridge: no thread_board resource for %s - the "
                 "scheduling-email step did not publish thread_opened",
                 payload.meeting_id,
             )
@@ -732,7 +812,7 @@ class PlatformBridgeCog(commands.Cog):
 
             elif rtype in ("thread", "thread_board"):
                 # V4: Rich Embed cancellation notice in both public and private threads
-                # (preserve history — don't delete the threads themselves).
+                # (preserve history - don't delete the threads themselves).
                 try:
                     channel = self.bot.get_channel(int(discord_id))
                     if channel is None:
@@ -764,7 +844,7 @@ class PlatformBridgeCog(commands.Cog):
 
         Posts to BOTH the public agenda thread and the private board thread
         when both exist.  Uses ``<t:UNIX:R>`` so every viewer sees the
-        countdown auto-update — no need to re-post.
+        countdown auto-update - no need to re-post.
         """
         resources_store = self._resources_store
         assert resources_store is not None
@@ -774,7 +854,7 @@ class PlatformBridgeCog(commands.Cog):
 
         if not thread_resources:
             logger.warning(
-                "PlatformBridge: no thread found for meeting %s — skipping reminder post",
+                "PlatformBridge: no thread found for meeting %s - skipping reminder post",
                 payload.meeting_id,
             )
             return
@@ -812,7 +892,7 @@ class PlatformBridgeCog(commands.Cog):
     # ── D3: board.minutes.shared ──────────────────────────────────────────────
 
     async def _on_board_minutes_shared(self, payload: BoardMinutesSharedPayload) -> None:
-        """V3: Post minutes link as Rich Embed with Link button — PRIVATE board thread only.
+        """V3: Post minutes link as Rich Embed with Link button - PRIVATE board thread only.
 
         Per the user's note: minutes are sensitive pre-finalization material;
         they go only to the board-only thread, not the members-visible public
@@ -822,12 +902,12 @@ class PlatformBridgeCog(commands.Cog):
         assert resources_store is not None
 
         resources = await resources_store.list_for_workflow(payload.meeting_id)
-        # Private board thread ONLY (per user spec — public thread skipped).
+        # Private board thread ONLY (per user spec - public thread skipped).
         thread_resources = [r for r in resources if r["resource_type"] == "thread_board"]
 
         if not thread_resources:
             logger.info(
-                "PlatformBridge: no private board thread for meeting %s — skipping minutes post "
+                "PlatformBridge: no private board thread for meeting %s - skipping minutes post "
                 "(meeting may pre-date the platform bridge, or board_channel_id not configured)",
                 payload.meeting_id,
             )
@@ -864,7 +944,7 @@ class PlatformBridgeCog(commands.Cog):
         """Return the ``workflow_id`` (e.g. ``board_meeting:ΔΣ05-2026``) for a
         tracked ``thread_board`` resource matching *thread_id*, or ``None``.
 
-        Runs a direct SQLite query via ``_get_connection`` — same pattern used
+        Runs a direct SQLite query via ``_get_connection`` - same pattern used
         by :class:`~src.integrations.discord.scheduler.WorkflowResourcesStore`.
         """
         from src.core.audit import _get_connection
@@ -920,7 +1000,7 @@ class PlatformBridgeCog(commands.Cog):
         """
         # ── Fast filters (short-circuit in order) ─────────────────────────
         if message.author == self.bot.user:
-            return  # own messages — never re-email (loop prevention)
+            return  # own messages - never re-email (loop prevention)
         if message.author.bot:
             return  # other bots
         if message.guild is None:
@@ -937,13 +1017,13 @@ class PlatformBridgeCog(commands.Cog):
         anchor = self._find_email_anchor(meeting_id)
         if not anchor:
             logger.warning(
-                "PlatformBridge(on_message): no email_thread_anchor for %s — "
+                "PlatformBridge(on_message): no email_thread_anchor for %s - "
                 "cannot forward Discord message to email",
                 meeting_id,
             )
             try:
                 await message.channel.send(
-                    "⚠️ Δεν βρέθηκε email anchor — το μήνυμα δεν προωθήθηκε"
+                    "⚠️ Δεν βρέθηκε email anchor - το μήνυμα δεν προωθήθηκε"
                 )
             except Exception:
                 pass
@@ -1023,21 +1103,21 @@ class PlatformBridgeCog(commands.Cog):
         try:
             await message.add_reaction("📧")
         except Exception:
-            pass  # cosmetic — swallow silently
+            pass  # cosmetic - swallow silently
 
     # ── Stubs for future phases ───────────────────────────────────────────────
 
     async def _on_ga_called(self, payload) -> None:
-        logger.info("PlatformBridge: ga.called received: %r — handler not yet implemented", payload)
+        logger.info("PlatformBridge: ga.called received: %r - handler not yet implemented", payload)
 
     async def _on_ga_proxy_window_opening(self, payload) -> None:
-        logger.info("PlatformBridge: ga.proxy_window_opening received: %r — handler not yet implemented", payload)
+        logger.info("PlatformBridge: ga.proxy_window_opening received: %r - handler not yet implemented", payload)
 
     async def _on_egkyklios_published(self, payload) -> None:
         """Post a milestone embed to the members announcements channel.
 
         Reuses the existing public ``agenda_channel_id`` (the #ενημερώσεις forum)
-        as the default destination — εγκύκλιοι are member-facing news.  When the
+        as the default destination - εγκύκλιοι are member-facing news.  When the
         SecGen later wants a dedicated channel they can override via
         ``settings.discord.platform_bridge.egkyklios.channel_id``.
         """
@@ -1062,7 +1142,7 @@ class PlatformBridgeCog(commands.Cog):
                 channel_id = ""
         if not channel_id:
             logger.warning(
-                "PlatformBridge: no channel configured for εγκύκλιος announcements — skipping post",
+                "PlatformBridge: no channel configured for εγκύκλιος announcements - skipping post",
             )
             return
 
@@ -1091,7 +1171,7 @@ class PlatformBridgeCog(commands.Cog):
                 thread_name = payload.title[:100] or kind_display
                 await channel.create_thread(
                     name=thread_name,
-                    content=f"**{kind_display} — {payload.title}**",
+                    content=f"**{kind_display} - {payload.title}**",
                     embed=embed,
                     view=view,
                 )
@@ -1126,7 +1206,7 @@ class PlatformBridgeCog(commands.Cog):
         )
 
     async def _on_member_approved(self, payload) -> None:
-        logger.info("PlatformBridge: member.approved received: %r — handler not yet implemented", payload)
+        logger.info("PlatformBridge: member.approved received: %r - handler not yet implemented", payload)
 
 
 async def setup(bot: commands.Bot) -> None:

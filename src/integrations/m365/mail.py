@@ -7,7 +7,7 @@ forum bridge; this module handles M365-side outbound.
 Threading model
 ---------------
 Microsoft Graph does NOT allow setting RFC 5322 headers (``Message-ID``,
-``In-Reply-To``, ``References``) directly via ``internetMessageHeaders`` —
+``In-Reply-To``, ``References``) directly via ``internetMessageHeaders`` -
 only ``x-*`` custom headers are accepted.  To preserve threading we use
 Graph's native reply chain.
 
@@ -27,14 +27,14 @@ demand:
   .. warning::
      ``/createReply`` defaults reply ``to=`` to the parent's ``from``.  When
      continuing a thread WE started (the common workflow case), pass
-     ``to=`` explicitly to ``send_reply`` — otherwise the reply will be
+     ``to=`` explicitly to ``send_reply`` - otherwise the reply will be
      delivered to OUR own mailbox rather than the intended recipients.
      Verified end-to-end on 2026-05-23 via Gmail MCP.
 
 Required scopes
 ---------------
 ``Mail.ReadWrite`` (covers draft creation, message lookup, reply chain).
-Already consented in the existing Azure AD app — no extra admin step.
+Already consented in the existing Azure AD app - no extra admin step.
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ class M365MailClient(M365GraphAuthMixin):
         Each attachment is read into memory and base64-encoded.  Graph's
         message-create endpoint accepts up to ~3 MB inline; for larger
         files use ``/messages/{id}/attachments/createUploadSession``
-        (not implemented here — board PDFs are well under the limit).
+        (not implemented here - board PDFs are well under the limit).
 
         Returns an empty list if ``attachments`` is None or empty.
         """
@@ -165,24 +165,24 @@ class M365MailClient(M365GraphAuthMixin):
         Two-step so we can capture the **internetMessageId** (RFC 5322 stable
         identifier) for later replies:
           1. ``POST /me/messages``          → returns the draft (with id +
-             internetMessageId — Exchange generates the latter at creation time)
+             internetMessageId - Exchange generates the latter at creation time)
           2. ``POST /me/messages/{id}/send`` → dispatches it (202 Accepted)
 
         Args:
-            to:          Recipient(s) — single address or list.
+            to:          Recipient(s) - single address or list.
             subject:     Subject line.
             body:        Plain text or HTML body.
             html:        ``True`` → ``contentType: HTML``.
             cc, bcc:     Optional additional recipients.
             attachments: Optional list of local file paths to attach.  Each
                          file is read into memory and base64-encoded inline
-                         in the draft (Graph limit ~3 MB total — fine for
+                         in the draft (Graph limit ~3 MB total - fine for
                          board PDFs).
             workflow:    Workflow name for audit logging.
 
         Returns:
             The stable ``internetMessageId`` (e.g.
-            ``"<abc@amnestygr.onmicrosoft.com>"``).  Persist this — it's
+            ``"<abc@amnestygr.onmicrosoft.com>"``).  Persist this - it's
             the ``parent_internet_message_id`` for :meth:`send_reply`.
         """
         message: dict[str, Any] = {
@@ -209,7 +209,7 @@ class M365MailClient(M365GraphAuthMixin):
             internet_message_id = draft["internetMessageId"]  # stable
 
             # 2. Send the draft (returns 202 Accepted with no body).
-            #    After this, draft_id is no longer valid — use internet_message_id.
+            #    After this, draft_id is no longer valid - use internet_message_id.
             send_resp = await client.post(
                 f"{_GRAPH_BASE}/me/messages/{draft_id}/send",
                 headers=self._headers(),
@@ -266,7 +266,7 @@ class M365MailClient(M365GraphAuthMixin):
             attachments: Optional local file paths to attach to the reply.
 
         Returns:
-            ``internetMessageId`` of the reply — chain further replies off
+            ``internetMessageId`` of the reply - chain further replies off
             this same id to keep one continuous thread.
         """
         async with httpx.AsyncClient() as client:
@@ -300,7 +300,7 @@ class M365MailClient(M365GraphAuthMixin):
             patch_resp.raise_for_status()
 
             # 4. Attach any files via POST /me/messages/{id}/attachments
-            #    (one POST per file — Graph reliably accepts this pattern even
+            #    (one POST per file - Graph reliably accepts this pattern even
             #    when the draft was created via /createReply).
             for att in self._attachment_blocks(attachments):
                 att_resp = await client.post(

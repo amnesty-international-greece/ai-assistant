@@ -58,7 +58,7 @@ def _make_agenda_rows(date_str: str | None = None, time_str: str = "18:00",
         row(),                                              # row 2
         row(),                                              # row 3
         row(),                                              # row 4
-        row(d_val="ΔΣ04-2026"),                             # row 5 — meeting number
+        row(d_val="ΔΣ04-2026"),                             # row 5 - meeting number
         row(),                                              # row 6
         row("ΗΜΕΡΟΜΗΝΙΑ", date_str,
             "Approval of minutes", str(durations[0])),      # row 7
@@ -122,7 +122,7 @@ async def test_step_read_agenda_guard_refuses_when_all_boxes_false(workflow):
     The board hasn't approved → reading stale agenda data would be wrong.
     """
     workflow._google.list_sheet_tabs.return_value = [{"title": "ΔΣ04-2026"}]
-    # Only one read happens — the guard read — because the step short-circuits.
+    # Only one read happens - the guard read - because the step short-circuits.
     workflow._google.read_sheet.return_value = [[False], [False], [False]]
 
     with patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
@@ -131,7 +131,7 @@ async def test_step_read_agenda_guard_refuses_when_all_boxes_false(workflow):
 
     assert not result.success
     assert "D16" in result.message or "approval" in result.message.lower() or "FALSE" in result.message
-    # The agenda data range was never read — guard fired first.
+    # The agenda data range was never read - guard fired first.
     all_ranges = [call.args[1] for call in workflow._google.read_sheet.call_args_list]
     assert all("D16" in r for r in all_ranges), all_ranges
 
@@ -188,10 +188,65 @@ async def test_send_scheduling_email_body_with_poll_url(workflow):
 
     body = mock_client.send_email.call_args.kwargs["body"]
     assert "https://when2meet.com/poll" in body
-    assert "διαθεσιμότητ" in body          # "διαθεσιμότητές" in task list
-    assert "Ημερήσιας Διάταξης" in body    # agenda task label (design 09)
-    assert "ΔΙΑΘΕΣΙΜΟΤΗΤΕΣ" in body        # CTA button pre-uppercased
-    assert "Συμπληρώστε" in body           # first task verb
+    assert "ΔΙΑΘΕΣΙΜΟΤΗΤΕΣ" in body        # poll CTA button present
+    assert "ΗΜΕΡΗΣΙΑ ΔΙΑΤΑΞΗ" in body      # agenda CTA button present
+
+
+@pytest.mark.asyncio
+async def test_send_scheduling_email_creates_crabfit_poll_from_dates(workflow):
+    """When crabfit_dates are supplied (and no poll_url), a Crab Fit event is
+    created and its URL becomes the poll link in the email."""
+    mock_client = AsyncMock()
+    mock_client.send_email.return_value = "<anchor>"
+    workflow._google.list_sheet_tabs.return_value = [{"title": "ΔΣ04-2026"}]
+
+    fake_crabfit = AsyncMock()
+    fake_crabfit.create_event.return_value = {
+        "id": "synedriasi-ds04-2026-123456",
+        "url": "https://crab.fit/synedriasi-ds04-2026-123456",
+    }
+
+    ctx = {"crabfit_dates": ["2026-06-17", "2026-06-29"]}
+    with patch("src.workflows.board_meeting_invitation.M365MailClient", return_value=mock_client), \
+         patch("src.integrations.crabfit.CrabFitClient", return_value=fake_crabfit), \
+         patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
+        mock_settings.ms_client_id = "x"
+        mock_settings.ms_tenant_id = "y"
+        mock_settings.google.agenda_sheet_id = "sheet-id"
+        mock_settings.testing.test_email = ""
+        result = await workflow._step_send_scheduling_email(ctx)
+
+    # The Crab Fit event was created with the two candidate dates.
+    fake_crabfit.create_event.assert_awaited_once()
+    call = fake_crabfit.create_event.call_args
+    assert [d.isoformat() for d in call.kwargs["dates"]] == ["2026-06-17", "2026-06-29"]
+    # Its URL flows into the email body and the step output.
+    body = mock_client.send_email.call_args.kwargs["body"]
+    assert "https://crab.fit/synedriasi-ds04-2026-123456" in body
+    assert "ΔΙΑΘΕΣΙΜΟΤΗΤΕΣ" in body
+    assert result.data["crabfit_url"] == "https://crab.fit/synedriasi-ds04-2026-123456"
+
+
+@pytest.mark.asyncio
+async def test_explicit_poll_url_skips_crabfit(workflow):
+    """An explicit poll_url wins - Crab Fit is not called."""
+    mock_client = AsyncMock()
+    mock_client.send_email.return_value = "<anchor>"
+    workflow._google.list_sheet_tabs.return_value = [{"title": "ΔΣ04-2026"}]
+
+    fake_crabfit = AsyncMock()
+    ctx = {"poll_url": "https://when2meet.com/poll", "crabfit_dates": ["2026-06-17"]}
+    with patch("src.workflows.board_meeting_invitation.M365MailClient", return_value=mock_client), \
+         patch("src.integrations.crabfit.CrabFitClient", return_value=fake_crabfit), \
+         patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
+        mock_settings.ms_client_id = "x"
+        mock_settings.ms_tenant_id = "y"
+        mock_settings.google.agenda_sheet_id = "sheet-id"
+        mock_settings.testing.test_email = ""
+        await workflow._step_send_scheduling_email(ctx)
+
+    fake_crabfit.create_event.assert_not_called()
+    assert "when2meet.com/poll" in mock_client.send_email.call_args.kwargs["body"]
 
 
 @pytest.mark.asyncio
@@ -210,15 +265,14 @@ async def test_send_scheduling_email_body_without_poll_url(workflow):
         await workflow._step_send_scheduling_email({})
 
     body = mock_client.send_email.call_args.kwargs["body"]
-    assert "Ημερήσιας Διάταξης" in body    # agenda task label present in no-poll variant
-    assert "προγραμματισμό" not in body    # scheduling word absent in no-poll copy
+    assert "ΗΜΕΡΗΣΙΑ ΔΙΑΤΑΞΗ" in body       # agenda CTA present in no-poll variant
     assert "ΔΙΑΘΕΣΙΜΟΤΗΤΕΣ" not in body   # poll CTA absent when no poll_url
 
 
 @pytest.mark.asyncio
 async def test_send_scheduling_email_deadline_default(workflow):
     """Deadline defaults to today + 4 days, formatted as Greek long-form
-    (e.g. ``15 Ιουνίου``) — see _step_send_scheduling_email."""
+    (e.g. ``15 Ιουνίου``) - see _step_send_scheduling_email."""
     from src.workflows.board_meeting_invitation import _GREEK_MONTHS
 
     mock_client = AsyncMock()
@@ -257,7 +311,7 @@ async def test_send_scheduling_email_deadline_override(workflow):
         })
 
     body = mock_client.send_email.call_args.kwargs["body"]
-    # Greek long-form: "15 Ιουνίου" (no year — deadline is short context)
+    # Greek long-form: "15 Ιουνίου" (no year - deadline is short context)
     assert "15 Ιουνίου" in body
 
 
@@ -377,7 +431,7 @@ async def test_step_draft_invitation(workflow):
 
 @pytest.mark.asyncio
 async def test_step_generate_pdf_no_drive_upload(workflow, tmp_path):
-    """generate_pdf must NOT upload to Drive — no pdf_drive_link in result."""
+    """generate_pdf must NOT upload to Drive - no pdf_drive_link in result."""
     workflow._google.copy_document.return_value = "working-doc-id"
 
     replacements = {
@@ -668,10 +722,8 @@ async def test_step_send_board_email_threaded_reply(workflow):
     assert kwargs["to"] == "board@amnesty.org.gr"
     assert kwargs["html"] is True
     assert "sharepoint.com/share/xyz" in kwargs["body"]
-    # v2 shell renames "Zoom Link" → labeled info-row "Σύνδεσμος" with the URL
     assert "zoom.us/j/123" in kwargs["body"]
-    # Labels are pre-uppercased without τόνους (Greek typographic convention)
-    assert "ΣΤΟΙΧΕΙΑ ΣΥΝΔΕΣΗΣ ZOOM" in kwargs["body"]
+    assert "ΣΥΜΜΕΤΟΧΗ" in kwargs["body"]   # Zoom CTA button present
 
 
 @pytest.mark.asyncio

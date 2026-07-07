@@ -132,7 +132,7 @@ def test_empty_secret_accepts_without_signature(client):
             "payload": {"object": {"uuid": "plain-uuid"}}}
     with patch("src.api.webhooks.settings.zoom_webhook_secret_token", ""), \
          patch("src.api.webhooks._process_zoom_recording") as proc:
-        # No signature headers at all — dev mode should still accept.
+        # No signature headers at all - dev mode should still accept.
         resp = client.post("/webhooks/zoom/recording", json=body)
 
     assert resp.status_code == 202

@@ -23,7 +23,7 @@ def setup_logging() -> None:
 
     Delegates to :func:`src.core.logging_config.setup_logging`, which adds
     rotating file handlers at ``data/logs/`` on top of the console handler.
-    Idempotent — safe to call from both the CLI entry point and from the
+    Idempotent - safe to call from both the CLI entry point and from the
     bot's own startup.
     """
     from src.core.logging_config import setup_logging as _setup
@@ -74,6 +74,9 @@ def cmd_invite(args: argparse.Namespace) -> None:
         return
     if invite_command == "reset-sheet":
         _run_invite_reset_sheet(args)
+        return
+    if invite_command == "resume":
+        asyncio.run(_run_invite_resume(args))
         return
     # Default: run the main workflow
     if getattr(args, "cancel", False) or getattr(args, "rollback", False):
@@ -184,26 +187,26 @@ async def _run_invite_share_poll(args: argparse.Namespace) -> None:
         print(f"ERROR: workflow_id {workflow_id} not found.")
         sys.exit(1)
 
-    # Refuse if past await_approval — the date is locked in.
+    # Refuse if past await_approval - the date is locked in.
     # The state machine sits AT await_approval when paused; once resumed it
     # moves to read_agenda and beyond, at which point sharing a poll is moot.
     blocked_states = {
         "approved", "executing", "in_progress", "completed",
     }
-    # Heuristic: check step_index — anything after the await_approval gate
+    # Heuristic: check step_index - anything after the await_approval gate
     # means the date is locked.  await_approval is index 1.
     step_index = (json.loads(state.get("data") or "{}")).get("step_index", 0)
     current_state = state.get("state", "")
     if step_index > 1 and current_state in blocked_states:
         print(f"ERROR: workflow is past await_approval (step_index={step_index}, state={current_state}).")
-        print("       Sharing a new poll would be misleading — the date has been locked.")
+        print("       Sharing a new poll would be misleading - the date has been locked.")
         sys.exit(1)
 
     data = json.loads(state.get("data") or "{}")
     ctx = data.get("context") or {}
     anchor = ctx.get("email_thread_anchor")
     if not anchor:
-        print("ERROR: workflow has no email_thread_anchor — scheduling email did not run.")
+        print("ERROR: workflow has no email_thread_anchor - scheduling email did not run.")
         print("       Cannot send a threaded reply.  Send the poll URL manually.")
         sys.exit(1)
 
@@ -223,14 +226,153 @@ async def _run_invite_share_poll(args: argparse.Namespace) -> None:
     print(f"Poll URL shared in thread (reply id={reply_id}).")
 
 
+async def _run_invite_resume(args: argparse.Namespace) -> None:
+    """Resume the invitation workflow from read_agenda.
+
+    Skips the scheduling email (already sent) and the D16/D17/D18 approval
+    guard (the board has already signed off).  Inherits the email thread anchor
+    from the most recent scheduling workflow so the final invitation lands as
+    a reply in the existing board thread.
+    """
+    from src.workflows.board_meeting_invitation import BoardMeetingInvitationWorkflow
+    from src.api.webhooks import _find_scheduling_context
+
+    test_mode = getattr(args, "test", False)
+    meeting_ref = getattr(args, "meeting_ref", None) or ""
+
+    _print_header(
+        f"Board Meeting Invitation - Resume from read_agenda"
+        + ("  [TEST MODE]" if test_mode else "")
+    )
+
+    initial_data: dict = {
+        "test_mode": test_mode,
+        "_start_at_step": "read_agenda",
+        "_skip_approval_guard": True,
+    }
+
+    if getattr(args, "protocol", None):
+        initial_data["protocol_number"] = args.protocol
+
+    # Inherit thread anchor from the scheduling workflow
+    sched_ctx = _find_scheduling_context(meeting_ref) if meeting_ref else None
+    if not sched_ctx:
+        # Fall back to the most recent scheduling workflow regardless of meeting ref
+        from src.core.audit import _get_connection
+        conn = _get_connection()
+        rows = conn.execute(
+            "SELECT data FROM workflow_state "
+            "WHERE workflow_name = 'board_meeting_invitation' "
+            "ORDER BY updated_at DESC"
+        ).fetchall()
+        import json as _json
+        for row in rows:
+            try:
+                ctx = (_json.loads(row["data"] or "{}")).get("context", {})
+                if ctx.get("email_thread_anchor"):
+                    sched_ctx = ctx
+                    break
+            except Exception:
+                continue
+
+    if sched_ctx:
+        initial_data["email_thread_anchor"] = sched_ctx.get("email_thread_anchor", "")
+        if sched_ctx.get("poll_url"):
+            initial_data["poll_url"] = sched_ctx["poll_url"]
+        ref = sched_ctx.get("raw_meeting_id") or sched_ctx.get("meeting_ref", "")
+        print(f"  Continuing thread for: {ref}")
+        print(f"  Anchor: {initial_data['email_thread_anchor'][:60]}...")
+    else:
+        print("  WARNING: no prior scheduling thread found - final board email will be skipped.")
+    print()
+
+    wf = BoardMeetingInvitationWorkflow(actor=getattr(args, "actor", "secgen"))
+    print(f"  Workflow ID: {wf.workflow_id}")
+    print()
+
+    result = await wf.run(initial_data)
+
+    # Same interactive gate loop as the full invite command
+    while result.get("status") == "awaiting_approval":
+        current_step = result.get("step", "")
+        ctx = wf.context
+
+        if current_step == "approval":
+            _print_header("APPROVAL REQUIRED - Invitation PDF")
+            meeting_date = ctx.get("meeting_date", "?")
+            meeting_time = ctx.get("meeting_time", "?")
+            meeting_type = ctx.get("meeting_type") or "ΤΑΚΤΙΚΗ"
+            agenda_items = ctx.get("agenda_items", [])
+            print(f"  Συνεδρίαση:  {ctx.get('raw_meeting_id', '?')}")
+            print(f"  Ημερομηνία:  {meeting_date}  {meeting_time}")
+            print(f"  Τύπος:       {meeting_type}")
+            print()
+            if agenda_items:
+                print("  Ημερήσια διάταξη:")
+                for i, item in enumerate(agenda_items, 1):
+                    print(f"    {i}. {item}")
+            print()
+            pdf_path = ctx.get("pdf_path", "")
+            if pdf_path and Path(pdf_path).exists():
+                print(f"  Opening PDF: {pdf_path}")
+                try:
+                    if platform.system() == "Windows":
+                        os.startfile(pdf_path)
+                except Exception:
+                    pass
+                print()
+            if _confirm("  Approve this PDF and proceed? [y/n]: "):
+                result = await wf.approve_and_resume()
+            else:
+                print("\n  Cancelling - rolling back Zoom...")
+                await wf.rollback(wf.context)
+                return
+
+        elif current_step == "confirm_newsletter":
+            if ctx.get("newsletter_skipped"):
+                print("\n  Newsletter not created - skipping confirm gate.")
+                result = await wf.approve_and_resume()
+                continue
+            _print_header("APPROVAL REQUIRED - Newsletter Live Send")
+            campaign_id = ctx.get("newsletter_campaign_id", "?")
+            test_addr = ctx.get("newsletter_test_addr", "")
+            if test_addr:
+                print(f"  Test email sent to: {test_addr}")
+            print(f"  Campaign ID: {campaign_id}")
+            print()
+            if _confirm("  Send newsletter to members list? [y/n]: "):
+                result = await wf.approve_and_resume()
+            else:
+                print("\n  Live send cancelled - campaign saved as draft in Brevo.")
+                result = {"status": "completed", "context": ctx}
+                break
+        else:
+            if _confirm(f"  Gate '{current_step}' - proceed? [y/n]: "):
+                result = await wf.approve_and_resume()
+            else:
+                await wf.rollback(wf.context)
+                return
+
+    if result.get("status") == "completed":
+        ctx = wf.context
+        _print_header("WORKFLOW COMPLETED")
+        print(f"  Meeting:    {ctx.get('raw_meeting_id', '?')}")
+        print(f"  Zoom:       {ctx.get('zoom_join_url', '(none)')}")
+        print(f"  PDF:        {ctx.get('pdf_path', '(none)')}")
+        print(f"  Archived:   {'Yes' if ctx.get('archive_share_link') else 'No'}")
+        print(f"  Newsletter: {'Sent' if ctx.get('newsletter_sent') else 'Draft/Skipped'}")
+    else:
+        print(f"\n  Status: {result.get('status')} - {result.get('error', '')}")
+
+
 async def _run_invite(args: argparse.Namespace) -> None:
     """Async handler for the invitation workflow."""
     from src.workflows.board_meeting_invitation import BoardMeetingInvitationWorkflow
 
     # ── Resolve run mode ──────────────────────────────────────────────────────
-    # --test : full simulation — Zoom created+rolled back, PDF generated,
+    # --test : full simulation - Zoom created+rolled back, PDF generated,
     #          emails redirected to testing.test_email, DEBUG logging.
-    # (no flag): live run — everything executes for real.
+    # (no flag): live run - everything executes for real.
     test_mode = getattr(args, "test", False)
 
     if test_mode:
@@ -240,11 +382,11 @@ async def _run_invite(args: argparse.Namespace) -> None:
 
         test_email = settings.testing.test_email
         _print_header("Board Meeting Invitation Workflow  [TEST MODE]")
-        print("  TEST MODE — what will happen:")
+        print("  TEST MODE - what will happen:")
         print("  • Reads agenda from Google Sheets (real)")
         print("  • Creates Zoom meeting (real, rolled back at the end)")
         print("  • Generates invitation PDF (real, opened for review)")
-        print("  • Newsletter test send →", test_email or "(skipped — set testing.test_email in config.yaml)")
+        print("  • Newsletter test send →", test_email or "(skipped - set testing.test_email in config.yaml)")
         print("  • Archive: skipped")
         print("  • Reminders: handled by Zoom natively")
         print("  • Logging: DEBUG")
@@ -276,15 +418,32 @@ async def _run_invite(args: argparse.Namespace) -> None:
     if getattr(args, "protocol", None):
         initial_data["protocol_number"] = args.protocol
 
-    # Scheduling poll URL — embedded in the board scheduling email (M365)
+    # Scheduling poll URL - embedded in the board scheduling email (M365)
     if getattr(args, "poll_url", None):
         initial_data["poll_url"] = args.poll_url
+
+    # Candidate dates → Crab Fit availability poll (auto-creates the grid).
+    # Ignored if --poll-url was given explicitly (manual override wins).
+    if getattr(args, "dates", None):
+        import datetime as _dt
+        _parsed: list[str] = []
+        for chunk in args.dates.split(","):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            try:
+                _parsed.append(_dt.date.fromisoformat(chunk).isoformat())
+            except ValueError:
+                print(f"ERROR: --dates value {chunk!r} is not a valid YYYY-MM-DD date")
+                sys.exit(1)
+        if _parsed:
+            initial_data["crabfit_dates"] = _parsed
 
     # Response deadline (DD/MM in the scheduling email).  Defaults to today + 4.
     if getattr(args, "response_deadline", None):
         initial_data["response_deadline"] = args.response_deadline
 
-    # Sandbox meeting_ref override — bypasses D5 read so a test workflow runs
+    # Sandbox meeting_ref override - bypasses D5 read so a test workflow runs
     # under a completely separate meeting_id namespace (no Discord-thread /
     # Zoom / pending-reminder collisions with a live invitation cycle).
     # Typical usage: ``--test --meeting-ref ΔΣ99-2099`` + ``--manual``.
@@ -333,7 +492,7 @@ async def _run_invite(args: argparse.Namespace) -> None:
         # ── Gate: scheduling email → board responses ─────────────────────────
         if current_step == "await_approval":
             print()
-            _print_header("APPROVAL REQUIRED — Board scheduling responses")
+            _print_header("APPROVAL REQUIRED - Board scheduling responses")
             print("  Scheduling email has been sent.  Wait for board availability,")
             print("  pick a date, fill the agenda sheet tab (ΔΣXX-YYYY), then resume.")
             print()
@@ -384,7 +543,7 @@ async def _run_invite(args: argparse.Namespace) -> None:
         # ── Gate 1: PDF review ────────────────────────────────────────────────
         if current_step == "approval":
             print()
-            _print_header("APPROVAL REQUIRED — Invitation PDF")
+            _print_header("APPROVAL REQUIRED - Invitation PDF")
 
             meeting_number = ctx.get("meeting_number", "?")
             meeting_date   = ctx.get("meeting_date", "?")
@@ -446,12 +605,12 @@ async def _run_invite(args: argparse.Namespace) -> None:
         elif current_step == "confirm_newsletter":
             # Auto-skip if the newsletter step already failed or was skipped
             if ctx.get("newsletter_skipped"):
-                print("\n  Newsletter was not created (skipped or failed) — skipping confirm gate.")
+                print("\n  Newsletter was not created (skipped or failed) - skipping confirm gate.")
                 result = await wf.approve_and_resume()
                 continue
 
             print()
-            _print_header("APPROVAL REQUIRED — Newsletter Live Send")
+            _print_header("APPROVAL REQUIRED - Newsletter Live Send")
 
             campaign_id = ctx.get("newsletter_campaign_id", "?")
             test_addr   = ctx.get("newsletter_test_addr", "")
@@ -461,12 +620,12 @@ async def _run_invite(args: argparse.Namespace) -> None:
                 print(f"  Test email sent to:  {test_addr}")
                 print(f"  Check your inbox, then confirm live send.")
             else:
-                print("  (No test email address set — review campaign in Brevo dashboard)")
+                print("  (No test email address set - review campaign in Brevo dashboard)")
             print(f"  Campaign ID:         {campaign_id}")
             if list_ids:
                 print(f"  Will send to lists:  {list_ids}")
             else:
-                print("  newsletter_list_ids is empty — campaign will be saved as Brevo draft only")
+                print("  newsletter_list_ids is empty - campaign will be saved as Brevo draft only")
             print()
 
             if _confirm("  Send newsletter to members list? [y/n]: "):
@@ -484,15 +643,15 @@ async def _run_invite(args: argparse.Namespace) -> None:
                     actor="secgen",
                     details={"workflow_id": wf.workflow_id, "gate": "newsletter"},
                 )
-                print("\n  Live send cancelled — campaign saved as draft in Brevo.")
-                # Don't rollback — Zoom + PDF are already done; just skip the send
+                print("\n  Live send cancelled - campaign saved as draft in Brevo.")
+                # Don't rollback - Zoom + PDF are already done; just skip the send
                 result = {"status": "completed", "context": ctx}
                 break
 
         else:
-            # Unknown gate — generic handler
+            # Unknown gate - generic handler
             print()
-            _print_header(f"APPROVAL REQUIRED — {current_step}")
+            _print_header(f"APPROVAL REQUIRED - {current_step}")
             if _confirm("  Proceed? [y/n]: "):
                 result = await wf.approve_and_resume()
             else:
@@ -517,7 +676,7 @@ async def _run_invite(args: argparse.Namespace) -> None:
 
         # If archive was skipped, open the output folder so manual archiving is easy
         archived = bool(ctx.get('archive_file_id'))
-        print(f"  Archived:      {'Yes (OneDrive)' if archived else 'No — see folder below'}")
+        print(f"  Archived:      {'Yes (OneDrive)' if archived else 'No - see folder below'}")
         if not archived:
             output_dir = Path("data") / "output"
             print(f"  PDF folder:    {output_dir.resolve()}")
@@ -616,10 +775,10 @@ def _run_debug_list(args: argparse.Namespace) -> None:
         return
 
     wf = cls(actor="debug")
-    _print_header(f"{workflow} — {len(wf.steps)} steps")
+    _print_header(f"{workflow} - {len(wf.steps)} steps")
     for idx, step in enumerate(wf.steps):
         gate = "  [approval gate]" if step.requires_approval else ""
-        print(f"  {idx}. {step.name} — {step.description}{gate}")
+        print(f"  {idx}. {step.name} - {step.description}{gate}")
     fixture_keys = sorted(cls.debug_fixture().keys())
     print()
     print(f"  fixture keys: {', '.join(fixture_keys)}")
@@ -641,7 +800,7 @@ def _run_debug_fixture(args: argparse.Namespace) -> None:
         print(json.dumps(fixture, ensure_ascii=False, indent=2, default=str))
         return
 
-    _print_header(f"{workflow} — debug_fixture()")
+    _print_header(f"{workflow} - debug_fixture()")
     import pprint
     print(pprint.pformat(fixture, indent=2, width=100, sort_dicts=False))
     print()
@@ -658,20 +817,20 @@ def _debug_load_from_state(workflow_id: str) -> dict[str, object]:
 
     state = get_workflow_state(workflow_id)
     if not state:
-        print(f"  ⚠️  No workflow_state row for id {workflow_id!r} — ignoring --from-state.")
+        print(f"  ⚠️  No workflow_state row for id {workflow_id!r} - ignoring --from-state.")
         return {}
     raw = state.get("data")
     if not raw:
-        print(f"  ⚠️  workflow_state {workflow_id!r} has no data blob — ignoring --from-state.")
+        print(f"  ⚠️  workflow_state {workflow_id!r} has no data blob - ignoring --from-state.")
         return {}
     try:
         blob = json.loads(raw) if isinstance(raw, str) else raw
     except (json.JSONDecodeError, TypeError) as exc:
-        print(f"  ⚠️  Could not parse workflow_state {workflow_id!r} data ({exc}) — ignoring.")
+        print(f"  ⚠️  Could not parse workflow_state {workflow_id!r} data ({exc}) - ignoring.")
         return {}
     ctx = blob.get("context") if isinstance(blob, dict) else None
     if not isinstance(ctx, dict):
-        print(f"  ⚠️  workflow_state {workflow_id!r} has no 'context' dict — ignoring.")
+        print(f"  ⚠️  workflow_state {workflow_id!r} has no 'context' dict - ignoring.")
         return {}
     return ctx
 
@@ -733,7 +892,7 @@ async def _run_debug_run(args: argparse.Namespace) -> None:
         ctx.update(_debug_load_from_state(from_state))
     set_pairs = getattr(args, "set", None) or []
     ctx.update(_debug_parse_set(set_pairs))
-    ctx["test_mode"] = True  # forced — no live escape hatch in debug
+    ctx["test_mode"] = True  # forced - no live escape hatch in debug
 
     as_json = bool(getattr(args, "json", False))
     show_ctx = bool(getattr(args, "show_ctx", False))
@@ -845,7 +1004,7 @@ async def _run_egkyklios_general(args: argparse.Namespace) -> None:
     print()
     print(f"  Workflow ID:     {wf.workflow_id}")
     print(f"  Κατάσταση:       {status}")
-    print(f"  Τίτλος:          {ctx.get('title', '—')}")
+    print(f"  Τίτλος:          {ctx.get('title', '-')}")
     print(f"  Περίοδος:        {ctx.get('period_start', '?')} → {ctx.get('period_end', '?')}")
     draft_id = ctx.get("egkyklios_draft_id")
     if draft_id:
@@ -904,9 +1063,9 @@ async def _run_egkyklios_general_approve(args: argparse.Namespace) -> None:
         print(f"❌ Δεν βρέθηκε workflow state για {workflow_id}.")
         return
 
-    _print_header(f"Έγκριση Γενικής Εγκυκλίου — draft #{draft_id}")
+    _print_header(f"Έγκριση Γενικής Εγκυκλίου - draft #{draft_id}")
     print(f"  Workflow ID:  {workflow_id}")
-    print(f"  Τίτλος:       {draft.get('title', '—')}")
+    print(f"  Τίτλος:       {draft.get('title', '-')}")
     print(f"  Περίοδος:     {draft['period_start']} → {draft['period_end']}")
     print()
 
@@ -938,7 +1097,7 @@ def _run_egkyklios_list(args: argparse.Namespace) -> None:
 
     limit = int(getattr(args, "limit", 10) or 10)
     rows = list_egkyklios_drafts(kind="general", limit=limit)
-    _print_header(f"Γενικές Εγκύκλιοι — τελευταίες {len(rows)}")
+    _print_header(f"Γενικές Εγκύκλιοι - τελευταίες {len(rows)}")
     if not rows:
         print("  (κανένα draft)")
         return
@@ -948,7 +1107,7 @@ def _run_egkyklios_list(args: argparse.Namespace) -> None:
             f"  {r.get('title', '')}"
         )
         if r.get("protocol_number"):
-            line += f"  · πρωτ. {r['protocol_number']}"
+            line += f"  - πρωτ. {r['protocol_number']}"
         print(line)
     print()
 
@@ -990,9 +1149,9 @@ async def _run_minutes(args: argparse.Namespace) -> None:
         logging.getLogger().setLevel(logging.DEBUG)
         for h in logging.getLogger().handlers:
             h.setLevel(logging.DEBUG)
-        _print_header(f"Board Meeting Minutes Workflow  [TEST MODE]  — {meeting_ref}")
+        _print_header(f"Board Meeting Minutes Workflow  [TEST MODE]  - {meeting_ref}")
     else:
-        _print_header(f"Board Meeting Minutes Workflow  — {meeting_ref}")
+        _print_header(f"Board Meeting Minutes Workflow  - {meeting_ref}")
 
     # ── Interactive source selection ─────────────────────────────────────────
 
@@ -1006,7 +1165,7 @@ async def _run_minutes(args: argparse.Namespace) -> None:
         if folder_id:
             docs = google.list_docs_in_folder(folder_id)
         else:
-            print("  (minutes_drafts_folder_id not configured — skipping doc listing)")
+            print("  (minutes_drafts_folder_id not configured - skipping doc listing)")
     except Exception as e:
         print(f"  (Could not list Google Docs: {e})")
 
@@ -1088,7 +1247,7 @@ async def _run_minutes(args: argparse.Namespace) -> None:
                 transcript_path = str(tp)
                 print(f"  → Using transcript: {tp.name}")
             else:
-                print(f"  File not found: {raw_path} — continuing without transcript")
+                print(f"  File not found: {raw_path} - continuing without transcript")
         print()
 
     # ── Build initial context and run workflow ────────────────────────────────
@@ -1180,7 +1339,7 @@ async def _run_minutes_finalize(args: argparse.Namespace) -> None:
     meeting_ref = args.meeting
     test_mode = getattr(args, "test", False)
 
-    label = f"Finalize Minutes  — {meeting_ref}"
+    label = f"Finalize Minutes  - {meeting_ref}"
     if test_mode:
         label += "  [TEST MODE]"
     _print_header(label)
@@ -1300,7 +1459,7 @@ def cmd_minutes_events_list(args: argparse.Namespace) -> None:
     from src.core.meeting_events import MeetingEventsStore
 
     init_db()
-    _print_header(f"Meeting Events — {args.meeting_ref}")
+    _print_header(f"Meeting Events - {args.meeting_ref}")
     events = MeetingEventsStore().list_events(
         args.meeting_ref,
         event_type=getattr(args, "type", None),
@@ -1362,7 +1521,7 @@ def cmd_minutes_propose_decision(args: argparse.Namespace) -> None:
             agenda_item=getattr(args, "agenda_item", "") or "",
         )
 
-        _print_header(f"Πρόταση Απόφασης — {proposal['ref']}")
+        _print_header(f"Πρόταση Απόφασης - {proposal['ref']}")
         print(render_decision(proposal))
         print()
         candidates = proposal.get("candidate_articles") or []
@@ -1373,7 +1532,7 @@ def cmd_minutes_propose_decision(args: argparse.Namespace) -> None:
         else:
             print("  (δεν εντοπίστηκαν σχετικά άρθρα στο corpus)")
         print()
-    except Exception as e:  # noqa: BLE001 — surface a one-liner, no traceback
+    except Exception as e:  # noqa: BLE001 - surface a one-liner, no traceback
         print(f"ERROR: {e}")
 
 
@@ -1405,6 +1564,7 @@ def cmd_minutes_build(args: argparse.Namespace) -> None:
             meeting_ref=args.meeting_ref,
             manifest_path=getattr(args, "manifest", None),
             transcript_path=getattr(args, "transcript_file", None),
+            timeline_path=getattr(args, "timeline", None),
             reuse_transcript=getattr(args, "reuse_transcript", False),
             meeting_start=meeting_start,
             draft=getattr(args, "draft", False),
@@ -1415,22 +1575,25 @@ def cmd_minutes_build(args: argparse.Namespace) -> None:
         items = skeleton.get("items", [])
         vote_count = sum(len(item.get("votes", [])) for item in items)
 
-        _print_header(f"Minutes Build — {result['meeting_ref']}")
+        _print_header(f"Minutes Build - {result['meeting_ref']}")
         print(f"  Source:        {result['source']}")
         print(f"  Segments:      {result['segment_count']}")
         print(f"  Agenda items:  {len(items)}")
         print(f"  Present:       {len(presence.get('present', []))}")
         print(f"  Absent:        {len(presence.get('absent', []))}")
         print(f"  Votes:         {vote_count}")
+        print(f"  Decisions:     {result.get('decision_count', 0)}")
         print()
         print(f"  Skeleton:      {result.get('skeleton_path', '')}")
         if getattr(args, "draft", False):
             if result.get("draft") is not None:
-                print(f"  Draft:         {result.get('draft_path', '(written)')}")
+                print(f"  Draft (json):  {result.get('draft_path', '(written)')}")
+                if result.get("draft_md_path"):
+                    print(f"  Draft (md):    {result.get('draft_md_path')}")
             else:
-                print("  Draft:         (skipped — LLM unavailable or failed)")
+                print("  Draft:         (skipped - LLM unavailable or failed)")
         print()
-    except Exception as e:  # noqa: BLE001 — surface a one-liner, no traceback
+    except Exception as e:  # noqa: BLE001 - surface a one-liner, no traceback
         print(f"ERROR: {e}")
 
 
@@ -1461,7 +1624,7 @@ async def _run_minutes_fetch_recording(args: argparse.Namespace) -> None:
             audio_only=not getattr(args, "include_video", False),
         )
 
-        _print_header(f"Recording assets — {manifest.get('meeting_uuid', '')}")
+        _print_header(f"Recording assets - {manifest.get('meeting_uuid', '')}")
         print(f"  Topic:      {manifest.get('topic', '')}")
         print(f"  Start time: {manifest.get('start_time', '')}")
         print(f"  Dest dir:   {manifest.get('dest_dir', '')}")
@@ -1491,7 +1654,7 @@ async def _run_minutes_fetch_recording(args: argparse.Namespace) -> None:
                 leave = p.get("leave_time") or ""
                 print(f"    - {name}  {email}  {join} -> {leave}")
             print()
-    except Exception as e:  # noqa: BLE001 — surface a clean one-line error
+    except Exception as e:  # noqa: BLE001 - surface a clean one-line error
         print(f"  ERROR: {e}")
         return
 
@@ -1537,7 +1700,7 @@ async def _run_archive_submit(args: argparse.Namespace) -> None:
         for h in logging.getLogger().handlers:
             h.setLevel(logging.DEBUG)
         _print_header("Archive Workflow  [TEST MODE]")
-        print("  TEST MODE — no SharePoint upload, no πρωτόκολλο write")
+        print("  TEST MODE - no SharePoint upload, no πρωτόκολλο write")
     else:
         _print_header("Archive Workflow")
 
@@ -1654,10 +1817,10 @@ async def _run_archive_review(args: argparse.Namespace) -> None:
         print("  Archive entry cancelled and rolled back.")
         return
     if intent == "unrelated":
-        print("  Feedback judged unrelated to this archive entry — no action taken.")
+        print("  Feedback judged unrelated to this archive entry - no action taken.")
         return
 
-    # intent == "amend" — apply to SharePoint + xlsx + context atomically
+    # intent == "amend" - apply to SharePoint + xlsx + context atomically
     from src.workflows.archive import apply_amendments
 
     amendments = parsed.get("amendments") or {}
@@ -1713,7 +1876,7 @@ async def _run_archive_resolve(args: argparse.Namespace) -> None:
                     the workflow and release any reservation we held.
                     Sender can re-submit with the correct number (or none).
 
-    Only SecGen should run this command — intentionally CLI-only (no email
+    Only SecGen should run this command - intentionally CLI-only (no email
     path) because the resolution requires a human judgement call.
     """
     from src.core.audit import get_workflow_state, save_workflow_state
@@ -1738,7 +1901,7 @@ async def _run_archive_resolve(args: argparse.Namespace) -> None:
         print(f"       (state={state.get('state')}, no pending_reservation_confirmation in context)")
         sys.exit(1)
 
-    _print_header(f"Reservation Confirmation — {workflow_id}")
+    _print_header(f"Reservation Confirmation - {workflow_id}")
     print(f"  Protocol number:    {pending.get('protocol_number')}")
     print(f"  Row title (yours):  {pending.get('existing_title')}")
     print(f"  Submitted title:    {pending.get('proposed_title')}")
@@ -1762,7 +1925,7 @@ async def _run_archive_resolve(args: argparse.Namespace) -> None:
             actor=getattr(args, "actor", "secgen"),
             details={"workflow_id": workflow_id, "pending": pending},
         )
-        print("  Decision: REJECTED — workflow rolled back, sender should re-submit.")
+        print("  Decision: REJECTED - workflow rolled back, sender should re-submit.")
         return
 
     if decision != "approve":
@@ -1789,12 +1952,12 @@ async def _run_archive_resolve(args: argparse.Namespace) -> None:
 
     if result.get("status") == "completed":
         ctx_final = wf.context
-        print("  Decision: APPROVED — workflow completed.")
+        print("  Decision: APPROVED - workflow completed.")
         print(f"  Πρωτόκολλο:  {ctx_final.get('protocol_number', '?')}")
         print(f"  File:        {ctx_final.get('remote_filename', '?')}")
     else:
         print(f"  Decision: APPROVED but workflow did not complete cleanly.")
-        print(f"  Status: {result.get('status')} — {result.get('error', '')}")
+        print(f"  Status: {result.get('status')} - {result.get('error', '')}")
 
 
 async def _run_archive_cancel(args: argparse.Namespace) -> None:
@@ -1897,24 +2060,24 @@ def cmd_rss(args: argparse.Namespace) -> None:
 def _rss_list() -> None:
     from src.core.audit import list_rss_feeds, list_rss_routes
     feeds = list_rss_feeds()
-    _print_header(f"RSS Feeds — {len(feeds)} configured")
+    _print_header(f"RSS Feeds - {len(feeds)} configured")
     if not feeds:
-        print("  (none — register one with `ai-assistant rss add-feed <url>`)")
+        print("  (none - register one with `ai-assistant rss add-feed <url>`)")
         return
     for feed in feeds:
         status = "✓" if feed.get("enabled") else "✗ disabled"
         print(f"  [{status}] {feed['feed_url']}")
-        print(f"    label:       {feed.get('label') or '—'}")
+        print(f"    label:       {feed.get('label') or '-'}")
         print(f"    last polled: {feed.get('last_polled_at') or 'never'}")
-        cursor = feed.get("last_seen_guid") or "—"
+        cursor = feed.get("last_seen_guid") or "-"
         print(f"    cursor:      {cursor[:60]}")
         routes = list_rss_routes(feed["feed_url"])
         if not routes:
-            print(f"    routes:      (none — items will not be posted)")
+            print(f"    routes:      (none - items will not be posted)")
         else:
             print(f"    routes ({len(routes)}):")
             for r in routes:
-                tag = r.get("forum_tag_name") or r.get("forum_tag_id") or "—"
+                tag = r.get("forum_tag_name") or r.get("forum_tag_id") or "-"
                 pat = r.get("url_pattern") or r.get("title_pattern") or "*"
                 print(f"      [id={r['id']}] → ch={r['channel_id']} tag={tag} pattern={pat} ({r.get('label') or ''})")
         print()
@@ -1923,7 +2086,7 @@ def _rss_list() -> None:
 def _rss_add_feed(args: argparse.Namespace) -> None:
     from src.core.audit import upsert_rss_feed
     upsert_rss_feed(args.url, label=args.label or None)
-    print(f"Registered feed: {args.url} (label={args.label or '—'})")
+    print(f"Registered feed: {args.url} (label={args.label or '-'})")
 
 
 def _rss_remove_feed(args: argparse.Namespace) -> None:
@@ -1953,7 +2116,7 @@ def _rss_remove_route(args: argparse.Namespace) -> None:
 
 
 async def _rss_poll_now() -> None:
-    """Manual poll — runs the same logic as the in-bot loop, standalone.
+    """Manual poll - runs the same logic as the in-bot loop, standalone.
 
     Note: posts to Discord require the bot process to be running.  This
     command exercises fetch + dedup + route-matching, but the actual
@@ -1992,23 +2155,23 @@ def _rss_seed_amnesty() -> None:
     """Seed the database with amnesty.gr feed + the 4 standard routes.
 
     Per user spec: route by URL substring against the single rss.xml feed.
-    Channel IDs / forum tag names come from config — empty values produce
+    Channel IDs / forum tag names come from config - empty values produce
     a warning so the user knows to fill them in before posts will land.
     """
     from src.core.audit import upsert_rss_feed, add_rss_route, list_rss_routes
     from src.config import settings
 
     feed_url = "https://www.amnesty.gr/rss.xml"
-    upsert_rss_feed(feed_url, label="amnesty.gr — official feed")
+    upsert_rss_feed(feed_url, label="amnesty.gr - official feed")
     print(f"✓ Registered feed: {feed_url}")
 
     events_ch = settings.discord.channels.events_channel_id
     info_ch = settings.discord.platform_bridge.board_meeting.agenda_channel_id
 
     if not events_ch:
-        print("⚠ discord.channels.events_channel_id not configured — events route skipped")
+        print("⚠ discord.channels.events_channel_id not configured - events route skipped")
     if not info_ch:
-        print("⚠ discord.platform_bridge.board_meeting.agenda_channel_id not configured — "
+        print("⚠ discord.platform_bridge.board_meeting.agenda_channel_id not configured - "
               "articles/press/ektheseis routes skipped")
 
     # Avoid duplicating routes on re-run
@@ -2037,7 +2200,7 @@ def _rss_seed_amnesty() -> None:
     for s in seeds:
         sig = (s["channel_id"], s["url_pattern"], s.get("forum_tag_name"))
         if sig in existing_signatures:
-            print(f"  (skip — already present: {s['label']})")
+            print(f"  (skip - already present: {s['label']})")
             continue
         rid = add_rss_route(
             feed_url,
@@ -2161,7 +2324,7 @@ async def _run_m365_renew_now(args: argparse.Namespace) -> None:
         for sid in renewed:
             print(f"  • {sid}")
     else:
-        print("Nothing to renew — all subscriptions are healthy.")
+        print("Nothing to renew - all subscriptions are healthy.")
 
 
 async def _run_m365_poll_now(args: argparse.Namespace) -> None:
@@ -2285,7 +2448,7 @@ def cmd_smoke_test(args: argparse.Namespace) -> None:
 def cmd_auth_google(args: argparse.Namespace) -> None:
     """Run the Google OAuth2 flow and save credentials token.
 
-    Pass ``--fresh`` to bypass the cached token entirely — needed when
+    Pass ``--fresh`` to bypass the cached token entirely - needed when
     switching accounts (e.g. personal → technical) since otherwise the
     OAuth library tries to refresh the stale token first and fails fast
     with ``invalid_grant`` before reaching the browser flow.
@@ -2296,7 +2459,7 @@ def cmd_auth_google(args: argparse.Namespace) -> None:
     print("Starting Google OAuth2 authentication...")
     if force_interactive:
         print("(--fresh: bypassing any cached token)")
-    print("A browser window will open — log in and click Allow.")
+    print("A browser window will open - log in and click Allow.")
     print()
     try:
         client = GoogleClient()
@@ -2326,13 +2489,13 @@ def cmd_auth_microsoft(args: argparse.Namespace) -> None:
     from src.integrations.onedrive import OneDriveClient, OneDriveAuthRequired
 
     print("Starting Microsoft OAuth2 sign-in...")
-    print("A browser window will open — log in with your Amnesty Microsoft account.")
+    print("A browser window will open - log in with your Amnesty Microsoft account.")
     print(f"Waiting for redirect to: {settings.ms_redirect_uri}")
     print()
     try:
         client = OneDriveClient()
         client.authenticate_interactive()
-        print("Sign-in successful — token cached.")
+        print("Sign-in successful - token cached.")
     except TimeoutError:
         print("FAILED Sign-in timed out. No redirect received within 5 minutes.")
         sys.exit(1)
@@ -2363,11 +2526,11 @@ def cmd_onedrive_backup_status(args: argparse.Namespace) -> None:
     from src.integrations.onedrive import OneDriveClient
 
     backup_path = OneDriveClient.PROTOCOL_BACKUP_PATH
-    _print_header("Πρωτόκολλο — Local Safety Backup")
+    _print_header("Πρωτόκολλο - Local Safety Backup")
 
     if not backup_path.exists():
         print(f"  Path:    {backup_path.resolve()}")
-        print(f"  Status:  NOT PRESENT — run any archive workflow to populate it.")
+        print(f"  Status:  NOT PRESENT - run any archive workflow to populate it.")
         return
 
     stat = backup_path.stat()
@@ -2393,13 +2556,13 @@ def cmd_onedrive_backup_status(args: argparse.Namespace) -> None:
         print(f"  Sheets:  {', '.join(tabs)}")
         print(f"  Status:  VALID (openpyxl can read it)")
     except Exception as e:
-        print(f"  Status:  CORRUPT? — could not parse: {e}")
+        print(f"  Status:  CORRUPT? - could not parse: {e}")
 
 
 def cmd_onedrive_backup_restore(args: argparse.Namespace) -> None:
     """Copy the latest backup to a user-specified destination.
 
-    Intentionally does NOT re-upload to OneDrive — restoration of the live
+    Intentionally does NOT re-upload to OneDrive - restoration of the live
     SharePoint copy is a manual decision (you might want to compare against
     the broken version, restore via Microsoft's own version history, etc.).
     This command just hands you a fresh local copy.
@@ -2410,7 +2573,7 @@ def cmd_onedrive_backup_restore(args: argparse.Namespace) -> None:
     backup_path = OneDriveClient.PROTOCOL_BACKUP_PATH
     if not backup_path.exists():
         print(f"ERROR: no backup found at {backup_path.resolve()}")
-        print("Run any archive workflow first — the backup is refreshed on every download.")
+        print("Run any archive workflow first - the backup is refreshed on every download.")
         sys.exit(1)
 
     dest = Path(args.dest)
@@ -2431,7 +2594,7 @@ def cmd_onedrive_ls(args: argparse.Namespace) -> None:
 
     path: str = getattr(args, "path", "") or ""
 
-    _print_header(f"OneDrive Archive — /{settings.onedrive.archive_root}/{path}".rstrip("/"))
+    _print_header(f"OneDrive Archive - /{settings.onedrive.archive_root}/{path}".rstrip("/"))
 
     try:
         client = OneDriveClient()
@@ -2485,7 +2648,7 @@ def cmd_upload_template(args: argparse.Namespace) -> None:
         )
 
     asyncio.run(_upload())
-    print(f"Done — template #{template_id} updated.")
+    print(f"Done - template #{template_id} updated.")
 
 
 # --- Logs ---
@@ -2505,7 +2668,7 @@ def cmd_logs(args: argparse.Namespace) -> None:
         print(f"Errors log: {err_p}")
         print()
         if not main_p.exists() and not err_p.exists():
-            print("(No log files yet — run the bot at least once.)")
+            print("(No log files yet - run the bot at least once.)")
         else:
             for p in (main_p, err_p):
                 if p.exists():
@@ -2518,7 +2681,7 @@ def cmd_logs(args: argparse.Namespace) -> None:
 
     target = err_p if sub == "errors" else main_p
     if not target.exists():
-        print(f"(No log file at {target} yet — run the bot first.)")
+        print(f"(No log file at {target} yet - run the bot first.)")
         return
 
     lines = int(getattr(args, "lines", 50) or 50)
@@ -2564,12 +2727,12 @@ def cmd_discord(args: argparse.Namespace) -> None:
         print()
         if scope_global:
             cmds = result.get("global", [])
-            print(f"Global registry: cleared {len(cmds)} command(s)" + (f" — {cmds}" if cmds else ""))
+            print(f"Global registry: cleared {len(cmds)} command(s)" + (f" - {cmds}" if cmds else ""))
         if scope_guild:
             cmds = result.get("guild", [])
-            print(f"Guild registry:  cleared {len(cmds)} command(s)" + (f" — {cmds}" if cmds else ""))
+            print(f"Guild registry:  cleared {len(cmds)} command(s)" + (f" - {cmds}" if cmds else ""))
         print()
-        print("Now restart the bot with `ai-assistant discord run` — it will sync the")
+        print("Now restart the bot with `ai-assistant discord run` - it will sync the")
         print("current command set fresh.  Discord clients may take up to an hour to")
         print("drop their local cache of the wiped commands.")
         return
@@ -2603,7 +2766,7 @@ def main() -> None:
     # Smoke test
     subparsers.add_parser("smoke-test", help="Run end-to-end smoke test")
 
-    # Auth Google (legacy command — kept for backward compatibility)
+    # Auth Google (legacy command - kept for backward compatibility)
     subparsers.add_parser("auth-google", help="Authenticate with Google APIs (OAuth2)")
 
     # Auth (new unified subcommand)
@@ -2636,7 +2799,7 @@ def main() -> None:
     invite_parser.add_argument("--sheet-id", help="Google Sheets ID for agenda data")
     invite_parser.add_argument("--meeting-ref", dest="meeting_ref",
                                help="Meeting reference (e.g. ΔΣ05-2026). "
-                                    "Live mode: bypasses D5 read on the agenda Sheet — useful when "
+                                    "Live mode: bypasses D5 read on the agenda Sheet - useful when "
                                     "running ahead of D5 being seeded for the next cycle, OR for "
                                     "sandbox testing (e.g. --meeting-ref ΔΣ99-2099 --test) so the "
                                     "test workflow never collides with a live cycle's Discord "
@@ -2644,6 +2807,12 @@ def main() -> None:
                                     "Required when --manual is set.")
     invite_parser.add_argument("--date", help="Meeting date (YYYY-MM-DD)")
     invite_parser.add_argument("--time", help="Meeting time (HH:MM)")
+    invite_parser.add_argument(
+        "--dates",
+        help="Candidate dates for the Crab Fit availability poll, comma-separated "
+             "YYYY-MM-DD (e.g. \"2026-06-17, 2026-06-29\"). The scheduling email's "
+             "ΔΙΑΘΕΣΙΜΟΤΗΤΕΣ button links to the created grid.",
+    )
     invite_parser.add_argument("--manual", action="store_true",
                                help="Manual mode: skip Google Sheets, enter data via CLI")
     invite_parser.add_argument("--protocol", help="Manual protocol number (e.g. 2026_017), overrides Drive lookup")
@@ -2665,6 +2834,15 @@ def main() -> None:
     share_poll_parser = invite_sub.add_parser("share-poll", help="Reply to the board scheduling email with a poll URL")
     share_poll_parser.add_argument("--url", required=True, help="Poll URL (When2Meet, Doodle, etc.)")
     share_poll_parser.add_argument("--workflow-id", help="Workflow ID (default: most recent invitation workflow)")
+
+    resume_parser = invite_sub.add_parser(
+        "resume",
+        help="Resume invitation from read_agenda (scheduling email already sent, boxes already checked)",
+    )
+    resume_parser.add_argument("--meeting-ref", dest="meeting_ref", help="Meeting ref (e.g. ΔΣ05-2026) to find the scheduling thread anchor")
+    resume_parser.add_argument("--protocol", help="Manual protocol number override (e.g. 2026_029)")
+    resume_parser.add_argument("--test", action="store_true", help="Test mode")
+    resume_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
 
     reset_sheet_parser = invite_sub.add_parser(
         "reset-sheet",
@@ -2706,6 +2884,11 @@ def main() -> None:
     build_source.add_argument(
         "--reuse-transcript", dest="reuse_transcript", action="store_true",
         help="Reuse the cached transcript.json from a prior --manifest build (no re-transcription)",
+    )
+    build_parser.add_argument(
+        "--timeline", dest="timeline", default=None,
+        help="Path to a Zoom timeline.json; with --transcript-file, attributes each "
+             "caption to the active speaker (use for speaker-less Zoom closed_caption.vtt)",
     )
     build_parser.add_argument(
         "--meeting-start", dest="meeting_start", default=None,
@@ -2811,7 +2994,7 @@ def main() -> None:
     )
     archive_cancel_parser.add_argument("workflow_id", help="Workflow ID to cancel")
 
-    # archive resolve <workflow_id> <decision>  — SecGen reservation confirmation
+    # archive resolve <workflow_id> <decision>  - SecGen reservation confirmation
     archive_resolve_parser = archive_sub.add_parser(
         "resolve",
         help="SecGen-only: confirm/reject filling a pre-reserved πρωτόκολλο slot",
@@ -2828,7 +3011,7 @@ def main() -> None:
     # archive list
     archive_sub.add_parser("list", help="List in-progress + recent archive workflows")
 
-    # M365 inbox watcher (Phase 3) — Graph webhook subscription lifecycle + safety poll
+    # M365 inbox watcher (Phase 3) - Graph webhook subscription lifecycle + safety poll
     m365_parser = subparsers.add_parser(
         "m365",
         help="M365/Graph webhook subscription + inbox safety poll",
@@ -2877,7 +3060,7 @@ def main() -> None:
     rss_sub.add_parser("seed-amnesty",
                        help="Seed amnesty.gr feed + 4 standard routes (events/articles/press/ektheseis)")
 
-    # Debug — run a single workflow step in isolation (test_mode)
+    # Debug - run a single workflow step in isolation (test_mode)
     debug_parser = subparsers.add_parser(
         "debug",
         help="Run a single workflow step in isolation against a fake context (test_mode)",

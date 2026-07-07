@@ -7,7 +7,7 @@ Why a separate module from the Discord cog
 ==========================================
 Keeps the parser pure: it knows nothing about Discord, channels, or
 routing.  The cog handles those.  This file is unit-testable without any
-async/Discord imports — fetch a feed, get a list of :class:`FeedItem`
+async/Discord imports - fetch a feed, get a list of :class:`FeedItem`
 dataclasses back.
 
 Why feedparser
@@ -15,7 +15,7 @@ Why feedparser
 Most battle-tested RSS/Atom parser in Python (used by everything from
 podcatchers to Plone).  Handles:
 - RSS 0.91 / 0.92 / 1.0 / 2.0, Atom 0.3 / 1.0
-- Missing or malformed timestamps (silently — we get a partial result
+- Missing or malformed timestamps (silently - we get a partial result
   rather than an exception)
 - Custom namespaces (``dc:creator``, ``media:thumbnail``, ...)
 - Sanitizer fixups for common HTML quirks
@@ -52,7 +52,7 @@ class FeedItem:
     """Normalized representation of one feed item.
 
     Frozen + slotted so it's hashable + small.  All fields are populated
-    even if the source feed leaves them empty — defaults make downstream
+    even if the source feed leaves them empty - defaults make downstream
     code safe to dereference without None-checks.
     """
     guid: str
@@ -80,7 +80,7 @@ async def fetch_feed(
     Uses ``httpx`` for the actual HTTP fetch (so we can set custom headers
     and run from inside async contexts cleanly), then hands the bytes to
     ``feedparser`` for parsing.  Failures are logged and surface as an
-    empty list rather than raising — the poll loop should never crash on
+    empty list rather than raising - the poll loop should never crash on
     a transient feed outage.
 
     Args:
@@ -122,7 +122,7 @@ def parse_feed_bytes(raw: bytes, *, max_items: int = 50) -> list[FeedItem]:
     for entry in parsed.entries[:max_items]:
         try:
             items.append(_normalize_entry(entry))
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Skipping malformed feed entry: %s", exc)
     return items
 
@@ -133,12 +133,17 @@ def parse_feed_bytes(raw: bytes, *, max_items: int = 50) -> list[FeedItem]:
 _TAG_STRIPPER = re.compile(r"<[^>]+>")
 _FIRST_IMG_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s+")
+# House style: no em/en/figure dashes or middot in reposted content - flatten
+# them (and decoded &mdash;/&ndash; entities) to a plain ASCII hyphen. Keyed by
+# code point so this source file stays free of the characters it strips.
+_DASH_FLATTEN = {cp: "-" for cp in (0x2010, 0x2011, 0x2012, 0x2013, 0x2014,
+                                    0x2015, 0x2212, 0x00B7, 0x0387)}
 
 
 def strip_html(html: str) -> str:
     """Best-effort HTML → plain text.
 
-    Not a full HTML parser — for that we'd need bs4 or lxml.  We just remove
+    Not a full HTML parser - for that we'd need bs4 or lxml.  We just remove
     tags and collapse whitespace, which is plenty for embed description
     rendering.  Unescape common entities the lazy way (Python's html module).
     """
@@ -146,7 +151,7 @@ def strip_html(html: str) -> str:
     if not html:
         return ""
     no_tags = _TAG_STRIPPER.sub(" ", html)
-    decoded = _html.unescape(no_tags)
+    decoded = _html.unescape(no_tags).translate(_DASH_FLATTEN)
     return _WHITESPACE.sub(" ", decoded).strip()
 
 
@@ -167,7 +172,7 @@ def _normalize_entry(entry: dict) -> FeedItem:
     title = (entry.get("title") or "").strip()
     link = (entry.get("link") or "").strip()
 
-    # Description / content / summary — RSS uses description, Atom uses
+    # Description / content / summary - RSS uses description, Atom uses
     # content[].value or summary.  Take the first non-empty source.
     description_html = ""
     if entry.get("content"):
@@ -182,7 +187,7 @@ def _normalize_entry(entry: dict) -> FeedItem:
 
     description_plain = strip_html(description_html)
 
-    # Published date — feedparser parses to a struct_time in
+    # Published date - feedparser parses to a struct_time in
     # entry.published_parsed; convert to UTC datetime.
     published_at: datetime | None = None
     raw_date = entry.get("published") or entry.get("updated") or ""
@@ -204,7 +209,7 @@ def _normalize_entry(entry: dict) -> FeedItem:
 
     thumbnail_url = extract_first_image(description_html)
     # feedparser also exposes media:thumbnail at entry.media_thumbnail[0]['url']
-    # — prefer that when present (publisher-curated thumbnail).
+    # - prefer that when present (publisher-curated thumbnail).
     if not thumbnail_url:
         media_thumb = entry.get("media_thumbnail") or []
         if media_thumb:
@@ -215,7 +220,7 @@ def _normalize_entry(entry: dict) -> FeedItem:
 
     author = (entry.get("author") or entry.get("dc_creator") or "").strip()
 
-    # Tags / categories — feedparser exposes them as entry.tags = list of
+    # Tags / categories - feedparser exposes them as entry.tags = list of
     # {term, scheme, label} dicts.
     tags_raw = entry.get("tags") or []
     tags = tuple(
@@ -250,7 +255,7 @@ def filter_new_items(
     Walks the (newest-first) list and stops at the first item whose guid
     matches ``last_seen_guid``.  If the cursor is missing (first poll
     ever), returns at most the most recent N items so we don't dump the
-    entire archive — a 1-item bootstrap is usually right but we leave
+    entire archive - a 1-item bootstrap is usually right but we leave
     that to the caller (use ``items[:1]`` after this returns).
     """
     new_items: list[FeedItem] = []
@@ -270,10 +275,10 @@ def item_matches_route(
     """Evaluate a route's filters against an item.
 
     Both filters are optional.  When BOTH are set, both must match (AND).
-    When NEITHER is set, the route is a wildcard — every item matches.
+    When NEITHER is set, the route is a wildcard - every item matches.
 
     Args:
-        url_pattern: Substring that must appear in ``item.link`` (NOT regex —
+        url_pattern: Substring that must appear in ``item.link`` (NOT regex -
             URL patterns are typically literal path fragments like
             "/news/events/"; substring match is faster and less surprising
             than regex for callers who don't know they're configuring one).
@@ -289,7 +294,7 @@ def item_matches_route(
             if not re.search(title_pattern, item.title or "", re.IGNORECASE):
                 return False
         except re.error:
-            # Bad regex — fail open (admin sees the misconfiguration in logs)
+            # Bad regex - fail open (admin sees the misconfiguration in logs)
             logger.warning("Invalid title_pattern regex: %r", title_pattern)
             return False
     return True

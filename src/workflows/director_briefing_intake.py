@@ -5,7 +5,7 @@ Kept separate from :mod:`src.workflows.director_briefing` (pure functions
 Graph / ArchiveWorkflow plumbing.
 
 Wired by ``email_intake.process_inbox_message`` AFTER the anchor match
-and BEFORE the Discord mirror — the briefing archive runs synchronously
+and BEFORE the Discord mirror - the briefing archive runs synchronously
 so its result lands in the same Discord post the board sees.
 """
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _build_announcement_body(
 ) -> str:
     """Compose the plain-text announcement the board sees in email AND Discord.
 
-    Deliberately terse — it's a milestone note, not a real director update.
+    Deliberately terse - it's a milestone note, not a real director update.
     The Director's own words stay private in the members@ inbox; the board
     only sees that the document has landed and where to find it.
     """
@@ -86,11 +86,11 @@ async def _send_announcement(
     """Send the announcement as a threaded reply to board@ AND publish on the
     bus so the Discord board thread mirrors the same content.
 
-    Both surfaces show identical wording — there's a single source of truth
+    Both surfaces show identical wording - there's a single source of truth
     for what the board sees.
     """
     display = _KIND_DISPLAY.get(kind, kind.title())
-    subject = f"{display} Διευθυντή — Συνεδρίαση {meeting_ref}"
+    subject = f"{display} Διευθυντή - Συνεδρίαση {meeting_ref}"
 
     # Send the email reply.  Non-fatal: if the email send fails, the Discord
     # mirror still happens via the bus event below.
@@ -108,10 +108,10 @@ async def _send_announcement(
         except Exception as exc:
             logger.warning(
                 "Director-briefing announcement email send failed (non-fatal "
-                "— Discord mirror still runs): %s", exc,
+                "- Discord mirror still runs): %s", exc,
             )
 
-    # Publish the bus event regardless — the existing _on_board_email_sent
+    # Publish the bus event regardless - the existing _on_board_email_sent
     # handler renders this in the private Discord board thread.
     try:
         await bus.publish(
@@ -146,7 +146,7 @@ async def _resolve_email_anchor(meeting_id: str) -> str:
     reply on the board email thread so it lands in-thread alongside the
     other meeting emails.
 
-    Returns ``""`` if no workflow row matches — in which case the email
+    Returns ``""`` if no workflow row matches - in which case the email
     side is silently skipped and only the Discord mirror runs.
     """
     import json as _json
@@ -196,7 +196,7 @@ async def process_director_briefing_email(
         single source of truth).
 
     The caller sets ``send_announcement=False`` when board@ is already a
-    recipient of the Director's email — the regular ``_mirror_board_reply``
+    recipient of the Director's email - the regular ``_mirror_board_reply``
     flow handles Discord, and the email is already in-thread.
     """
     if not is_director(sender_email):
@@ -212,7 +212,7 @@ async def process_director_briefing_email(
     inbox = M365InboxClient()
     attachments = await inbox.list_attachments(message_id)
 
-    # The Director simply hits Reply — the subject stays whatever Outlook
+    # The Director simply hits Reply - the subject stays whatever Outlook
     # prepends to "Συνεδρίαση ΔΣXX-YYYY".  Classification is therefore
     # **filename-driven**: the briefing is whichever attachment carries
     # Εισηγητικό / Ενημερωτικό in its filename.
@@ -220,7 +220,7 @@ async def process_director_briefing_email(
     if match is None:
         logger.info(
             "Director email for %s has no attachment whose filename matches "
-            "Εισηγητικό / Ενημερωτικό — no briefing classification.",
+            "Εισηγητικό / Ενημερωτικό - no briefing classification.",
             meeting_ref,
         )
         return None
@@ -254,7 +254,7 @@ async def process_director_briefing_email(
                 message_id=message_id,
                 attachment=att,
                 sender_email=sender_email,
-                subject=f"{subject} — επιπλέον συνημμένο",
+                subject=f"{subject} - επιπλέον συνημμένο",
             )
             if extra_proto:
                 extras_archived.append(f"{att.get('name')}: {extra_proto}")
@@ -326,7 +326,7 @@ async def _archive_main_briefing(
 
     filename = attachment.get("name") or "briefing.pdf"
 
-    # Persistent local copy — used by Γενική Εγκύκλιος workflow later.
+    # Persistent local copy - used by Γενική Εγκύκλιος workflow later.
     local_dest = local_copy_path(meeting_ref, filename)
     local_dest.parent.mkdir(parents=True, exist_ok=True)
     await inbox.download_attachment(message_id, attachment["id"], local_dest)
@@ -343,7 +343,7 @@ async def _archive_main_briefing(
     )
 
     # ArchiveWorkflow expects a path it can read; we feed it the local
-    # copy we just persisted.  test_mode is False — the Director writing
+    # copy we just persisted.  test_mode is False - the Director writing
     # in production gets archived in production.
     wf = ArchiveWorkflow(actor=workflow_actor)
     initial_data = {

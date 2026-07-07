@@ -21,7 +21,7 @@ from src.integrations.discord.stats import StatsStore
 
 @pytest.mark.asyncio
 async def test_summary_accepts_since_none(in_memory_db):
-    """``since=None`` must NOT crash — it's the 'All time' branch."""
+    """``since=None`` must NOT crash - it's the 'All time' branch."""
     store = StatsStore()
     await store.record(
         channel_id="c1", thread_id=None, direction="discord_post",
@@ -36,7 +36,7 @@ async def test_summary_accepts_since_none(in_memory_db):
 @pytest.mark.asyncio
 async def test_per_channel_accepts_since_none(in_memory_db):
     """The per_channel query appends ``AND channel_id IS NOT NULL`` after
-    the time-filter WHERE — must still produce valid SQL with no filter."""
+    the time-filter WHERE - must still produce valid SQL with no filter."""
     store = StatsStore()
     await store.record(
         channel_id="c1", thread_id=None, direction="discord_post",
@@ -50,7 +50,7 @@ async def test_per_channel_accepts_since_none(in_memory_db):
 
 @pytest.mark.asyncio
 async def test_per_classification_accepts_since_none(in_memory_db):
-    """Same shape as per_channel — extra AND clause must compose."""
+    """Same shape as per_channel - extra AND clause must compose."""
     store = StatsStore()
     await store.record(
         channel_id="c1", thread_id=None, direction="inbound_email",

@@ -1,4 +1,4 @@
-"""Discord bot skeleton — AmnestyDiscordBot + run_bot / run_bot_sync entry points."""
+"""Discord bot skeleton - AmnestyDiscordBot + run_bot / run_bot_sync entry points."""
 from __future__ import annotations
 
 import asyncio
@@ -37,7 +37,7 @@ class AmnestyDiscordBot(commands.Bot):
         intents.message_content = True
         intents.guild_scheduled_events = True
         intents.members = True   # needed for on_member_join (M1 welcome DM)
-        # Legacy "!" prefix removed — the bot responds only to slash commands
+        # Legacy "!" prefix removed - the bot responds only to slash commands
         # and @mentions.  ``commands.when_mentioned`` keeps prefix-commands
         # working for any future debug use, but doesn't claim a textual prefix.
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
@@ -54,11 +54,11 @@ class AmnestyDiscordBot(commands.Bot):
         # ── Global app-command audit hook ────────────────────────────────────
         # Every slash command (and context menu) routes through tree.interaction_check
         # before its handler runs.  Returning True lets it proceed; we use this
-        # purely as an audit trail — any interaction the user invokes is
+        # purely as an audit trail - any interaction the user invokes is
         # captured to the audit_log table whether or not the handler then
         # decides to call log_action() itself.
         self.tree.interaction_check = self._audit_interaction
-        # Global error handler — keeps stale-command (CommandNotFound) and
+        # Global error handler - keeps stale-command (CommandNotFound) and
         # uncaught handler exceptions from spamming a traceback to the log
         # while leaving the user staring at a frozen Discord client.
         self.tree.on_error = self._on_tree_error
@@ -72,7 +72,7 @@ class AmnestyDiscordBot(commands.Bot):
 
         Discord clients aggressively cache the guild-command list.  After
         a sync that *removes* a command, the user's client may still
-        autocomplete and invoke it for up to an hour — Discord then routes
+        autocomplete and invoke it for up to an hour - Discord then routes
         the interaction to us but our tree has no handler, raising
         :class:`discord.app_commands.CommandNotFound`.  Without this hook
         the user sees "This interaction failed" with no context, and the
@@ -87,7 +87,7 @@ class AmnestyDiscordBot(commands.Bot):
         if isinstance(error, CommandNotFound):
             cmd = (interaction.data or {}).get("name", "?") if interaction.data else "?"
             logger.info(
-                "Stale slash command invoked (CommandNotFound): /%s by %s — "
+                "Stale slash command invoked (CommandNotFound): /%s by %s - "
                 "client cache likely lagging behind tree sync.",
                 cmd, getattr(interaction.user, "id", "?"),
             )
@@ -98,7 +98,7 @@ class AmnestyDiscordBot(commands.Bot):
                         "Δοκιμάστε `/ai-assistant` ή `/forum`.",
                         ephemeral=True,
                     )
-            except Exception:  # pragma: no cover — interaction expired
+            except Exception:  # pragma: no cover - interaction expired
                 pass
             return
 
@@ -135,14 +135,14 @@ class AmnestyDiscordBot(commands.Bot):
                 workflow="discord.interaction",
                 action=" ".join(path),
                 actor=str(interaction.user.id),
-                target=str(interaction.channel_id or "—"),
+                target=str(interaction.channel_id or "-"),
                 details={
                     "user_name": getattr(interaction.user, "display_name", str(interaction.user)),
                     "guild_id": str(interaction.guild_id or ""),
                     "command_type": interaction.command.qualified_name if interaction.command else cmd_name,
                 },
             )
-        except Exception as exc:  # pragma: no cover — best-effort audit
+        except Exception as exc:  # pragma: no cover - best-effort audit
             logger.debug("Audit hook failed (non-fatal): %s", exc)
         return True
 
@@ -166,21 +166,21 @@ class AmnestyDiscordBot(commands.Bot):
 
         # NOTE: no Activity / presence text is set (user-removed 2026-05-26).
         # The bot appears online with no "Watching..." / "Playing..." line
-        # under its name in the member list — cleaner look for a productivity
+        # under its name in the member list - cleaner look for a productivity
         # bot.  Re-enable here with ``self.change_presence(activity=...)`` if
         # ever needed.
 
         # Upload any app-owned brand emojis declared in brand.APP_EMOJI_DEFINITIONS.
-        # Idempotent — skips emojis Discord already knows about.
+        # Idempotent - skips emojis Discord already knows about.
         try:
             from src.integrations.discord.brand import ensure_app_emojis
             self.app_emojis = await ensure_app_emojis(self)
             logger.info("App emojis resolved: %s", list(self.app_emojis.keys()))
-        except Exception as exc:  # pragma: no cover — emojis are cosmetic
+        except Exception as exc:  # pragma: no cover - emojis are cosmetic
             logger.warning("Could not ensure app emojis (non-fatal): %s", exc)
             self.app_emojis = {}
 
-        # Phase C — verify role hierarchy for team management
+        # Phase C - verify role hierarchy for team management
         try:
             from src.integrations.discord.state import TeamsStore
             guild_id = settings.discord_guild_id
@@ -215,7 +215,7 @@ async def run_bot() -> None:
 
 
 def run_bot_sync() -> None:
-    """Blocking entry point — called by the CLI."""
+    """Blocking entry point - called by the CLI."""
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:
@@ -236,7 +236,7 @@ async def clear_stale_commands(
     ---------------
     The bot's normal ``on_ready`` syncs **guild-scoped** commands.  If at any
     point in the past a command was registered **globally** (no ``guild=``
-    argument), Discord keeps it in its global command registry forever — even
+    argument), Discord keeps it in its global command registry forever - even
     after we remove it from the bot's tree.  Discord clients then continue to
     show the stale command in their slash-command autocomplete UI for up to
     an hour (sometimes longer due to local caching).
@@ -245,7 +245,7 @@ async def clear_stale_commands(
 
     1. ``clear_globals``: ``tree.clear_commands(guild=None)`` + ``sync(guild=None)``
        pushes an EMPTY global set, killing every globally-registered command.
-    2. ``clear_guild``: same dance scoped to ``settings.discord_guild_id`` —
+    2. ``clear_guild``: same dance scoped to ``settings.discord_guild_id`` -
        useful when the guild registry has its own accretion.
 
     After this returns, restart the bot normally; ``on_ready`` will push the
@@ -260,7 +260,7 @@ async def clear_stale_commands(
 
     deleted: dict[str, list[str]] = {"global": [], "guild": []}
 
-    # Use a barebones client — we don't need cogs / event handlers, just an
+    # Use a barebones client - we don't need cogs / event handlers, just an
     # authenticated session with API access.
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
@@ -305,7 +305,7 @@ async def clear_stale_commands(
                 except Exception as exc:
                     logger.warning("Could not clear guild commands: %s", exc)
             else:
-                logger.info("No discord_guild_id configured — skipping guild-scoped clear.")
+                logger.info("No discord_guild_id configured - skipping guild-scoped clear.")
 
     # Run the gateway client and the work task concurrently; once the work
     # task finishes, close the client so the start() coroutine returns.
@@ -317,7 +317,7 @@ async def clear_stale_commands(
         await client.close()
         try:
             await start_task
-        except Exception:  # pragma: no cover — closing the session may raise
+        except Exception:  # pragma: no cover - closing the session may raise
             pass
 
     return deleted

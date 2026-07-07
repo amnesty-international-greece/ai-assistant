@@ -16,7 +16,7 @@ Supported source types (mapped to LibreOffice's native conversion):
 | .pptx     | Microsoft PowerPoint      | Yes                      |
 | .odp      | OpenDocument Presentation | Yes                      |
 | .jpg/.jpeg/.png/.bmp/.tiff | Images       | Yes (single-page PDF)    |
-| .heic/.heif | iPhone photos           | NO — requires pre-step   |
+| .heic/.heif | iPhone photos           | NO - requires pre-step   |
 
 HEIC handling: LibreOffice does NOT understand HEIC.  If the input is HEIC
 and pillow-heif is available, we convert HEIC → PNG first, then PNG → PDF.
@@ -111,7 +111,7 @@ def _heic_to_png(heic_path: Path, dest_dir: Path) -> Path:
         from PIL import Image
         import pillow_heif  # type: ignore[import-not-found]
         pillow_heif.register_heif_opener()
-    except ImportError as e:  # pragma: no cover — depends on environment
+    except ImportError as e:  # pragma: no cover - depends on environment
         raise ConversionError(
             f"HEIC support requires pillow-heif (got: {e}).  "
             "Install with: pip install pillow-heif"
@@ -209,7 +209,7 @@ def convert_to_pdf(
     produced = dest_dir / (work_input.stem + ".pdf")
     if not produced.exists():
         # Some LibreOffice builds name the output after the original stem if
-        # the input was renamed during conversion — scan the dir as a fallback.
+        # the input was renamed during conversion - scan the dir as a fallback.
         for f in dest_dir.glob("*.pdf"):
             if f.stat().st_size > 0:
                 produced = f

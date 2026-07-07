@@ -9,7 +9,7 @@ authentication side-effects.  Covers:
   - Protocol-registry helpers: get_next_protocol_number, append_protocol_row
 
 Integration tests against the live SharePoint site live in
-``scripts/`` and are run manually — anything that hits the network
+``scripts/`` and are run manually - anything that hits the network
 stays out of CI.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ from src.integrations.onedrive import OneDriveAuthRequired, OneDriveClient
 def patched_settings():
     """Patch the module-level settings reference used inside onedrive.py."""
     # Patches against the NEW module path after the m365/ consolidation.
-    # ``src.integrations.onedrive`` is now a re-export shim — patching there
+    # ``src.integrations.onedrive`` is now a re-export shim - patching there
     # mutates only the shim's namespace and the actual code in m365/onedrive.py
     # would silently bypass the patch.
     with patch("src.integrations.m365.onedrive.settings") as s:
@@ -290,7 +290,7 @@ async def test_delete_file_targets_correct_sharepoint_path(client: OneDriveClien
     url = fake_async_client.delete.call_args.args[0]
     assert "/sites/site-xyz/drive/root:/" in url
     assert "%CE%91%CF%81%CF%87%CE%B5%CE%AF%CE%BF" in url   # Αρχείο encoded
-    # No :/content or :/children suffix — the item URL itself
+    # No :/content or :/children suffix - the item URL itself
     assert not url.endswith(":/content")
     assert not url.endswith(":/children")
 
@@ -545,7 +545,7 @@ async def test_append_protocol_row_parses_date_string(
     written.write_bytes(uploaded_bytes)
     wb2 = openpyxl.load_workbook(written)
     cell = wb2["2026"].cell(row=2, column=2)
-    # openpyxl round-trips dates as datetime at midnight — compare on .date()
+    # openpyxl round-trips dates as datetime at midnight - compare on .date()
     assert hasattr(cell.value, "year") and cell.value.year == 2026
     assert cell.value.month == 5 and cell.value.day == 23
 
@@ -831,7 +831,7 @@ async def test_upload_protocol_workbook_raises_protokollo_locked_after_all_retri
 async def test_upload_protocol_workbook_propagates_non_423_errors(
     client: OneDriveClient, tmp_path: Path,
 ) -> None:
-    """500-class errors propagate immediately — no retry, no Protokollo wrapping."""
+    """500-class errors propagate immediately - no retry, no Protokollo wrapping."""
     async def fake_upload(**_):
         resp = httpx.Response(status_code=500, request=httpx.Request("PUT", "https://x"))
         raise httpx.HTTPStatusError("500", request=resp.request, response=resp)

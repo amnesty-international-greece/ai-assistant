@@ -1,4 +1,4 @@
-"""Phase 3 tests — email-route intake, webhook handler, subject matcher."""
+"""Phase 3 tests - email-route intake, webhook handler, subject matcher."""
 from __future__ import annotations
 
 import json
@@ -40,11 +40,11 @@ def board_allow_list_only():
 
 @pytest.mark.parametrize("subject,expected", [
     ("[Αρχείο] εισηγηση",       True),
-    ("ΑΡΧΕΙΟ — Πρακτικά",       True),
+    ("ΑΡΧΕΙΟ - Πρακτικά",       True),
     ("αρχείο: υποψηφιότητα",    True),
     ("fwd: Αρχειο τι",          True),     # accent-stripped
     ("Archive request",         True),     # English fallback pattern
-    ("Re: archive — RFP",       True),
+    ("Re: archive - RFP",       True),
     ("Πρόσκληση ΔΣ",            False),
     ("",                        False),
     ("re: συνεδρίαση",          False),
@@ -274,7 +274,7 @@ def client(mock_db):
 
 
 def test_webhook_validation_token_handshake(client):
-    """Graph subscription handshake — must echo the validationToken as text/plain."""
+    """Graph subscription handshake - must echo the validationToken as text/plain."""
     resp = client.post(
         "/webhooks/m365/inbox?validationToken=abc-123",
         json={"any": "thing"},
@@ -337,7 +337,7 @@ def test_webhook_accepts_good_client_state(client, mock_db):
                new=AsyncMock()) as proc:
         resp = client.post("/webhooks/m365/inbox", json=body)
     assert resp.status_code == 202
-    # FastAPI background tasks run after the response — TestClient awaits them
+    # FastAPI background tasks run after the response - TestClient awaits them
     proc.assert_called_once()
 
 
@@ -383,7 +383,7 @@ def test_default_allow_list_includes_test_email(board_allow_list_only):
     """The configured test_email is implicitly allow-listed."""
     from src.integrations.m365_inbox import sender_allowed
     from src.config import settings
-    assert settings.testing.test_email   # sanity — config has it set
+    assert settings.testing.test_email   # sanity - config has it set
     assert sender_allowed(settings.testing.test_email) is True
 
 
@@ -502,7 +502,7 @@ async def test_read_taxonomy_and_categories_uses_one_download():
     async def _fake_lookup(self):
         nonlocal lookup_calls
         lookup_calls += 1
-        return Path("/tmp/fake.xlsx")  # path is unused — openpyxl is patched
+        return Path("/tmp/fake.xlsx")  # path is unused - openpyxl is patched
 
     with patch.object(OneDriveClient, "_workbook_path_for_read", _fake_lookup), \
          patch("openpyxl.load_workbook", return_value=_FakeWB()):
@@ -587,7 +587,7 @@ def test_backup_refresh_failure_does_not_raise(tmp_path, monkeypatch):
     monkeypatch.setattr(OneDriveClient, "PROTOCOL_BACKUP_PATH", bad)
 
     client = OneDriveClient.__new__(OneDriveClient)
-    # Patch mkdir to blow up — simulating permission error
+    # Patch mkdir to blow up - simulating permission error
     with patch("pathlib.Path.mkdir", side_effect=PermissionError("no write")):
         # Source doesn't even need to exist; the method must swallow all errors
         client._backup_protocol_workbook(tmp_path / "does_not_matter.xlsx")

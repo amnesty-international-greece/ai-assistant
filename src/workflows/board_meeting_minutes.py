@@ -1,4 +1,4 @@
-"""Board meeting minutes workflow — Phase 2 full implementation."""
+"""Board meeting minutes workflow - Phase 2 full implementation."""
 
 from __future__ import annotations
 
@@ -137,12 +137,12 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
     async def rollback(self, ctx: dict[str, Any]) -> None:
         """Undo any side-effects when the user rejects the draft.
 
-        For now this is a no-op — minutes drafting does not create external
+        For now this is a no-op - minutes drafting does not create external
         resources that need cleanup (unlike the invitation workflow which
         creates a Zoom meeting).  The Google Doc is only modified *after*
         approval, so rejecting before that leaves everything unchanged.
         """
-        logger.info("Minutes workflow rollback — no side-effects to undo.")
+        logger.info("Minutes workflow rollback - no side-effects to undo.")
 
     def define_steps(self) -> list[WorkflowStep]:
         return [
@@ -210,7 +210,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             e.g. 'ΔΣ03-2026'
         source_doc_id : str (preferred)
             The Drive file ID chosen by the CLI.  When provided the workflow
-            skips folder listing entirely — no index mismatch possible.
+            skips folder listing entirely - no index mismatch possible.
         source_doc_index : int (fallback)
             0-based index into the drafts folder listing.  Only used when
             *source_doc_id* is **not** provided.
@@ -234,7 +234,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         source_doc_name: str = ""
 
         if source_doc_id:
-            # CLI already resolved the doc — just read its content
+            # CLI already resolved the doc - just read its content
             source_doc_name = ctx.get("source_doc_name", source_doc_id)
         else:
             # Fallback: list docs and pick by index or auto-match
@@ -419,7 +419,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             if test_email:
                 recipients = [test_email]
             else:
-                logger.info("test_mode=True and no test_email set — skipping email")
+                logger.info("test_mode=True and no test_email set - skipping email")
                 return StepResult(
                     success=True,
                     message="Email skipped (test_mode, no test_email configured)",
@@ -430,13 +430,10 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             subject = f"Πρόχειρα Πρακτικά - Συνεδρίαση {meeting_ref}"
             body_html = render_email(
                 "minutes_share",
-                kicker=f"Πρακτικά · Συνεδρίαση {meeting_ref}",
+                kicker=f"Πρακτικά - Συνεδρίαση {meeting_ref}",
                 title="Πρόχειρα πρακτικά<br/>για σχόλια.",
-                header_ref="ΔΣ — ΠΡΑΚΤΙΚΑ",
-                footer_note=(
-                    "Διεθνής Αμνηστία — Ελληνικό Τμήμα · "
-                    "Πρόχειρα πρακτικά Διοικητικού Συμβουλίου"
-                ),
+                header_ref="ΔΣ - ΠΡΑΚΤΙΚΑ",
+                footer_note="Εσωτερική επικοινωνία - Διοικητικό Συμβούλιο",
                 draft_doc_url=draft_doc_url,
             )
             self.gmail.send_email(
@@ -447,7 +444,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             )
             logger.info("Draft minutes shared with %d board member(s)", len(recipients))
         else:
-            logger.info("No board members configured — skipping email share")
+            logger.info("No board members configured - skipping email share")
 
         return StepResult(
             success=True,
@@ -464,7 +461,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         """Export Google Doc as PDF, embed signatures, archive, register protocol.
 
         In test_mode: generates PDF and signs it, but skips OneDrive archive,
-        Πρωτόκολλο registration, and Google Doc rename — so nothing permanent
+        Πρωτόκολλο registration, and Google Doc rename - so nothing permanent
         is written outside the local filesystem.
         """
         test_mode: bool = ctx.get("test_mode", False)
@@ -507,10 +504,10 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                 embed_signatures(pdf_path, signed_pdf_path, signatures, workflow=self.name)
                 final_pdf_path = signed_pdf_path
             except Exception as e:
-                logger.warning("Could not embed signatures: %s — using unsigned PDF", e)
+                logger.warning("Could not embed signatures: %s - using unsigned PDF", e)
                 final_pdf_path = pdf_path
         else:
-            logger.info("No signature files found in %s — skipping signing", sig_dir)
+            logger.info("No signature files found in %s - skipping signing", sig_dir)
             final_pdf_path = pdf_path
 
         # Fetch next protocol number from the SharePoint Excel registry
@@ -528,7 +525,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         archive_info: dict[str, Any] = {}
 
         if test_mode:
-            logger.info("test_mode — skipping OneDrive archive, Πρωτόκολλο write, and Doc rename")
+            logger.info("test_mode - skipping OneDrive archive, Πρωτόκολλο write, and Doc rename")
             archive_info = {"status": "skipped", "reason": "test_mode"}
         else:
             # Upload to SharePoint (skip if MS creds not configured)
@@ -543,10 +540,10 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                     )
                     archive_info = {"file_id": result.get("id"), "status": "archived"}
                 except Exception as e:
-                    logger.warning("OneDrive upload failed: %s — skipping archive", e)
+                    logger.warning("OneDrive upload failed: %s - skipping archive", e)
                     archive_info = {"status": "skipped", "reason": str(e)}
             else:
-                logger.info("MS credentials not configured — skipping OneDrive archive")
+                logger.info("MS credentials not configured - skipping OneDrive archive")
                 archive_info = {"status": "skipped", "reason": "MS credentials not configured"}
 
             # Register in the Excel πρωτόκολλο registry on SharePoint
@@ -589,7 +586,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         # This frees the next cycle: bumps D5 to the next meeting_ref, clears
         # the agenda items, unchecks the three approval boxes (D16/D17/D18),
         # clears Z1 (the Apps Script idempotency cell), and removes the
-        # script-owned protection.  Non-fatal — minutes is the official
+        # script-owned protection.  Non-fatal - minutes is the official
         # artifact; reset failure should not fail the workflow.
         agenda_sheet_id = settings.google.agenda_sheet_id
         if agenda_sheet_id:
@@ -607,7 +604,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                 )
         else:
             logger.info(
-                "No google.agenda_sheet_id configured — skipping agenda reset"
+                "No google.agenda_sheet_id configured - skipping agenda reset"
             )
 
         return StepResult(
@@ -668,7 +665,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                     last_seq = max(last_seq, int(match.group(1)))
             decision_seq = last_seq + 1
         except Exception as e:
-            logger.warning("Could not read Βιβλίο Αποφάσεων sheet: %s — starting at 1", e)
+            logger.warning("Could not read Βιβλίο Αποφάσεων sheet: %s - starting at 1", e)
             decision_seq = 1
 
         # Build rows to write
@@ -681,7 +678,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             decision_seq += 1
 
         if test_mode:
-            logger.info("test_mode — skipping Βιβλίο Αποφάσεων write (would write %d decisions)", len(rows))
+            logger.info("test_mode - skipping Βιβλίο Αποφάσεων write (would write %d decisions)", len(rows))
         else:
             try:
                 self._google.write_sheet(decisions_sheet_id, "A:B", rows)

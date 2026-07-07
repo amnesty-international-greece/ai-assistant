@@ -1,4 +1,4 @@
-"""Email subject/body classifier — routes inbound emails to Discord channels.
+"""Email subject/body classifier - routes inbound emails to Discord channels.
 
 Uses Google Gemini (``google.generativeai``) via ``asyncio.to_thread`` because
 the ``google-generativeai`` SDK exposes a synchronous ``generate_content`` API.
@@ -114,16 +114,16 @@ def _build_prompt(
 
     The prompt now asks for **up to 3 ranked candidates** so the triage card
     can surface alternates.  First line is the primary choice; subsequent
-    lines are alternates.  Old single-line responses remain valid — the parser
+    lines are alternates.  Old single-line responses remain valid - the parser
     treats them as "no alternates".
     """
     lines: list[str] = []
     for label, keywords in labels_with_keywords.items():
         if keywords:
             kw_str = ", ".join(keywords)
-            lines.append(f"  Channel: {label} — {kw_str}")
+            lines.append(f"  Channel: {label} - {kw_str}")
         else:
-            lines.append(f"  Channel: {label} — {label}")
+            lines.append(f"  Channel: {label} - {label}")
     labels_block = "\n".join(lines)
 
     return (
@@ -132,12 +132,12 @@ def _build_prompt(
         f"{labels_block}\n\n"
         f"Subject: {subject}\n"
         f"Body preview: {body_preview}\n\n"
-        "Reply STRICTLY with 1–3 lines, best match first:\n"
+        "Reply STRICTLY with 1-3 lines, best match first:\n"
         "LABEL|CONFIDENCE\n"
         "LABEL2|CONFIDENCE2\n"
         "LABEL3|CONFIDENCE3\n"
         "where each LABEL is EXACTLY one of the channel names above, "
-        "CONFIDENCE is a number 0.0–1.0, and each label appears at most once."
+        "CONFIDENCE is a number 0.0-1.0, and each label appears at most once."
     )
 
 
@@ -174,7 +174,7 @@ class EmailClassifier:
         """Return (or lazily initialise) the Gemini GenerativeModel.
 
         Returns ``None`` if the API key is absent or the SDK fails to
-        configure — in that case ``_client_error`` is set.
+        configure - in that case ``_client_error`` is set.
         """
         if self._client is not None:
             return self._client
@@ -294,7 +294,7 @@ class EmailClassifier:
             request_id:   Correlation token shared across audit rows for this email.
 
         Returns:
-            A :class:`ClassificationResult`.  Never raises — exceptions are
+            A :class:`ClassificationResult`.  Never raises - exceptions are
             caught and returned as an uncertain result with
             ``confidence=0.0``.
         """
@@ -319,7 +319,7 @@ class EmailClassifier:
         test_mode: bool,
         request_id: str = "",
     ) -> ClassificationResult:
-        """Core classification logic — may raise; ``classify`` wraps it."""
+        """Core classification logic - may raise; ``classify`` wraps it."""
         # -- 0. Bracket-tag pre-match (no LLM call needed) -------------------
         bracket_result = await self._try_bracket_tag(
             subject, test_mode=test_mode, request_id=request_id
@@ -348,7 +348,7 @@ class EmailClassifier:
         client = self._get_client()
         if client is None:
             msg = self._client_error or "Gemini client unavailable"
-            logger.warning("EmailClassifier: %s — returning UNCERTAIN", msg)
+            logger.warning("EmailClassifier: %s - returning UNCERTAIN", msg)
             result = _build_uncertain(raw=msg)
             self._audit(result, subject=subject, request_id=request_id)
             return result
@@ -392,7 +392,7 @@ class EmailClassifier:
     ) -> ClassificationResult:
         """Parse ranked ``LABEL|CONFIDENCE`` Gemini output.
 
-        Accepts 1–3 lines.  The first valid, above-threshold line becomes the
+        Accepts 1-3 lines.  The first valid, above-threshold line becomes the
         primary result; remaining valid lines become ``alternates``.  Lines
         with unknown labels or non-float confidences are silently skipped.
 
@@ -403,7 +403,7 @@ class EmailClassifier:
             candidates: list[tuple[str, str, float]] = []  # (matched_label, channel_id, conf)
             seen_labels: set[str] = set()
             # Track the highest-confidence well-formed-but-unknown-label line
-            # so we can preserve Gemini's confidence on the fallback path —
+            # so we can preserve Gemini's confidence on the fallback path -
             # the contract is "we recognised your format but not your label",
             # not "we got nothing parseable".
             unknown_label_conf: float | None = None
@@ -433,7 +433,7 @@ class EmailClassifier:
 
                 if matched_label is None:
                     # Well-formed line, just an unrecognised label.  Remember
-                    # the highest such confidence — it's the signal "Gemini
+                    # the highest such confidence - it's the signal "Gemini
                     # was sure, just about something we don't route to".
                     if unknown_label_conf is None or conf > unknown_label_conf:
                         unknown_label_conf = conf
@@ -444,13 +444,13 @@ class EmailClassifier:
                 candidates.append((matched_label, label_to_id[matched_label], conf))
 
             if not candidates:
-                # Nothing routable — but if Gemini gave us a parseable line
+                # Nothing routable - but if Gemini gave us a parseable line
                 # with an unknown label, surface that confidence instead of
                 # zeroing it (existing contract; preserves UX for the admin
                 # who sees the triage card).
                 if unknown_label_conf is not None:
                     logger.warning(
-                        "EmailClassifier: Gemini returned unknown label(s) only — "
+                        "EmailClassifier: Gemini returned unknown label(s) only - "
                         "treating as UNCERTAIN (preserved confidence=%.2f)",
                         unknown_label_conf,
                     )
@@ -468,7 +468,7 @@ class EmailClassifier:
 
             # -- Apply confidence threshold to primary -------------------------
             if primary_conf < CLASSIFIER_CONFIDENCE_THRESHOLD:
-                # Primary fell back — still surface alternates for triage
+                # Primary fell back - still surface alternates for triage
                 return ClassificationResult(
                     label=CLASSIFIER_UNCERTAIN_LABEL,
                     channel_id=None,
@@ -479,7 +479,7 @@ class EmailClassifier:
 
             if primary_label not in label_to_id:
                 logger.warning(
-                    "EmailClassifier: Gemini returned unknown label %r — treating as UNCERTAIN",
+                    "EmailClassifier: Gemini returned unknown label %r - treating as UNCERTAIN",
                     primary_label,
                 )
                 return ClassificationResult(

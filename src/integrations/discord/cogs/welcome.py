@@ -1,4 +1,4 @@
-"""Welcome cog — DM new members with a brand-aware introduction (M1).
+"""Welcome cog - DM new members with a brand-aware introduction (M1).
 
 Tone: semi-formal (per user spec).  Links Καταστατικό + Εσωτερικοί Κανονισμοί
 when their URLs are configured in ``settings.urls.*``; otherwise the link
@@ -46,13 +46,13 @@ class WelcomeCog(commands.Cog):
             title=f"{candle_emoji}Καλώς ήρθες στην Αμνηστία",
             description=(
                 f"Καλώς ήρθες, {member.mention}, στον Discord server της "
-                "**Διεθνούς Αμνηστίας — Ελληνικό Τμήμα**.\n\n"
+                "**Διεθνούς Αμνηστίας - Ελληνικό Τμήμα**.\n\n"
                 "Ο server είναι ο χώρος επικοινωνίας και συντονισμού των μελών μας."
             ),
             color=AMNESTY_YELLOW,
         )
 
-        # Useful links — only included when configured
+        # Useful links - only included when configured
         link_lines: list[str] = []
         if settings.urls.katastatiko:
             link_lines.append(f"• [Καταστατικό]({settings.urls.katastatiko})")
@@ -77,7 +77,7 @@ class WelcomeCog(commands.Cog):
             ),
             inline=False,
         )
-        embed.set_footer(text="Διεθνής Αμνηστία — Ελληνικό Τμήμα")
+        embed.set_footer(text="Διεθνής Αμνηστία - Ελληνικό Τμήμα")
 
         try:
             dm = await member.create_dm()
@@ -101,7 +101,7 @@ class WelcomeCog(commands.Cog):
                 target=str(member.id),
                 status="rejected",
             )
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Welcome DM failed for %s: %s", member.display_name, exc)
 
 

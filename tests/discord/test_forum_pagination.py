@@ -2,7 +2,7 @@
 
 Pinning the slicing invariants so the 'pagination TODO' replacement at
 forum.py doesn't quietly regress.  The view itself is exercised by mocking
-out the EnabledChannelsStore — we only care about the page-math here, not
+out the EnabledChannelsStore - we only care about the page-math here, not
 the Discord interaction wiring.
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ def _make_rows(n: int) -> list[_FakeRow]:
 
 
 def test_page_size_is_ten() -> None:
-    """Page size is fixed at 10 — under Discord's 25-field embed cap, and
+    """Page size is fixed at 10 - under Discord's 25-field embed cap, and
     comfortably under the Select-options cap (25) when used as fallback."""
     assert _CHANNELS_PAGE_SIZE == 10
 

@@ -11,13 +11,13 @@ existing step read a new ctx key) and forgets to extend the fixture, the
 About the PURE allow-list
 -------------------------
 ``_PURE_STEPS`` is **intentionally conservative**.  It contains only steps that
-perform NO external I/O once ``test_mode=True`` is forced — no Google / Zoom /
+perform NO external I/O once ``test_mode=True`` is forced - no Google / Zoom /
 M365 / Brevo / SharePoint / LLM / event-bus / live-DB access.  Such steps are
 deterministic in CI, so we can actually *run* them and prove the fixture covers
 their inputs.
 
 Steps that hit a network service, the LLM, the event bus, or the live SQLite
-audit DB are deliberately EXCLUDED — running them in CI would be flaky or would
+audit DB are deliberately EXCLUDED - running them in CI would be flaky or would
 mutate shared state.  Their fixture coverage is therefore checked only
 structurally (keys exist, keys are strings) rather than by execution.  A small
 reliable allow-list beats a broad flaky one; when in doubt a step is left off.
@@ -48,7 +48,7 @@ _EXPECTED_WORKFLOWS = {
 }
 
 # Curated allow-list of (workflow, step) pairs that are PURE under test_mode.
-# Each entry has been verified by reading the step body — see module docstring.
+# Each entry has been verified by reading the step body - see module docstring.
 # Pairs are excluded (with a one-word reason) when they touch:
 #   archive:                  (all 7 steps are pure under the fixture)
 #   board_meeting_invitation: send_scheduling_email (M365), schedule_zoom (Zoom),
@@ -57,12 +57,12 @@ _EXPECTED_WORKFLOWS = {
 #   board_meeting_minutes:    select_sources (Google), draft_minutes (LLM),
 #                             write_draft_to_doc (Google), approval_and_share
 #                             (Gmail), finalize (Google), extract_decisions
-#                             (Google Sheets read) — none are pure, so none listed
+#                             (Google Sheets read) - none are pure, so none listed
 #   egkyklios_general:        gather_sources (live DB), draft_circular (LLM),
 #                             render_pdf (writes PDF/assets), notify_board_for_review
 #                             (M365), send_brevo_campaign (Brevo), publish_event (bus)
 _PURE_STEPS: list[tuple[str, str]] = [
-    # archive — every step short-circuits with no external I/O:
+    # archive - every step short-circuits with no external I/O:
     ("archive", "intake"),               # fixture pdf_path missing → clean File-not-found
     ("archive", "extract_metadata"),     # _skip_llm=True → echoes llm_result
     ("archive", "resolve_protocol"),     # override_protocol set → CLI-override branch
@@ -110,14 +110,14 @@ def test_registry_covers_all_workflow_modules():
 
 
 def test_fixture_does_not_set_test_mode():
-    """No fixture bakes in ``test_mode`` — the runner forces it.
+    """No fixture bakes in ``test_mode`` - the runner forces it.
 
     Setting it in the fixture would be misleading: it implies the fixture is
     coupled to test_mode when in fact the runner always sets it to True.
     """
     for name, cls in WORKFLOWS.items():
         assert "test_mode" not in cls.debug_fixture(), (
-            f"{name}.debug_fixture() must not set 'test_mode' — the runner forces it"
+            f"{name}.debug_fixture() must not set 'test_mode' - the runner forces it"
         )
 
 
@@ -131,7 +131,7 @@ def test_pure_steps_invoke_without_keyerror(workflow: str, step_name: str):
 
     Builds ctx exactly like ``_run_debug_run`` does (``dict(debug_fixture())``
     then ``test_mode=True``), resolves the ``WorkflowStep`` by name, and runs
-    ``execute_step``.  The contract under test is *no unhandled exception* —
+    ``execute_step``.  The contract under test is *no unhandled exception* -
     a step legitimately reporting ``success is False`` (e.g. the archive
     fixture's intake path can't find its placeholder PDF) is allowed; only a
     KeyError / AttributeError / TypeError (i.e. the fixture forgot a key the
@@ -153,7 +153,7 @@ def test_pure_steps_invoke_without_keyerror(workflow: str, step_name: str):
         result = asyncio.run(wf.execute_step(step, ctx))
     except (KeyError, AttributeError, TypeError) as exc:
         pytest.fail(
-            f"{workflow}:{step_name} raised {type(exc).__name__}: {exc} — "
+            f"{workflow}:{step_name} raised {type(exc).__name__}: {exc} - "
             f"debug_fixture() is likely missing a ctx key this step reads"
         )
 

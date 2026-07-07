@@ -15,7 +15,7 @@ extraction to the Βιβλίο Αποφάσεων.
 
 ## Workflow Steps
 
-### Step 1 — Select sources
+### Step 1 - Select sources
 
 **Inputs:**
 - A Google Drive **folder** (configured once as `minutes_drafts_folder_id`
@@ -35,7 +35,7 @@ extraction to the Βιβλίο Αποφάσεων.
 - `meeting_year`: e.g. `2026`
 - `source_doc_id`: Google Doc ID of the SecGen's notes
 
-### Step 2 — Merge & draft with Claude
+### Step 2 - Merge & draft with Claude
 
 - System prompt from `data/prompts/board_minutes.md` (already exists).
 - Claude receives **both sources** with clear role instructions:
@@ -45,9 +45,9 @@ extraction to the Βιβλίο Αποφάσεων.
 - Claude returns structured JSON: `{title, metadata, sections[], decisions[]}`.
 - The system validates the JSON schema before proceeding.
 
-**Output:** `draft_json` — the structured minutes content.
+**Output:** `draft_json` - the structured minutes content.
 
-### Step 3 — Write draft back to Google Doc
+### Step 3 - Write draft back to Google Doc
 
 Instead of creating a new file, the system **replaces the content of the
 original source Google Doc** with the formatted draft minutes. This keeps
@@ -60,18 +60,18 @@ document they'll eventually approve.
 
 **Output:** `draft_doc_id` (same as `source_doc_id`), `draft_doc_url`.
 
-### Step 4 — [APPROVAL GATE] + Auto-share with board
+### Step 4 - [APPROVAL GATE] + Auto-share with board
 
 - Workflow pauses for SecGen review (standard `requires_approval=True`).
 - On `approve_and_resume()`, the system sends an email to the board via
-  **Gmail** (not Brevo — this is internal board communication) containing:
+  **Gmail** (not Brevo - this is internal board communication) containing:
   - Link to the Google Doc draft
   - Brief message: configurable via `workflows.board_meeting.minutes_share_message`
 - Recipients: `board_members` list from `config.yaml`.
 
 **Output:** `shared_at` timestamp.
 
-### Step 5 — Finalize (PDF + signatures + archive)
+### Step 5 - Finalize (PDF + signatures + archive)
 
 Triggered in one of two ways:
 1. **Explicit:** `python -m src.cli minutes finalize --meeting ΔΣ03-2026`
@@ -93,7 +93,7 @@ Finalization sequence:
 
 **Outputs:** `pdf_path`, `protocol_number`, `archive_url`.
 
-### Step 6 — Extract decisions → Βιβλίο Αποφάσεων
+### Step 6 - Extract decisions → Βιβλίο Αποφάσεων
 
 - Claude parses the finalized minutes for all formal decisions.
 - For each decision, generates the next `ΔΣ{nn}-{mm}-{yyyy}` number by:
@@ -124,8 +124,8 @@ python -m src.cli minutes list-drafts         # Show pending drafts in Drive
 ```
 
 Flags (same as Phase 1):
-- `--test` — redirects emails to `testing.dry_run_email`, skips archive
-- `--manual` — skip Zoom transcript (use SecGen notes only)
+- `--test` - redirects emails to `testing.dry_run_email`, skips archive
+- `--manual` - skip Zoom transcript (use SecGen notes only)
 
 ## Config Additions
 
@@ -144,40 +144,40 @@ workflows:
 ## New Integration Methods Needed
 
 ### Google Drive / Docs
-- `list_docs_in_folder(folder_id)` — list Google Docs in a folder
-- `read_doc_content(doc_id)` — get full text of a Google Doc
-- `replace_doc_content(doc_id, content)` — clear and rewrite a Google Doc
-- `rename_doc(doc_id, new_title)` — rename a Google Doc
+- `list_docs_in_folder(folder_id)` - list Google Docs in a folder
+- `read_doc_content(doc_id)` - get full text of a Google Doc
+- `replace_doc_content(doc_id, content)` - clear and rewrite a Google Doc
+- `rename_doc(doc_id, new_title)` - rename a Google Doc
 
 ### Google Sheets (write)
-- `append_rows(sheet_id, sheet_name, rows)` — append rows to a sheet
-- `read_last_row(sheet_id, sheet_name)` — read last non-empty row
+- `append_rows(sheet_id, sheet_name, rows)` - append rows to a sheet
+- `read_last_row(sheet_id, sheet_name)` - read last non-empty row
 
 ### Zoom
-- `list_recordings(from_date, to_date)` — list recent recordings
+- `list_recordings(from_date, to_date)` - list recent recordings
 - (existing: `get_transcript(meeting_id)`)
 
 ### PDF
-- `embed_signatures(pdf_path, signatures_config)` — overlay signature images
+- `embed_signatures(pdf_path, signatures_config)` - overlay signature images
 
 ### Gmail
-- `send_email(to, subject, body, html_body)` — send via Gmail API
+- `send_email(to, subject, body, html_body)` - send via Gmail API
 
 ## Files to Create/Modify
 
 **New files:**
-- `src/workflows/board_meeting_minutes.py` — full implementation (replace skeleton)
-- `tests/test_minutes_workflow.py` — comprehensive tests
+- `src/workflows/board_meeting_minutes.py` - full implementation (replace skeleton)
+- `tests/test_minutes_workflow.py` - comprehensive tests
 
 **Modified files:**
-- `src/integrations/google_drive.py` — add Docs API methods
-- `src/integrations/google_sheets.py` or extend `google_drive.py` — Sheets write
-- `src/integrations/zoom.py` — add `list_recordings()`
-- `src/integrations/gmail.py` — add `send_email()` if not present
-- `src/documents/pdf_generator.py` — add signature embedding
-- `src/cli/commands.py` — add `minutes` subcommand with sub-subcommands
-- `config.yaml` — add new config fields
-- `data/prompts/board_minutes.md` — enhance with merge instructions
+- `src/integrations/google_drive.py` - add Docs API methods
+- `src/integrations/google_sheets.py` or extend `google_drive.py` - Sheets write
+- `src/integrations/zoom.py` - add `list_recordings()`
+- `src/integrations/gmail.py` - add `send_email()` if not present
+- `src/documents/pdf_generator.py` - add signature embedding
+- `src/cli/commands.py` - add `minutes` subcommand with sub-subcommands
+- `config.yaml` - add new config fields
+- `data/prompts/board_minutes.md` - enhance with merge instructions
 
 ## Testing Strategy
 

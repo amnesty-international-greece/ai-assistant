@@ -156,8 +156,8 @@ def test_reset_agenda_sheet_removes_only_named_protection(google_client):
             "properties": {"sheetId": 1234},
             "protectedRanges": [
                 {"protectedRangeId": 1, "description": "ai-assistant:cycle-locked"},
-                {"protectedRangeId": 2, "description": "user-protection-on-D16"},  # user's own — KEEP
-                {"protectedRangeId": 3, "description": "ai-assistant:cycle-locked"},  # duplicate — also remove
+                {"protectedRangeId": 2, "description": "user-protection-on-D16"},  # user's own - KEEP
+                {"protectedRangeId": 3, "description": "ai-assistant:cycle-locked"},  # duplicate - also remove
             ],
         }],
     }
@@ -280,3 +280,61 @@ def test_reset_agenda_sheet_refreshes_cache(google_client):
     info = google_client.reset_agenda_sheet("test-sheet-id")
     assert info["new_meeting_ref"] == "ΔΣ05-2026"
     assert get_meeting_ref_cache() == "ΔΣ05-2026"
+
+
+def test_fill_invitation_dates_splits_header_and_body(google_client):
+    """The first [ΗΜΕΡΟΜΗΝΙΑ] (letterhead, in a table) gets the issue date;
+    the body occurrence gets the meeting date."""
+    google_client._docs_service.documents().get().execute.return_value = {
+        "body": {
+            "content": [
+                {  # letterhead table - header date sits here, lowest index
+                    "table": {
+                        "tableRows": [
+                            {
+                                "tableCells": [
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 10,
+                                                            "textRun": {"content": "[ΗΜΕΡΟΜΗΝΙΑ]\n"},
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                {  # body sentence - meeting date
+                    "paragraph": {
+                        "elements": [
+                            {"startIndex": 100, "textRun": {"content": "στις [ΗΜΕΡΟΜΗΝΙΑ], με ώρα"}}
+                        ]
+                    }
+                },
+            ]
+        }
+    }
+
+    captured = {}
+
+    def _capture(_service, _doc_id, body):
+        captured["requests"] = body["requests"]
+
+    with patch("src.integrations.google_drive._batch_update_with_retry", _capture):
+        google_client._fill_invitation_dates("doc-1", "6 Ιουνίου 2026", "9 Ιουνίου 2026")
+
+    inserts = {
+        r["insertText"]["location"]["index"]: r["insertText"]["text"]
+        for r in captured["requests"]
+        if "insertText" in r
+    }
+    assert inserts[10] == "6 Ιουνίου 2026"    # letterhead → issue date
+    assert inserts[105] == "9 Ιουνίου 2026"   # body → meeting date

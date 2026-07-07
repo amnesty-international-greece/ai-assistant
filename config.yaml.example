@@ -1,6 +1,6 @@
-# AI Assistant Platform — example configuration
+# AI Assistant Platform - example configuration
 # Copy this file to config.yaml and fill in your values.
-# Secrets (API keys, tokens) go in .env — see .env.example.
+# Secrets (API keys, tokens) go in .env - see .env.example.
 
 app:
   name: "AI Assistant Platform"
@@ -41,6 +41,15 @@ zoom:
     duration: 120                 # minutes
     timezone: "Europe/Athens"
 
+crabfit:
+  # Free, open-source When2Meet-style availability grid used as the scheduling
+  # poll.  Defaults to the public hosted instance; point at a self-hosted
+  # Crab Fit later by changing these.
+  api_base: "https://api.crab.fit"
+  web_base: "https://crab.fit"
+  default_start_hour: 9           # local-time start of the daily availability window
+  default_end_hour: 23            # exclusive end (last slot is 22:45)
+
 brevo:
   sender_email: "members@yourorg.gr"
   sender_name: "Your Organisation Name"
@@ -51,9 +60,9 @@ brevo:
     master: 0                     # Master membership list (do not send newsletters directly)
 
   segments:
-    regular_members:   0          # Τακτικά Μέλη — receive board-meeting newsletters
-    candidate_members: 0          # Υποψήφια Μέλη — welcome email + onboarding only
-    youth_members:     0          # Νέοι/Νέες — youth-specific newsletters
+    regular_members:   0          # Τακτικά Μέλη - receive board-meeting newsletters
+    candidate_members: 0          # Υποψήφια Μέλη - welcome email + onboarding only
+    youth_members:     0          # Νέοι/Νέες - youth-specific newsletters
 
   newsletter_list_ids: [0]        # Segment IDs to receive board meeting invitations
 
@@ -86,7 +95,7 @@ discord:
     coordinator_role_id: ""       # Discord role ID for Συντονιστής
   platform_bridge:
     board_meeting:
-      agenda_channel_id: ""       # Public forum channel — members-visible agenda threads
+      agenda_channel_id: ""       # Public forum channel - members-visible agenda threads
       agenda_channel_id_test: ""  # Sandbox channel for --test runs
       board_channel_id: ""        # Private board forum channel
       board_channel_id_test: ""   # Sandbox channel for --test runs

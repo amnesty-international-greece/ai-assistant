@@ -1,4 +1,4 @@
-"""AI Assistant Platform — FastAPI entry point."""
+"""AI Assistant Platform - FastAPI entry point."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.api.webhooks import router as webhooks_router
+from src.api.zoom_app import router as zoom_app_router
 from src.config import settings
 from src.core.audit import init_db
 
@@ -43,6 +44,7 @@ app = FastAPI(
 
 
 app.include_router(webhooks_router)
+app.include_router(zoom_app_router)
 
 
 @app.get("/health")

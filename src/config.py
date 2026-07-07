@@ -1,4 +1,4 @@
-"""Configuration loader — merges .env secrets with config.yaml settings."""
+"""Configuration loader - merges .env secrets with config.yaml settings."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class GoogleConfig(BaseModel):
     agenda_sheet_id: str = ""
     invitation_template_id: str = ""   # Google Doc ID for board meeting invitation template
     minutes_drafts_folder_id: str = ""
-    # NOTE: protokollo_sheet_id was removed 2026-05-23 — the πρωτόκολλο now
+    # NOTE: protokollo_sheet_id was removed 2026-05-23 - the πρωτόκολλο now
     # lives in SharePoint as [Πρωτόκολλο] Αρχείο ΔΣ.xlsx (see settings.onedrive.protocol_excel).
 
 
@@ -67,9 +67,21 @@ class BrevoConfig(BaseModel):
     # Default newsletter template & lists (can be overridden via CLI --brevo-template / --brevo-lists)
     newsletter_template_id: int | None = None
     newsletter_list_ids: list[int] = []
-    # Master membership list — used as fallback when newsletter_list_ids is empty
+    # Master membership list - used as fallback when newsletter_list_ids is empty
     # so Brevo campaign creation doesn't fail with an invalid list ID
     master_list_id: int = 0
+
+
+class CrabFitConfig(BaseModel):
+    """Crab Fit availability-poll integration.
+
+    Base URLs default to the public hosted instance; point them at a
+    self-hosted Crab Fit (open source, GPLv3) when ready.
+    """
+    api_base: str = "https://api.crab.fit"
+    web_base: str = "https://crab.fit"
+    default_start_hour: int = 9    # local-time start of the daily availability window
+    default_end_hour: int = 23     # exclusive end (last slot is end_hour-1:45)
 
 
 class DiscordChannels(BaseModel):
@@ -97,7 +109,7 @@ class DiscordClassifierConfig(BaseModel):
     """Gemini-based email classifier configuration."""
 
     enabled: bool = True
-    confidence_threshold: float = 0.70   # 70% — below this returns UNCERTAIN
+    confidence_threshold: float = 0.70   # 70% - below this returns UNCERTAIN
     temperature: float = 0.1
     uncertain_label: str = "UNCERTAIN"
 
@@ -125,12 +137,12 @@ class DiscordTeamsConfig(BaseModel):
 class DiscordPlatformBridgeBoardMeetingConfig(BaseModel):
     """Platform-bridge settings for board meeting events."""
 
-    agenda_channel_id: str = ""       # Public channel (forum or text) — members-visible agenda thread
+    agenda_channel_id: str = ""       # Public channel (forum or text) - members-visible agenda thread
     agenda_channel_id_test: str = ""  # Sandbox channel used when payload.test_mode=True (falls back to agenda_channel_id if blank)
     agenda_forum_tag_name: str = "Συνεδριάσεις"  # Tag applied to public forum threads (forum channels only)
-    board_channel_id: str = ""        # Private board channel — board-only thread for preliminary discussion + minutes
+    board_channel_id: str = ""        # Private board channel - board-only thread for preliminary discussion + minutes
     board_channel_id_test: str = ""   # Sandbox channel used when payload.test_mode=True (falls back to board_channel_id if blank)
-    board_role_id: str = ""           # Διοικητικό Συμβούλιο role — gates /archive submit + right-click archive
+    board_role_id: str = ""           # Διοικητικό Συμβούλιο role - gates /archive submit + right-click archive
     reminder_hours_before: int = 3    # mirrors workflows.board_meeting.reminder_hours_before
 
 
@@ -141,7 +153,7 @@ class DiscordPlatformBridgeConfig(BaseModel):
 
 
 class DiscordConfig(BaseModel):
-    """Top-level Discord integration config — aggregates all sub-configs."""
+    """Top-level Discord integration config - aggregates all sub-configs."""
 
     channels: DiscordChannels = DiscordChannels()
     email_gateway: DiscordEmailGatewayConfig = DiscordEmailGatewayConfig()
@@ -179,7 +191,7 @@ class WorkflowsConfig(BaseModel):
 
 
 class M365InboxConfig(BaseModel):
-    """Phase 3 — board members' mailbox watcher (Graph webhook + safety poll).
+    """Phase 3 - board members' mailbox watcher (Graph webhook + safety poll).
 
     ``members@amnesty.org.gr`` is the M365 account signed in via
     ``ai-assistant auth microsoft``.  The webhook subscription watches
@@ -203,7 +215,7 @@ class M365InboxConfig(BaseModel):
     # is up).  REQUIRED for `ai-assistant m365 subscribe` to work.
     webhook_url: str = ""
 
-    # Subscription lifetime — Outlook resources max out at 4230 minutes
+    # Subscription lifetime - Outlook resources max out at 4230 minutes
     # (~70.5h).  We renew when remaining lifetime < renew_threshold_hours.
     subscription_lifetime_minutes: int = 4230
     renew_threshold_hours: int = 24
@@ -217,9 +229,9 @@ class MinutesPipelineConfig(BaseModel):
     """Minutes pipeline orchestrator config (recording -> transcript -> skeleton).
 
     ``transcriber`` selects the ASR backend:
-      * ``"faster_whisper"`` — real ASR via :class:`FasterWhisperTranscriber`
+      * ``"faster_whisper"`` - real ASR via :class:`FasterWhisperTranscriber`
         (heavy dep, imported lazily only when used).
-      * ``"fake"`` — :class:`FakeTranscriber`, a no-ASR stub for testing/wiring.
+      * ``"fake"`` - :class:`FakeTranscriber`, a no-ASR stub for testing/wiring.
     The ``whisper_*`` knobs are forwarded to faster-whisper.
     """
 
@@ -235,22 +247,27 @@ class MinutesPipelineConfig(BaseModel):
     # canonical Greek roster names, so attributed segments + presence use the
     # board's real names. e.g. {"Giorgos Athanasias": "Γεώργιος Αθανασιάς"}.
     speaker_aliases: dict[str, str] = {}
+    # Extra terms to prime ASR (Whisper initial_prompt): English words spoken in
+    # Greek speech, acronyms, and Amnesty jargon the model would otherwise
+    # mis-hear. Appended to the auto-built name/org glossary. e.g.
+    # ["NEC", "campaign", "fundraising", "newsletter", "Urgent Action"].
+    glossary_extra: list[str] = []
 
 
 class UrlsConfig(BaseModel):
     """Public-facing URLs referenced by user-facing copy (welcome DM, embeds, etc.).
 
-    Empty defaults — fill these in ``config.yaml`` when ready.  Code referencing
+    Empty defaults - fill these in ``config.yaml`` when ready.  Code referencing
     these falls back to omitting the link when the URL is empty.
     """
-    katastatiko: str = ""              # Καταστατικό — used in M1 welcome DM
-    esoterikoi_kanonismoi: str = ""    # Εσωτερικοί Κανονισμοί — used in M1 welcome DM
+    katastatiko: str = ""              # Καταστατικό - used in M1 welcome DM
+    esoterikoi_kanonismoi: str = ""    # Εσωτερικοί Κανονισμοί - used in M1 welcome DM
     website: str = "https://www.amnesty.gr"
 
 
 class TestingConfig(BaseModel):
     """Settings that apply during test (--test) executions."""
-    # Emails are redirected here instead of skipped — lets you proof the
+    # Emails are redirected here instead of skipped - lets you proof the
     # actual email content before sending to real recipients.
     # Set to "" to skip emails entirely in test mode.
     test_email: str = ""
@@ -328,6 +345,7 @@ class Settings(BaseModel):
     google: GoogleConfig = GoogleConfig()
     zoom: ZoomConfig = ZoomConfig()
     brevo: BrevoConfig = BrevoConfig()
+    crabfit: CrabFitConfig = CrabFitConfig()
     discord: DiscordConfig = DiscordConfig()
     workflows: WorkflowsConfig = WorkflowsConfig()
     m365_inbox: M365InboxConfig = M365InboxConfig()

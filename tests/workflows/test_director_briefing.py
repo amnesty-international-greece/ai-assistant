@@ -9,7 +9,7 @@ Covers:
     ``ArchiveWorkflow`` with the right initial data and publishes the
     ``EVENT_DIRECTOR_BRIEFING_ARCHIVED`` event for the Discord milestone.
 
-ArchiveWorkflow and M365InboxClient are mocked — these tests focus on the
+ArchiveWorkflow and M365InboxClient are mocked - these tests focus on the
 glue, not the downstream archive plumbing (which has its own suite).
 """
 from __future__ import annotations
@@ -95,7 +95,7 @@ def test_classify_filename_detects_enimerotiko():
 
 
 def test_classify_filename_eisigitiko_wins_when_both_appear():
-    """If both words appear in one filename, Εισηγητικό wins — it's the
+    """If both words appear in one filename, Εισηγητικό wins - it's the
     more specific kind (adds the Εισηγήσεις label)."""
     from src.workflows.director_briefing import KIND_EISIGITIKO, classify_filename
 
@@ -148,7 +148,7 @@ def test_find_briefing_attachment_returns_none_when_only_images():
 
     attachments = [
         {"id": "1", "name": "signature.png"},
-        {"id": "2", "name": "Εισηγητικό-photo.jpg"},  # keyword in image — still skipped
+        {"id": "2", "name": "Εισηγητικό-photo.jpg"},  # keyword in image - still skipped
     ]
     assert find_briefing_attachment(attachments) is None
 
@@ -237,7 +237,7 @@ def test_prefill_archive_context_sets_skip_llm_and_canonical_metadata():
     llm = ctx["llm_result"]
     assert llm["title"] == "Εισηγητικό Διευθυντή - Συνεδρίαση ΔΣ05-2026"
     assert llm["labels"] == ["Εισηγήσεις", "Αναφορές", "Γραφείο"]
-    # Κύρια Σημεία intentionally NOT pre-filled — SecGen fills per cycle.
+    # Κύρια Σημεία intentionally NOT pre-filled - SecGen fills per cycle.
     assert llm["kuria_simeia"] == ""
     assert ctx["sender_email"] == "director@amnesty.org.gr"
 
@@ -413,7 +413,7 @@ async def test_briefing_archive_publishes_announcement_and_records_row(mock_db, 
                 },
                 meeting_id="board_meeting:ΔΣ05-2026",
                 sender_email="director@amnesty.org.gr",
-                # Director simply hits Reply — subject is whatever Outlook prepends.
+                # Director simply hits Reply - subject is whatever Outlook prepends.
                 subject="Re: Συνεδρίαση ΔΣ05",
             )
 

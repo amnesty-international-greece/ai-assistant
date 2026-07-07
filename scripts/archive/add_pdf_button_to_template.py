@@ -53,7 +53,7 @@ async def main() -> None:
         raise RuntimeError(f"Template {TEMPLATE_ID} returned empty htmlContent")
 
     if "[PDF_LINK]" in html:
-        print("PDF button already present in template — nothing to do.")
+        print("PDF button already present in template - nothing to do.")
         return
 
     if _SIGNATURE_COMMENT not in html:
@@ -67,7 +67,7 @@ async def main() -> None:
         html_content=html,
         workflow="template_patch",
     )
-    print(f"Template {TEMPLATE_ID} updated — PDF button added.")
+    print(f"Template {TEMPLATE_ID} updated - PDF button added.")
 
 
 if __name__ == "__main__":

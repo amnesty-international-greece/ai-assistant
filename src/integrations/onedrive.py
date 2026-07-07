@@ -1,4 +1,4 @@
-"""DEPRECATED — moved to :mod:`src.integrations.m365.onedrive`.
+"""DEPRECATED - moved to :mod:`src.integrations.m365.onedrive`.
 
 Re-exports the public surface so existing
 ``from src.integrations.onedrive import ...`` statements keep working.

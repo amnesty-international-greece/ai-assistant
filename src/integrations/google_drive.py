@@ -19,7 +19,7 @@ def _batch_update_with_retry(service, doc_id: str, body: dict, max_retries: int 
         except _HttpError as e:
             if e.resp.status in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
                 logger.warning(
-                    "batchUpdate transient error %s (attempt %d/%d) — retrying in %.0fs",
+                    "batchUpdate transient error %s (attempt %d/%d) - retrying in %.0fs",
                     e.resp.status, attempt + 1, max_retries, delay,
                 )
                 time.sleep(delay)
@@ -81,9 +81,9 @@ class GoogleClient:
                     creds.refresh(Request())
                     refreshed = True
                 except RefreshError as exc:
-                    # Token was revoked or the Google account changed —
+                    # Token was revoked or the Google account changed -
                     # wipe the stale file and fall through to interactive.
-                    logger.warning("Google token refresh failed (%s) — re-authenticating", exc)
+                    logger.warning("Google token refresh failed (%s) - re-authenticating", exc)
                     try:
                         _TOKEN_PATH.unlink()
                     except OSError:
@@ -190,6 +190,18 @@ class GoogleClient:
         )
         logger.info("Filled template %s: %d replacements, %d occurrences changed", doc_id, len(core_replacements), total)
 
+        # ── Invitation dates (character-index approach) ───────────────────────
+        # The template reuses [ΗΜΕΡΟΜΗΝΙΑ] for both the letterhead issue date and
+        # the body meeting date; each occurrence is filled separately so they can
+        # carry different values.
+        date_slots = replacements.get("_invitation_dates_")
+        if isinstance(date_slots, dict):
+            self._fill_invitation_dates(
+                doc_id,
+                date_slots.get("issue", ""),
+                date_slots.get("meeting", ""),
+            )
+
         # ── Agenda items (character-index approach) ───────────────────────────
         # replaceAllText cannot target individual occurrences of the same text,
         # so each [ΘΕΜΑ] slot is filled separately using exact character positions.
@@ -242,7 +254,7 @@ class GoogleClient:
         """Replace each [ΘΕΜΑ] placeholder with its corresponding agenda item.
 
         Uses character-index manipulation so each occurrence of the identical
-        placeholder text can be targeted individually — something replaceAllText
+        placeholder text can be targeted individually - something replaceAllText
         cannot do.
 
         Handles auto-numbered Google Docs lists (no manual number prefix added)
@@ -295,7 +307,7 @@ class GoogleClient:
             occ = occurrences[i]
 
             if i >= n_items:
-                # No item for this slot — delete the entire paragraph
+                # No item for this slot - delete the entire paragraph
                 requests.append({
                     "deleteContentRange": {
                         "range": {
@@ -338,6 +350,66 @@ class GoogleClient:
                 "Filled agenda: %d items into %d [ΘΕΜΑ] slots in doc %s",
                 n_items, n_slots, doc_id,
             )
+
+    def _fill_invitation_dates(self, doc_id: str, issue_date: str, meeting_date: str) -> None:
+        """Fill the two [ΗΜΕΡΟΜΗΝΙΑ] slots with distinct values.
+
+        The invitation template reuses [ΗΜΕΡΟΜΗΝΙΑ] in two places: the top-right
+        letterhead (the *issue* date, always today) and the body sentence (the
+        *meeting* date).  ``replaceAllText`` cannot distinguish them, so each
+        occurrence is targeted by character index.
+
+        The first occurrence in document order is the letterhead (it sits in a
+        table above the body), so it receives ``issue_date``; every remaining
+        occurrence receives ``meeting_date``.
+        """
+        self._ensure_authenticated()
+        doc = self._docs_service.documents().get(documentId=doc_id).execute()
+        search = "[ΗΜΕΡΟΜΗΝΙΑ]"
+        search_len = len(search)
+
+        occurrences: list[tuple[int, int]] = []  # (char_start, char_end)
+
+        def _scan(content: list) -> None:
+            for elem in content:
+                para = elem.get("paragraph")
+                if para:
+                    for pe in para.get("elements", []):
+                        tr = pe.get("textRun")
+                        if not tr:
+                            continue
+                        idx = tr.get("content", "").find(search)
+                        if idx != -1:
+                            start = pe["startIndex"] + idx
+                            occurrences.append((start, start + search_len))
+                elif "table" in elem:
+                    for row in elem["table"].get("tableRows", []):
+                        for cell in row.get("tableCells", []):
+                            _scan(cell.get("content", []))
+
+        _scan(doc["body"]["content"])
+
+        if not occurrences:
+            logger.warning("No [ΗΜΕΡΟΜΗΝΙΑ] placeholders found in doc %s", doc_id)
+            return
+
+        # First occurrence (letterhead) → issue date; the rest → meeting date.
+        occurrences.sort(key=lambda o: o[0])
+        values = [issue_date] + [meeting_date] * (len(occurrences) - 1)
+
+        # Apply in reverse index order so edits don't shift earlier positions.
+        requests: list[dict] = []
+        for (start, end), value in sorted(
+            zip(occurrences, values), key=lambda pair: pair[0][0], reverse=True
+        ):
+            requests.append({"deleteContentRange": {"range": {"startIndex": start, "endIndex": end}}})
+            requests.append({"insertText": {"location": {"index": start}, "text": value}})
+
+        _batch_update_with_retry(self._docs_service, doc_id, {"requests": requests})
+        logger.info(
+            "Filled %d [ΗΜΕΡΟΜΗΝΙΑ] slot(s) in doc %s (issue=%s, meeting=%s)",
+            len(occurrences), doc_id, issue_date, meeting_date,
+        )
 
     def _delete_paragraphs_containing(self, doc_id: str, search_strings: list[str]) -> None:
         """Delete entire paragraphs whose text contains any of the given strings.
@@ -488,7 +560,7 @@ class GoogleClient:
         )
         return result
 
-    # Pattern enforced for ``meeting_ref`` — uppercase "ΔΣ" followed by 1-2
+    # Pattern enforced for ``meeting_ref`` - uppercase "ΔΣ" followed by 1-2
     # digits, hyphen, 4-digit year.  Tightening this single regex changes the
     # entire workflow's notion of what a valid reference looks like.
     _MEETING_REF_PATTERN = r"^ΔΣ\d{1,2}-\d{4}$"
@@ -505,21 +577,21 @@ class GoogleClient:
         D5 is the **universal source of truth** for which meeting cycle the
         agenda sheet currently represents (e.g. ``ΔΣ05-2026``).  This method
         also maintains a thin local SQLite cache of the most recent valid
-        value — so a transient Sheets API outage doesn't block the workflow.
+        value - so a transient Sheets API outage doesn't block the workflow.
 
         Read policy:
           1. Read D5 from the Sheet.  If valid → cache it, return it.
           2. If D5 is empty / malformed / Sheets API failed AND ``use_cache``
              is ``True``, return the most recently cached value (with a
              ``logger.warning`` so the operator sees what happened).
-          3. If no cache exists either, raise — failing loudly is deliberate:
+          3. If no cache exists either, raise - failing loudly is deliberate:
              a wrong meeting_ref would corrupt every downstream artefact
              (subject line, PDF filename, archive folder, protocol number).
 
         Args:
             spreadsheet_id: Spreadsheet ID.
             tab_title:      Tab the D5 lives in.  ``None`` (default) picks
-                ``tabs[0]`` — there is only ever one tab on the agenda sheet
+                ``tabs[0]`` - there is only ever one tab on the agenda sheet
                 by convention.
             use_cache:      Set to ``False`` to disable both the on-success
                 cache write AND the on-failure cache fallback.  Useful in
@@ -543,12 +615,12 @@ class GoogleClient:
             cached = get_meeting_ref_cache()
             if cached:
                 logger.warning(
-                    "read_meeting_ref: %s — falling back to cached value %r",
+                    "read_meeting_ref: %s - falling back to cached value %r",
                     reason, cached,
                 )
                 return cached
             raise RuntimeError(
-                f"{reason} (no cached value available either — run "
+                f"{reason} (no cached value available either - run "
                 f"`ai-assistant invite reset-sheet` to seed D5)."
             )
 
@@ -579,11 +651,11 @@ class GoogleClient:
                 f"meeting_ref (expected 'ΔΣXX-YYYY')"
             )
 
-        # Live D5 read succeeded — refresh the local mirror (best-effort).
+        # Live D5 read succeeded - refresh the local mirror (best-effort).
         if use_cache:
             try:
                 set_meeting_ref_cache(value)
-            except Exception as cache_err:  # pragma: no cover — DB hiccup
+            except Exception as cache_err:  # pragma: no cover - DB hiccup
                 logger.warning(
                     "read_meeting_ref: live read OK but cache refresh failed: %s",
                     cache_err,
@@ -911,7 +983,7 @@ class GoogleClient:
         try:
             from src.core.audit import set_meeting_ref_cache
             set_meeting_ref_cache(new_meeting_ref)
-        except Exception as cache_err:  # pragma: no cover — DB hiccup
+        except Exception as cache_err:  # pragma: no cover - DB hiccup
             logger.warning(
                 "reset_agenda_sheet: D5 written but cache refresh failed: %s",
                 cache_err,

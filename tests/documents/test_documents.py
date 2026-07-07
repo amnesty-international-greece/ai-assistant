@@ -41,7 +41,7 @@ def test_generate_docx(tmp_path):
 
         content = {
             "title": "Πρακτικά Συνεδρίασης",
-            "subtitle": "ΔΣ #42 — 2026-04-01",
+            "subtitle": "ΔΣ #42 - 2026-04-01",
             "sections": [
                 {"heading": "Παρόντες", "body": "Μέλη Α, Β, Γ"},
                 {"heading": "Αποφάσεις", "body": "Εγκρίθηκε η πρόταση."},

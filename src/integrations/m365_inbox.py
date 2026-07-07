@@ -1,4 +1,4 @@
-"""DEPRECATED — moved to :mod:`src.integrations.m365.inbox`.
+"""DEPRECATED - moved to :mod:`src.integrations.m365.inbox`.
 
 This shim exists so existing ``from src.integrations.m365_inbox import ...``
 statements keep working during the migration.  New code should import from

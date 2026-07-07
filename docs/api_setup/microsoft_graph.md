@@ -17,8 +17,8 @@ Microsoft Graph API provides access to OneDrive (document archival) and potentia
 1. Go to "API permissions" → "Add a permission"
 2. Select "Microsoft Graph" → "Application permissions"
 3. Add:
-   - `Files.ReadWrite.All` — Upload/download files in OneDrive
-   - `User.Read.All` — Read user profiles
+   - `Files.ReadWrite.All` - Upload/download files in OneDrive
+   - `User.Read.All` - Read user profiles
 4. Click "Grant admin consent"
 
 ### 3. Create Client Secret
@@ -36,4 +36,4 @@ MS_TENANT_ID=<Directory (tenant) ID from Overview page>
 ```
 
 ### 5. Verify
-Run: `python -m src.cli.commands status` — Microsoft Graph should show ✓
+Run: `python -m src.cli.commands status` - Microsoft Graph should show ✓

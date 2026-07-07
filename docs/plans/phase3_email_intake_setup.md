@@ -1,4 +1,4 @@
-# Phase 3 — Email-route Archive Setup & Operations
+# Phase 3 - Email-route Archive Setup & Operations
 
 End-to-end runbook for getting the Graph webhook + safety-poll archive
 pipeline live, plus the day-to-day commands you'll actually use.
@@ -10,12 +10,12 @@ pipeline live, plus the day-to-day commands you'll actually use.
 Tick each before running the steps below:
 
 - [ ] Cloudflare Tunnel is up and pointing at `http://localhost:8000`
-      (whichever port `uvicorn` runs on) — same tunnel that already
+      (whichever port `uvicorn` runs on) - same tunnel that already
       serves `/webhooks/invite` from the Google Apps Script integration.
 - [ ] You know the **public hostname** of that tunnel (e.g.
       `https://tunnel.amnesty.example.com`).  Phase 3 will register
       `https://<hostname>/webhooks/m365/inbox` as the Graph notification URL.
-- [ ] You can `ai-assistant auth microsoft` successfully — the
+- [ ] You can `ai-assistant auth microsoft` successfully - the
       Mail.ReadWrite + Files.ReadWrite.All scopes are both consented on
       the same delegated token.
 - [ ] LibreOffice is installed on the host that runs the server (only
@@ -45,7 +45,7 @@ import time).
 uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
-Watch the startup log — you should see:
+Watch the startup log - you should see:
 
 ```
 ... | src.core.scheduler | INFO | Scheduler started: safety_poll @ 12:00 Europe/Athens, renew_subs hourly
@@ -85,7 +85,7 @@ What just happened:
 1. The CLI POSTed to Graph `/subscriptions` with a 70.5h lifetime + a
    random `clientState` token.
 2. Graph immediately POSTed to `/webhooks/m365/inbox?validationToken=...`
-   — our FastAPI route echoed it back as plain text within ~50ms.
+   - our FastAPI route echoed it back as plain text within ~50ms.
 3. Subscription metadata (id, clientState, expiry) is now in the local
    SQLite under `graph_subscriptions`.
 
@@ -108,7 +108,7 @@ as `testing.test_email`) to `members@amnesty.org.gr`:
 
 - **Subject**:  must contain `αρχείο` (or any case/accent variant) or
   `archive`
-- **Attachment**:  one PDF (or DOCX / ODT / RTF / JPG / PNG / HEIC —
+- **Attachment**:  one PDF (or DOCX / ODT / RTF / JPG / PNG / HEIC -
   Phase 5 auto-converts)
 
 Expected behaviour:
@@ -136,7 +136,7 @@ actually filed in SharePoint + πρωτόκολλο.
 ### Pause the watcher
 
 Either:
-- Stop `uvicorn` — the scheduler stops with it (no renewals; subscription
+- Stop `uvicorn` - the scheduler stops with it (no renewals; subscription
   expires in ~70h; safety poll doesn't run).
 - Or `ai-assistant m365 unsubscribe <subscription_id>` if you want to
   permanently turn off email intake while keeping the rest of the
@@ -153,7 +153,7 @@ Either:
 ai-assistant m365 renew-now --threshold-hours 0
 ```
 
-This forces renewal regardless of remaining lifetime — useful to
+This forces renewal regardless of remaining lifetime - useful to
 confirm renewal-side bugs without waiting for the natural threshold.
 
 ### Run the safety poll on demand
@@ -188,7 +188,7 @@ Copies the latest local snapshot to your chosen destination.  Open it,
 verify the contents look right, then drag-and-drop it back into
 SharePoint to restore.
 
-### Phase 4 — protocol collision
+### Phase 4 - protocol collision
 
 If the workflow detects that a sender's αρ.πρωτ. already maps to a
 different document, it parks the workflow and replies to the sender
@@ -209,7 +209,7 @@ in `src/core/scheduler.py`).
 
 ### "Webhook validation handshake failed" on subscribe
 
-- Tunnel down?  Hit `https://<hostname>/webhooks/health` from a browser —
+- Tunnel down?  Hit `https://<hostname>/webhooks/health` from a browser -
   should return JSON `{status: "ok", ...}`.
 - Wrong tunnel hostname in `config.yaml`?  Edit and re-run.
 - Server not running?  `uvicorn` must be live during `m365 subscribe`.
@@ -218,7 +218,7 @@ in `src/core/scheduler.py`).
 
 - Check `data/amnesty.db` audit log:
   `ai-assistant audit -w email_intake -l 30`
-- Look for `rejected_sender` / `rejected_subject` rows — likely the
+- Look for `rejected_sender` / `rejected_subject` rows - likely the
   sender's address isn't in `workflows.board_meeting.board_members`
   (or the configured `m365_inbox.sender_allow_list`).
 - For `rejected_subject`: confirm the subject contains one of the
@@ -258,7 +258,7 @@ Install from https://www.libreoffice.org/download/download/, or set
 | Workflow context (per run)      | `src/core/workflow.py`                    | `workflow_state` table |
 | Audit trail (every action)      | `src/core/audit.py`                       | `audit_log` table |
 | Local πρωτόκολλο backup         | `src/integrations/onedrive.py`            | `data/backups/protokollo_latest.xlsx` |
-| Email templates                 | —                                         | `data/email_templates/*.html` |
+| Email templates                 | -                                         | `data/email_templates/*.html` |
 | Tags + canonical patterns       | live read on each archive run             | SharePoint `[Πρωτόκολλο] Αρχείο ΔΣ.xlsx` (tabs Ετικέτες, Κατηγορίες) |
 
 ---

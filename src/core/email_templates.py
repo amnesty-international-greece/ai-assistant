@@ -2,17 +2,17 @@
 
 Templates are HTML files with ``{placeholder}`` slots filled via
 ``str.format``.  Keeps message copy out of Python source so non-engineers
-can edit it without touching code — opens fine in any text editor.
+can edit it without touching code - opens fine in any text editor.
 
 Two rendering modes
 -------------------
 1. **Legacy (back-compat)**: pass only content kwargs.  The template's raw
-   HTML is returned verbatim with placeholders substituted — used by the
+   HTML is returned verbatim with placeholders substituted - used by the
    short single-paragraph templates (``minutes_share``, ``scheduling_*``).
 
 2. **Shelled (v2 from 2026-05-27)**: pass ``kicker=`` and ``title=`` (and
    optionally ``header_ref=``, ``footer_note=``, ``stamp=``).  The inner
-   template is wrapped in ``_shell.html`` — header (black + logo), yellow
+   template is wrapped in ``_shell.html`` - header (black + logo), yellow
    titlebar (kicker + headline), body slot, footer (candle + legal).
    Adopted by ``invitation_board`` and ``archive_confirmation`` so they
    pick up the Amnesty visual identity in a single edit.
@@ -58,7 +58,7 @@ from typing import Any
 
 
 def greek_upper(s: str) -> str:
-    """Uppercase Greek text per typographic convention — tonos stripped.
+    """Uppercase Greek text per typographic convention - tonos stripped.
 
     Greek convention: vowels in ALL CAPS drop the τόνος (e.g.
     "Προγραμματισμός" → "ΠΡΟΓΡΑΜΜΑΤΙΣΜΟΣ", not "ΠΡΟΓΡΑΜΜΑΤΙΣΜΌΣ").
@@ -69,7 +69,7 @@ def greek_upper(s: str) -> str:
 
     Mechanics:
       * Decompose to NFD so combining accents are separate code points.
-      * Drop U+0301 (combining acute) — this is Greek τόνος.
+      * Drop U+0301 (combining acute) - this is Greek τόνος.
       * Preserve U+0308 (combining diaeresis / διαλυτικά) since dialytika
         in ALL CAPS *are* kept (e.g. "ΑΪ", "ΟΪ").
       * U+0344 (combining diaeresis-and-acute) → U+0308 (just diaeresis).
@@ -78,7 +78,7 @@ def greek_upper(s: str) -> str:
     decomposed = unicodedata.normalize("NFD", s)
     out_chars: list[str] = []
     for ch in decomposed:
-        if ch == "́":      # tonos (combining acute) — drop
+        if ch == "́":      # tonos (combining acute) - drop
             continue
         if ch == "̈́":      # diaeresis + tonos → just diaeresis
             out_chars.append("̈")
@@ -91,7 +91,7 @@ _TEMPLATE_DIR = (
 )
 _SHELL_NAME = "_shell.html"
 
-# Brand asset URLs — left unset by default.  Once the user uploads the logo
+# Brand asset URLs - left unset by default.  Once the user uploads the logo
 # and candle PNGs to Brevo's image library (or any public HTTPS host), they
 # can pass them per-call via ``render_email(logo_url=..., candle_url=...)``.
 #
@@ -99,7 +99,7 @@ _SHELL_NAME = "_shell.html"
 # INTERNATIONAL" in Roboto Condensed Black, yellow on the black header
 # strip) so emails look intentional instead of showing broken-image icons.
 # The earlier defaults pointed at guessed amnesty.gr paths that turned out
-# to be 404/403 — see 2026-05-27 user report.
+# to be 404/403 - see 2026-05-27 user report.
 
 
 def render_email(
@@ -107,11 +107,8 @@ def render_email(
     *,
     kicker: str | None = None,
     title: str | None = None,
-    header_ref: str = "ΔΣ · AI ASSISTANT",
-    footer_note: str = (
-        "Σας στείλαμε αυτό το email αυτόματα από το AI Assistant "
-        "του Ελληνικού Τμήματος της Διεθνούς Αμνηστίας."
-    ),
+    header_ref: str = "ΔΣ - AI ASSISTANT",
+    footer_note: str = "Εσωτερική επικοινωνία",
     stamp: str | None = None,
     logo_url: str | None = None,
     candle_url: str | None = None,
@@ -149,7 +146,7 @@ def render_email(
     if kicker is None and title is None:
         return inner_rendered
 
-    # Shelled mode — wrap inner content in the shared shell.
+    # Shelled mode - wrap inner content in the shared shell.
     stamp_html = (
         f'\n      <div class="stamp">{stamp}</div>' if stamp else ""
     )
@@ -171,7 +168,7 @@ def render_email(
         else ""  # Footer gracefully degrades to text-only without the candle.
     )
 
-    # Kicker and header_ref render in ALL CAPS via CSS — but CSS text-transform
+    # Kicker and header_ref render in ALL CAPS via CSS - but CSS text-transform
     # is inconsistent across email clients for Greek (tonos handling).  Pre-
     # uppercase them in Python so the HTML carries the correct typography.
     kicker_uc = greek_upper(kicker) if kicker else ""

@@ -19,7 +19,7 @@ It is written for two readers:
 > workflow). Use this to understand **how** to change a surface; use
 > `TEMPLATES.md` to locate a **specific** sentence.
 >
-> ⚠️ `TEMPLATES.md` currently points LLM prompts at `data/prompts/` — they have
+> ⚠️ `TEMPLATES.md` currently points LLM prompts at `data/prompts/` - they have
 > since moved to **`src/prompts/`**. Trust this guide for paths.
 
 ---
@@ -37,9 +37,9 @@ The platform speaks on four channels. Each has its own design system:
 
 Plus two cross-cutting layers:
 
-- **Branding foundations** (§1) — palette, fonts, logo, candle, signatures.
+- **Branding foundations** (§1) - palette, fonts, logo, candle, signatures.
   One change here propagates everywhere.
-- **Generated prose** (§7) — the LLM prompts in `src/prompts/` that shape the
+- **Generated prose** (§7) - the LLM prompts in `src/prompts/` that shape the
   *words* inside invitations, minutes, and circulars before they're poured
   into a template.
 
@@ -58,7 +58,7 @@ defined in **two** places that must stay in sync:
 | Email | `assets/email_templates/_shell.html` | CSS hex values (`#FFFF00`, `#0a0a0a`, `#f5f3ee`) |
 | PDF | `src/documents/pdf_generator.py` | `AMNESTY_YELLOW`, `AMNESTY_BLACK` |
 
-`AMNESTY_FLAME` #E63B11 is reserved — it's only for triage cards and
+`AMNESTY_FLAME` #E63B11 is reserved - it's only for triage cards and
 chart gradients, never routine chrome.
 
 ### 1.2 Fonts 🎨
@@ -80,7 +80,7 @@ chart gradients, never routine chrome.
 a typographic "ΔΙΕΘΝΗΣ ΑΜΝΗΣΤΙΑ" fallback because the guessed amnesty.gr image
 URLs 404'd. To show real images, upload the PNGs to a public HTTPS host (or
 Brevo's image library) and pass `logo_url=` / `candle_url=` to `render_email()`
-— see §3.
+- see §3.
 
 ### 1.4 Signatures 🎨
 
@@ -102,15 +102,15 @@ signs.
 header (logo + ref), yellow titlebar (kicker + headline), body slot, candle
 footer. All the reusable components live here as CSS classes:
 
-- `.cta` / `.cta.alt` — buttons (black-on-yellow / yellow-on-black)
-- `.info-row` — the labelled `<dl>` grid (Zoom credentials, archive details)
-- `.stamp` — the protocol-number stamp
-- `.timer` — the yellow-on-black 72h archive countdown
-- `.deadline-strip`, `ol.task-list` — scheduling-email components
-- `.test-banner`, `.reason-card` — test-mode + failure cards
+- `.cta` / `.cta.alt` - buttons (black-on-yellow / yellow-on-black)
+- `.info-row` - the labelled `<dl>` grid (Zoom credentials, archive details)
+- `.stamp` - the protocol-number stamp
+- `.timer` - the yellow-on-black 72h archive countdown
+- `.deadline-strip`, `ol.task-list` - scheduling-email components
+- `.test-banner`, `.reason-card` - test-mode + failure cards
 
 Edit `_shell.html` to restyle **all** emails at once. `{...}` are Python
-`str.format` slots — **double every literal brace** `{{ }}` in the CSS (already
+`str.format` slots - **double every literal brace** `{{ }}` in the CSS (already
 done) or the renderer throws.
 
 ### 2.2 The body templates 🎨
@@ -126,7 +126,7 @@ done) or the renderer throws.
 
 Each is just the inner `.e-body` content. Placeholders like `{meeting_ref}`,
 `{poll_url}`, `{deadline}` are filled by the workflow. **The set of available
-placeholders is fixed by the calling workflow** — adding a new `{foo}` to a
+placeholders is fixed by the calling workflow** - adding a new `{foo}` to a
 template requires the workflow to pass `foo=` (a 💻 change).
 
 ### 2.3 Default copy (sender, footer) ⚙️💻
@@ -141,7 +141,7 @@ template requires the workflow to pass `foo=` (a 💻 change).
 ## 3. The membership newsletter (Brevo) 🎨
 
 The public board-meeting invitation that goes to **all members** is **not** in
-this repo — it's **Brevo template #234** (`config.yaml → brevo.newsletter_template_id`),
+this repo - it's **Brevo template #234** (`config.yaml → brevo.newsletter_template_id`),
 edited in the Brevo web editor. The workflow injects values via Brevo template
 params. To restyle it, go to [Brevo](https://app.brevo.com/templates/listing).
 
@@ -153,12 +153,12 @@ future-ideas item (§9).
 
 ## 4. Discord posts (embeds)
 
-**Location:** `src/integrations/discord/embeds/` — see its
+**Location:** `src/integrations/discord/embeds/` - see its
 [`README.md`](src/integrations/discord/embeds/README.md).
 
 This is the single home for every **governance** Discord post. Each function is
 a **pure builder**: data in, `discord.Embed` (+ optional button `View`) out. No
-network, no logic — just look & copy. 💻 but trivially safe to edit.
+network, no logic - just look & copy. 💻 but trivially safe to edit.
 
 | File | Posts |
 |------|-------|
@@ -170,12 +170,12 @@ notices return just `embed`. Dates use `<t:UNIX:STYLE>` tokens (via
 `brand.fmt_ts`) so every viewer sees their own timezone + live countdown.
 `test_mode=True` prepends `[TEST] `.
 
-**Hand this folder to a designer** — editing it restyles the live posts without
+**Hand this folder to a designer** - editing it restyles the live posts without
 touching any workflow.
 
 ### 4.1 Plain-text mirror template 🎨
 
-`assets/discord_templates/board_email_mirror.md` — used only for
+`assets/discord_templates/board_email_mirror.md` - used only for
 *conversational* mirrors (member replies, Director announcements), not the
 structured posts above. Placeholders documented in the file's own header;
 keep edits below the marker line.
@@ -211,13 +211,13 @@ Copy is hardcoded; the three useful links only appear if set in
 Brand constants (`_LOGO_PATH`, `_ORG_HEADER`, `_ORG_FOOTER`, colours, styles)
 are at the top of `egkyklios_pdf.py` and `pdf_generator.py`. The egkyklios's two
 mandatory intro paragraphs are copied **verbatim** by the LLM from the prompt
-(see §7) — they are not in the PDF code.
+(see §7) - they are not in the PDF code.
 
 ### 5.1 The Google Doc invitation template 📄
 
 The board invitation body is a **Google Doc** (ID in
 `config.yaml → google.invitation_template_id`) with `[PLACEHOLDER]` tokens the
-workflow substitutes. Edit it directly in Google Docs — no code, no deploy.
+workflow substitutes. Edit it directly in Google Docs - no code, no deploy.
 
 ---
 
@@ -225,32 +225,32 @@ workflow substitutes. Edit it directly in Google Docs — no code, no deploy.
 
 `config.yaml` is the no-code control panel. Highlights for output customisation:
 
-- `brevo.sender_name` / `sender_email` — newsletter "From"
-- `brevo.newsletter_list_ids` / `master_list_id` — **who receives** the newsletter
-- `workflows.board_meeting.board_members[]` — names + emails on every invitation
-- `urls.*` — links in the welcome DM and embeds
-- `discord.platform_bridge.board_meeting.*` — which channels posts land in
+- `brevo.sender_name` / `sender_email` - newsletter "From"
+- `brevo.newsletter_list_ids` / `master_list_id` - **who receives** the newsletter
+- `workflows.board_meeting.board_members[]` - names + emails on every invitation
+- `urls.*` - links in the welcome DM and embeds
+- `discord.platform_bridge.board_meeting.*` - which channels posts land in
   (incl. `*_test` sandbox channels)
-- `discord.platform_bridge.board_meeting.agenda_forum_tag_name` — the forum tag
+- `discord.platform_bridge.board_meeting.agenda_forum_tag_name` - the forum tag
 
 ---
 
-## 7. Generated prose — the LLM prompts 📝
+## 7. Generated prose - the LLM prompts 📝
 
 **Location:** `src/prompts/` (config: `storage.prompts_dir`)
 
 These shape the **words** the AI writes before they're placed into a template.
-Editing a prompt changes tone, structure, and content rules — high-leverage.
+Editing a prompt changes tone, structure, and content rules - high-leverage.
 
 | File | Controls |
 |------|----------|
 | `board_invitation.md` | Invitation draft (outputs structured JSON) |
 | `board_minutes.md` | Minutes drafting |
-| `egkyklios_general.md` | Γενική Εγκύκλιος — incl. the verbatim intro paragraphs, Α/Β structure, strict sourcing rules |
+| `egkyklios_general.md` | Γενική Εγκύκλιος - incl. the verbatim intro paragraphs, Α/Β structure, strict sourcing rules |
 | `circular.md` | Circular drafting |
 | `general_support.md` | General assistant replies |
 
-These are plain Markdown with `{placeholder}` slots — edit freely, but keep the
+These are plain Markdown with `{placeholder}` slots - edit freely, but keep the
 placeholders intact and respect any "output JSON in this schema" instructions
 (the workflow parses the result).
 
@@ -277,7 +277,7 @@ Greek string, or consult `TEMPLATES.md`'s 💻 entries. Known ones worth knowing
    redirect to `testing.test_email`; Discord posts go to the `*_test` sandbox
    channels (see test-mode notes). Nothing reaches the board/members.
 2. **Templates with `{slots}`:** never remove a placeholder the workflow passes,
-   and never add one the workflow doesn't — `str.format` raises `KeyError`.
+   and never add one the workflow doesn't - `str.format` raises `KeyError`.
    In `_shell.html` CSS, literal braces must be doubled `{{ }}`.
 3. **After any edit:** `python -m pytest -q` (546 tests). Template-render and
    embed-builder tests will catch a broken placeholder or import.
@@ -288,7 +288,7 @@ Greek string, or consult `TEMPLATES.md`'s 💻 entries. Known ones worth knowing
 
 ---
 
-# 🚧 TEMPORARY — Future ideas, proposals, alternatives & TODO
+# 🚧 TEMPORARY - Future ideas, proposals, alternatives & TODO
 
 > Living scratchpad. Move items into `ROADMAP.md` once committed, or delete when
 > done. Nothing here is a promise.
@@ -311,15 +311,15 @@ Greek string, or consult `TEMPLATES.md`'s 💻 entries. Known ones worth knowing
   change is a no-code edit.
 
 ### Workflows imagined / discussed
-- **Ειδική Εγκύκλιος** workflow (sibling to the Γενική) — special-purpose
+- **Ειδική Εγκύκλιος** workflow (sibling to the Γενική) - special-purpose
   circular.
-- **Γενική Συνέλευση (GA)** workflow — `_on_ga_called` / `_on_ga_proxy_window_opening`
+- **Γενική Συνέλευση (GA)** workflow - `_on_ga_called` / `_on_ga_proxy_window_opening`
   handlers exist as stubs in `platform_bridge.py`.
 - **Brevo monthly newsletter template** (proposal #06).
-- **Discord welcome *card*** (proposal #10) — richer than the current DM; was
+- **Discord welcome *card*** (proposal #10) - richer than the current DM; was
   blocked on `config.yaml → urls` being populated.
 - **Instagram → Discord** via RSSHub (RSS pipeline already exists).
-- **`member.approved`** handler — stub in `platform_bridge.py`.
+- **`member.approved`** handler - stub in `platform_bridge.py`.
 
 ### Test-mode design (decided)
 - Chosen approach for previewing the full public choreography before going live:

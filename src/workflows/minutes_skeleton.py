@@ -225,12 +225,17 @@ def _build_items(
     for adv in advances:
         payload = adv.get("payload") or {}
         ts = _parse_ts(adv["ts"])
+        # Canonical fields are to_index (1-based) / title; the Zoom sidebar emits
+        # index (0-based) / item. Accept both.
         to_index = payload.get("to_index")
+        index0 = payload.get("index")
         pos: int | None = None
         if isinstance(to_index, int) and 1 <= to_index <= n:
             pos = to_index - 1
+        elif isinstance(index0, int) and 0 <= index0 < n:
+            pos = index0
         else:
-            title = payload.get("title")
+            title = payload.get("title") or payload.get("item")
             if title in title_to_pos:
                 pos = title_to_pos[title]
         if pos is None:

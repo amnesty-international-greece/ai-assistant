@@ -1,4 +1,4 @@
-"""In-process async event bus — publishers don't know who's listening.
+"""In-process async event bus - publishers don't know who's listening.
 
 Used to decouple platform workflows from the Discord bot. Workflows publish
 typed events; subscribers (currently only the Discord platform_bridge cog,
@@ -37,7 +37,7 @@ class EventBus:
         """Dispatch *payload* to every subscriber of *event_type*.
 
         Subscribers are awaited sequentially in subscription order. Errors are
-        logged and swallowed — they never propagate to the publisher and never
+        logged and swallowed - they never propagate to the publisher and never
         block sibling subscribers.
         """
         subs = list(self._subscribers.get(event_type, []))
@@ -52,9 +52,9 @@ class EventBus:
                 )
 
     def clear(self) -> None:
-        """Drop all subscribers — useful for tests."""
+        """Drop all subscribers - useful for tests."""
         self._subscribers.clear()
 
 
-# Module-level singleton — import this where you need it.
+# Module-level singleton - import this where you need it.
 bus = EventBus()

@@ -52,7 +52,7 @@ def main() -> int:
     print("Inspect the formatting:  open the .docx in Word / LibreOffice")
     print("If it looks acceptable, we can later switch the runtime path")
     print("from Google Docs to local-DOCX manipulation.  Until then, the")
-    print("snapshot is a backup only — runtime keeps using Google.")
+    print("snapshot is a backup only - runtime keeps using Google.")
     return 0
 
 

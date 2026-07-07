@@ -1,4 +1,4 @@
-"""Per-message stats — replaces legacy stats.json.
+"""Per-message stats - replaces legacy stats.json.
 
 Backed by the ``discord_stats`` table added in Task A.
 One module-level asyncio.Lock serialises writes; reads run lock-free.
@@ -94,7 +94,7 @@ class StatsStore:
     ) -> tuple[str, list[Any]]:
         """Return a ``WHERE …`` clause string and matching parameters list.
 
-        Passing ``since=None`` means "no lower bound" — used by the "All
+        Passing ``since=None`` means "no lower bound" - used by the "All
         time" branch of the /stats dashboard.  Without this the dashboard
         crashed with ``AttributeError: 'NoneType' object has no attribute
         'isoformat'`` (observed in production 2026-05-27).

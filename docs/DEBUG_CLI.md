@@ -1,4 +1,4 @@
-# Debug CLI — testing one workflow step in isolation
+# Debug CLI - testing one workflow step in isolation
 
 The `debug` command group lets you run a **single workflow step** (or a short
 chain of steps) against a canonical fake context, instead of running a whole
@@ -12,7 +12,7 @@ Key properties:
   Steps that honour `test_mode` (archive, the invitation/minutes/egkyklios
   archive steps, etc.) take their skip path automatically.
 - **Nothing is persisted.** The runner never writes `workflow_state`, never
-  advances a step index, and **never rolls back** — so whatever a step *does*
+  advances a step index, and **never rolls back** - so whatever a step *does*
   do (see [Side effects](#side-effects)) stays done.
 - **Only the steps you ask for run**, in the order you list them. Output of one
   step is threaded into the context of the next.
@@ -56,21 +56,21 @@ the full set of fixture keys:
 ```
 $ python -m src.cli debug list board_meeting_invitation
 ============================================================
-  board_meeting_invitation — 12 steps
+  board_meeting_invitation - 12 steps
 ============================================================
 
-  0. send_scheduling_email — Send scheduling email to board via M365
-  1. await_approval — Wait for SecGen approval of final agenda + date  [approval gate]
-  2. read_agenda — Read agenda from Google Sheets (single tab)
-  3. init_meeting_thread — Initialise board email thread anchor
-  4. schedule_zoom — Schedule Zoom meeting
-  5. draft_invitation — Draft invitation
-  6. generate_pdf — Generate PDF document
-  7. approval — Review and approve draft  [approval gate]
-  8. archive — Archive PDF to OneDrive
-  9. send_board_email — Send final invitation reply to board via M365
-  10. send_newsletter — Create campaign + (test or live) send
-  11. confirm_newsletter — Confirm live send  [approval gate]
+  0. send_scheduling_email - Send scheduling email to board via M365
+  1. await_approval - Wait for SecGen approval of final agenda + date  [approval gate]
+  2. read_agenda - Read agenda from Google Sheets (single tab)
+  3. init_meeting_thread - Initialise board email thread anchor
+  4. schedule_zoom - Schedule Zoom meeting
+  5. draft_invitation - Draft invitation
+  6. generate_pdf - Generate PDF document
+  7. approval - Review and approve draft  [approval gate]
+  8. archive - Archive PDF to OneDrive
+  9. send_board_email - Send final invitation reply to board via M365
+  10. send_newsletter - Create campaign + (test or live) send
+  11. confirm_newsletter - Confirm live send  [approval gate]
 
   fixture keys: _skip_approval_guard, _skip_read_agenda, agenda_items, agenda_sheet_id, archive_file_id, archive_share_link, brevo_list_ids, brevo_template_id, bus_event_published, email_thread_anchor, invitation_replacements, invitation_zoom_url, location, meeting_date, meeting_duration_minutes, meeting_location, meeting_number, meeting_ref_override, meeting_time, meeting_type, newsletter_campaign_id, newsletter_sent, newsletter_skipped, pdf_filename, pdf_path, poll_url, protocol_number, raw_meeting_id, response_deadline, zoom_join_url, zoom_meeting_id, zoom_passcode
 ```
@@ -84,7 +84,7 @@ run without a `KeyError`. Add `--json` for machine-readable output.
 ```
 $ python -m src.cli debug fixture archive
 ============================================================
-  archive — debug_fixture()
+  archive - debug_fixture()
 ============================================================
 
 { 'pdf_path': 'data/debug/sample.pdf',
@@ -118,7 +118,7 @@ $ python -m src.cli debug fixture archive
 ```
 
 Note that several keys are escape hatches the fixtures bake in to keep debug
-runs deterministic and side-effect-free — e.g. `_skip_llm` (archive bypasses
+runs deterministic and side-effect-free - e.g. `_skip_llm` (archive bypasses
 the live LLM call), `_skip_read_agenda` (invitation uses the supplied
 `agenda_items` instead of reading Google Sheets), and `override_protocol` /
 a valid `protocol_number` (so `resolve_protocol` echoes a number instead of
@@ -165,12 +165,12 @@ output.)
 For `debug run`, the context is built in this exact order, each layer
 overlaying the previous:
 
-1. **Fixture** — `dict(<Workflow>.debug_fixture())`, the canonical fake ctx.
-2. **`--from-state ID` overlay** — if given, the persisted `context` of that
+1. **Fixture** - `dict(<Workflow>.debug_fixture())`, the canonical fake ctx.
+2. **`--from-state ID` overlay** - if given, the persisted `context` of that
    `workflow_state` row is merged on top (see
    [Replaying a real run](#replaying-a-real-run)).
-3. **`--set k=v` overlay** — each `--set` pair is merged on top of that.
-4. **`test_mode=True`** — forced last, so it cannot be overridden.
+3. **`--set k=v` overlay** - each `--set` pair is merged on top of that.
+4. **`test_mode=True`** - forced last, so it cannot be overridden.
 
 ### `--set` value parsing
 
@@ -189,7 +189,7 @@ types are preserved; if JSON parsing fails the raw string is used verbatim.
 
 `debug run <wf> a,b,c` runs steps `a`, `b`, `c` in order. After each step the
 runner does `ctx.update(result.data)` so a later step sees what an earlier one
-produced — exactly like the real workflow engine threads data between steps.
+produced - exactly like the real workflow engine threads data between steps.
 If a step **raises**, the chain stops there (the exception is printed; no later
 step runs). A step that merely returns `success=False` does **not** stop the
 chain.
@@ -207,12 +207,12 @@ The biggest trap is **`board_meeting_invitation schedule_zoom`**: it creates a
 | Workflow | Step | What it does under debug (test_mode, no rollback) |
 |---|---|---|
 | board_meeting_invitation | `send_scheduling_email` | Sends a real email to `testing.test_email` (skipped only if M365 creds unset). Publishes bus events; enqueues a Discord pending action. |
-| board_meeting_invitation | `schedule_zoom` | **Creates a REAL Zoom meeting** and registers the test inbox as a participant (Zoom emails it a join link). **Not rolled back** — cancel it manually. |
+| board_meeting_invitation | `schedule_zoom` | **Creates a REAL Zoom meeting** and registers the test inbox as a participant (Zoom emails it a join link). **Not rolled back** - cancel it manually. |
 | board_meeting_invitation | `generate_pdf` | Copies the Google Doc template, renders a PDF to `data/output/`, then trashes the working Google Doc. Live Google Drive/Docs calls. |
 | board_meeting_invitation | `send_board_email` | Sends a real threaded reply to `testing.test_email` (needs an `email_thread_anchor`). Publishes a bus mirror event. |
 | board_meeting_invitation | `send_newsletter` | Creates a Brevo **draft** campaign and sends one **test** email to `testing.test_email`. The draft is left in Brevo (not deleted in debug). |
 | board_meeting_invitation | `confirm_newsletter` | In test_mode, publishes `board.meeting.scheduled` to the bus, spinning up the Discord choreography against sandbox channels. Not torn down. |
-| egkyklios_general | `gather_sources` | Live **read** of the SQLite audit DB (idempotency check + source listing). May return `success=False` if a non-cancelled draft overlaps the fixture period — move it with `--set period_start=...`. |
+| egkyklios_general | `gather_sources` | Live **read** of the SQLite audit DB (idempotency check + source listing). May return `success=False` if a non-cancelled draft overlaps the fixture period - move it with `--set period_start=...`. |
 | egkyklios_general | `draft_circular` | Calls the **LLM** (Claude), writes a Markdown draft to `data/egkyklios/drafts/`, and **creates a DB draft row**. |
 | egkyklios_general | `render_pdf` | Renders a branded PDF to `data/egkyklios/drafts/` (and updates the DB row if `egkyklios_draft_id` is set). |
 | egkyklios_general | `notify_board_for_review` | Sends a real email to `testing.test_email` with the PDF attached (skipped if M365 unset); publishes a bus event; sets the draft status. |
@@ -225,20 +225,20 @@ The biggest trap is **`board_meeting_invitation schedule_zoom`**: it creates a
 | board_meeting_minutes | `finalize` | Exports the Google Doc as PDF (live Google) and signs it locally. Persistent SharePoint upload, Πρωτόκολλο write, Doc rename, and the agenda-sheet reset are **skipped under test_mode**. |
 | board_meeting_minutes | `extract_decisions` | Live **read** of the Βιβλίο Αποφάσεων Google Sheet to compute the next decision number; the **write is skipped under test_mode**. |
 
-Steps **fully neutralised by test_mode** (safe — no external write):
+Steps **fully neutralised by test_mode** (safe - no external write):
 
 | Workflow | Step | Behaviour |
 |---|---|---|
-| archive | `upload_and_register` | Returns "[TEST] Would upload ..." — no SharePoint upload, no xlsx write. |
+| archive | `upload_and_register` | Returns "[TEST] Would upload ..." - no SharePoint upload, no xlsx write. |
 | archive | `collision_check` | Skipped entirely under test_mode. |
 | board_meeting_invitation | `archive` | Returns "[TEST] Archive skipped". |
-| egkyklios_general | `archive_to_sharepoint` | Returns "[TEST] ... skipped" — no SharePoint upload, no protocol write. |
+| egkyklios_general | `archive_to_sharepoint` | Returns "[TEST] ... skipped" - no SharePoint upload, no protocol write. |
 
 The remaining steps (`archive intake / extract_metadata / resolve_protocol /
 notify / revision_window`, the various `await_approval` / `approval` gates,
 `read_agenda` with `_skip_read_agenda`, `init_meeting_thread`,
 `draft_invitation`, and the egkyklios `extract_briefing_texts` /
-`extract_meeting_summaries`) are pure under the fixture — they read/format ctx
+`extract_meeting_summaries`) are pure under the fixture - they read/format ctx
 only and perform no external I/O. These are the steps on the allow-list in
 `tests/workflows/test_debug_fixtures.py`.
 
@@ -246,7 +246,7 @@ only and perform no external I/O. These are the steps on the allow-list in
 
 `--from-state <workflow_id>` overlays the persisted context of a real
 `workflow_state` row onto the fixture, so you can re-run a single step with the
-*actual* data a production run produced — handy for reproducing a failure.
+*actual* data a production run produced - handy for reproducing a failure.
 
 ```
 python -m src.cli debug run board_meeting_invitation draft_invitation --from-state 3f9a1c2b --show-ctx

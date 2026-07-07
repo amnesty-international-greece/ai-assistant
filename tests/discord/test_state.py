@@ -48,7 +48,7 @@ async def test_bot_state_get_bool_missing_key_default_false(in_memory_db):
 async def test_bot_state_get_bool_bare_default_is_false(in_memory_db):
     """Regression for TODO #6: bare get_bool() should default to False, not True."""
     store = BotStateStore()
-    # No explicit default — must return False on a fresh DB
+    # No explicit default - must return False on a fresh DB
     result = await store.get_bool("test_mode_active")
     assert result is False, (
         "BotStateStore.get_bool bare default should be False (see TODO #6). "

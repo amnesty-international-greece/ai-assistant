@@ -174,3 +174,169 @@ def test_webhook_short_circuits_on_duplicate(db):
     assert result["workflow_id"] == "wf-dup"
     # Crucially, no background task was queued
     assert len(tasks.tasks) == 0
+
+
+# ── _find_scheduling_context ─────────────────────────────────────────────────
+
+
+def test_find_scheduling_context_returns_none_when_no_anchor(db):
+    """Returns None if no prior workflow has an email_thread_anchor."""
+    from src.api.webhooks import _find_scheduling_context
+    from src.core.audit import _get_connection
+
+    conn = _get_connection()
+    conn.execute(
+        "INSERT INTO workflow_state (workflow_id, workflow_name, state, data, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+        (
+            "wf-no-anchor",
+            "board_meeting_invitation",
+            "awaiting_approval",
+            json.dumps({"context": {"raw_meeting_id": "ΔΣ05-2026"}}),
+        ),
+    )
+    conn.commit()
+
+    assert _find_scheduling_context("ΔΣ05-2026") is None
+
+
+def test_find_scheduling_context_returns_ctx_with_anchor(db):
+    """Returns the context dict when a prior workflow has the anchor."""
+    from src.api.webhooks import _find_scheduling_context
+    from src.core.audit import _get_connection
+
+    anchor = "<msg-id@example.com>"
+    conn = _get_connection()
+    conn.execute(
+        "INSERT INTO workflow_state (workflow_id, workflow_name, state, data, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+        (
+            "wf-sched",
+            "board_meeting_invitation",
+            "awaiting_approval",
+            json.dumps({"context": {
+                "raw_meeting_id": "ΔΣ05-2026",
+                "email_thread_anchor": anchor,
+                "poll_url": "https://doodle.com/xyz",
+            }}),
+        ),
+    )
+    conn.commit()
+
+    ctx = _find_scheduling_context("ΔΣ05-2026")
+    assert ctx is not None
+    assert ctx["email_thread_anchor"] == anchor
+    assert ctx["poll_url"] == "https://doodle.com/xyz"
+
+
+def test_find_scheduling_context_ignores_other_meetings(db):
+    from src.api.webhooks import _find_scheduling_context
+    from src.core.audit import _get_connection
+
+    conn = _get_connection()
+    conn.execute(
+        "INSERT INTO workflow_state (workflow_id, workflow_name, state, data, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+        (
+            "wf-other",
+            "board_meeting_invitation",
+            "awaiting_approval",
+            json.dumps({"context": {
+                "raw_meeting_id": "ΔΣ04-2026",
+                "email_thread_anchor": "<old@example.com>",
+            }}),
+        ),
+    )
+    conn.commit()
+
+    assert _find_scheduling_context("ΔΣ05-2026") is None
+
+
+# ── _auto_resume_gates ───────────────────────────────────────────────────────
+
+
+def test_auto_resume_gates_passes_through_completed():
+    """When the workflow is already completed, returns immediately."""
+    import asyncio
+    from src.api.webhooks import _auto_resume_gates
+
+    class FakeWf:
+        workflow_id = "wf-done"
+        async def approve_and_resume(self):
+            raise AssertionError("should not be called")
+
+    result = asyncio.run(_auto_resume_gates(FakeWf(), {"status": "completed"}))
+    assert result["status"] == "completed"
+
+
+def test_auto_resume_gates_resumes_through_two_gates():
+    """Drives through two approval gates, each time returning awaiting_approval
+    then completed on the third call."""
+    import asyncio
+    from src.api.webhooks import _auto_resume_gates
+
+    calls = []
+
+    class FakeWf:
+        workflow_id = "wf-gates"
+        async def approve_and_resume(self):
+            calls.append(1)
+            if len(calls) < 2:
+                return {"status": "awaiting_approval", "step": "confirm_newsletter"}
+            return {"status": "completed"}
+
+    result = asyncio.run(
+        _auto_resume_gates(FakeWf(), {"status": "awaiting_approval", "step": "approval"})
+    )
+    assert result["status"] == "completed"
+    assert len(calls) == 2
+
+
+def test_auto_resume_gates_aborts_on_infinite_loop():
+    """Safety guard: stops after 5 gates and returns the last result."""
+    import asyncio
+    from src.api.webhooks import _auto_resume_gates
+
+    class FakeWf:
+        workflow_id = "wf-loop"
+        async def approve_and_resume(self):
+            return {"status": "awaiting_approval", "step": "stuck"}
+
+    result = asyncio.run(
+        _auto_resume_gates(FakeWf(), {"status": "awaiting_approval", "step": "stuck"})
+    )
+    # Loop guard breaks after 5 iterations and returns whatever the last result was.
+    assert result["status"] == "awaiting_approval"
+
+
+# ── _start_at_step consumed after first run ──────────────────────────────────
+
+
+def test_start_at_step_not_re_applied_on_resume(db):
+    """After jumping to a step, _start_at_step is removed from context so
+    approve_and_resume → run() does not loop back to the same step."""
+    import asyncio
+    from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
+
+    class TwoStepWf(BaseWorkflow):
+        @property
+        def name(self):
+            return "two_step"
+
+        def define_steps(self):
+            return [
+                WorkflowStep("first", "First step"),
+                WorkflowStep("second", "Second step", requires_approval=True),
+                WorkflowStep("third", "Third step"),
+            ]
+
+        async def execute_step(self, step, ctx):
+            return StepResult(success=True, data={"ran": step.name})
+
+    wf = TwoStepWf()
+    result = asyncio.run(wf.run({"_start_at_step": "second"}))
+    assert result["status"] == "awaiting_approval"
+    assert result["step"] == "second"
+    assert "_start_at_step" not in wf.context
+    result = asyncio.run(wf.approve_and_resume())
+    assert result["status"] == "completed"

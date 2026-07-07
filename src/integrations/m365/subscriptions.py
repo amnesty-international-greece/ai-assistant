@@ -1,7 +1,7 @@
 """Microsoft Graph webhook subscription lifecycle.
 
 A subscription is the bridge between an Exchange mailbox and our FastAPI
-``/webhooks/m365/inbox`` route — Graph POSTs a notification each time a
+``/webhooks/m365/inbox`` route - Graph POSTs a notification each time a
 new message lands.  Two-pass coverage:
 
 1.  **Webhook**       → near-real-time (sub-second) delivery
@@ -20,7 +20,7 @@ clientState
 -----------
 A random opaque token persisted per subscription.  Every notification
 includes it; we compare against the DB row and drop notifications whose
-clientState doesn't match — defends against forged/replayed deliveries.
+clientState doesn't match - defends against forged/replayed deliveries.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
-# Default resource path — watches the signed-in user's Inbox.
+# Default resource path - watches the signed-in user's Inbox.
 DEFAULT_RESOURCE = "/me/mailFolders('Inbox')/messages"
 
 
@@ -57,7 +57,7 @@ class GraphSubscriptionsClient(M365GraphAuthMixin):
     """Thin wrapper over the Graph ``/subscriptions`` collection.
 
     Reuses the same MSAL token cache as every other M365 client via
-    :class:`M365GraphAuthMixin` — one ``ai-assistant auth microsoft`` run
+    :class:`M365GraphAuthMixin` - one ``ai-assistant auth microsoft`` run
     covers all four (OneDrive, mail, inbox, subscriptions).
     """
 
@@ -83,7 +83,7 @@ class GraphSubscriptionsClient(M365GraphAuthMixin):
             resource: Graph resource to watch.  Defaults to the signed-in
                 user's Inbox.
             change_type: One of ``"created"``, ``"updated"``, ``"deleted"``
-                or a comma list.  Default ``"created"`` — we only care
+                or a comma list.  Default ``"created"`` - we only care
                 about new messages.
             lifetime_minutes: Subscription lifetime; falls back to
                 ``settings.m365_inbox.subscription_lifetime_minutes``.
@@ -184,7 +184,7 @@ class GraphSubscriptionsClient(M365GraphAuthMixin):
                 )
             body = resp.json()
 
-        # Preserve the existing clientState — only expiry changes here.
+        # Preserve the existing clientState - only expiry changes here.
         existing = get_active_graph_subscriptions()
         for row in existing:
             if row["subscription_id"] == subscription_id:

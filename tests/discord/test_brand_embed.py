@@ -3,7 +3,7 @@
 Covers the v2 (2026-05-27) additions: thumbnail / image / flame_bars
 parameters on ``brand_embed()`` plus the three convenience builders
 (``status_embed``, ``event_live_embed``, ``stats_embed``).  Also pins
-backwards compatibility — old call-sites that pass only the legacy kwargs
+backwards compatibility - old call-sites that pass only the legacy kwargs
 must keep producing identical embeds.
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ def test_brand_embed_default_keeps_legacy_shape():
     assert e.title == "Hello"
     assert e.description == "World"
     assert e.color == AMNESTY_YELLOW
-    assert e.footer.text == "Διεθνής Αμνηστία — Ελληνικό Τμήμα"
+    assert e.footer.text == "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
     # No thumbnail / image set
     assert e.thumbnail.url is None
     assert e.image.url is None
@@ -84,7 +84,7 @@ def test_flame_bar_basic_layout():
 
 
 def test_flame_bar_preserves_dict_insertion_order():
-    """Bars render in the order the caller supplied — never re-sorted."""
+    """Bars render in the order the caller supplied - never re-sorted."""
     out = flame_bar([("zzz", 10), ("aaa", 100), ("mmm", 50)])
     lines = [ln for ln in out.split("\n") if ln and not ln.startswith("```")]
     assert lines[0].startswith("zzz")

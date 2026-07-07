@@ -1,16 +1,16 @@
-"""Background scheduler — APScheduler in async mode.
+"""Background scheduler - APScheduler in async mode.
 
 Owns two recurring jobs:
 
-  * ``email_intake.safety_poll``  — daily at 12:00 Europe/Athens; runs
+  * ``email_intake.safety_poll``  - daily at 12:00 Europe/Athens; runs
                                     :func:`src.workflows.email_intake.run_safety_poll`
-  * ``m365_inbox.renew_subs``     — hourly; renews any Graph webhook
+  * ``m365_inbox.renew_subs``     - hourly; renews any Graph webhook
                                     subscription whose remaining lifetime
                                     drops below the threshold
 
 The scheduler starts in the FastAPI ``lifespan`` context.  CLI commands
 that need to invoke the same logic on-demand call the underlying coro
-directly (see ``ai-assistant m365 poll-now`` / ``renew-now``) — they
+directly (see ``ai-assistant m365 poll-now`` / ``renew-now``) - they
 don't go through the scheduler.
 """
 
@@ -197,7 +197,7 @@ async def _inbox_tmpdir_cleanup_job() -> None:
             if child.stat().st_mtime < cutoff:
                 _shutil.rmtree(child, ignore_errors=True)
                 removed += 1
-        except Exception as exc:  # pragma: no cover — best-effort
+        except Exception as exc:  # pragma: no cover - best-effort
             logger.debug("inbox tmpdir cleanup: skip %s (%s)", child, exc)
     if removed:
         logger.info(
@@ -238,7 +238,7 @@ def start_scheduler() -> AsyncIOScheduler:
         id="email_intake.tmpdir_cleanup",
         replace_existing=True,
     )
-    # Γενική Εγκύκλιος Ενημέρωσης — quarterly: first day of each calendar
+    # Γενική Εγκύκλιος Ενημέρωσης - quarterly: first day of each calendar
     # quarter at 00:00 Europe/Athens.  Parks at SecGen approval gate; the
     # SecGen advances via `/board egkyklios general-approve`.
     _scheduler.add_job(

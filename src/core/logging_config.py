@@ -4,16 +4,16 @@ What this gives you
 -------------------
 Three handlers on the root logger, each independently filterable:
 
-1. **Console** — same format as before, so live ``ai-assistant discord run``
+1. **Console** - same format as before, so live ``ai-assistant discord run``
    output looks identical to what's been shipping.  Honours ``settings.log_level``.
-2. **Rotating main log** at ``data/logs/ai-assistant.log`` — every line at the
+2. **Rotating main log** at ``data/logs/ai-assistant.log`` - every line at the
    configured level, daily rotation, keep 14 days of history (~2 weeks of full
    context to grep through).
-3. **Errors-only log** at ``data/logs/ai-assistant.errors.log`` — WARNING+
+3. **Errors-only log** at ``data/logs/ai-assistant.errors.log`` - WARNING+
    level, daily rotation, keep 30 days.  Smaller file, easier to skim when
    something went wrong.
 
-All three are idempotent — calling :func:`setup_logging` multiple times (e.g.
+All three are idempotent - calling :func:`setup_logging` multiple times (e.g.
 once in the CLI entry point and again inside :func:`run_bot`) does not stack
 handlers.  Library noise (discord.py, msal, urllib3, asyncio) is downgraded
 to WARNING by default; turn back up via the ``AI_ASSISTANT_VERBOSE_LIBS``
@@ -24,7 +24,7 @@ Why time-based, not size-based, rotation
 A daily file is much easier to navigate than ``log.1``, ``log.2``, etc.
 You can ``tail data/logs/ai-assistant.log`` for today, or
 ``data/logs/ai-assistant.log.2026-05-29`` for a specific past day.  Size
-rotation gives you no temporal anchor — useless when you're trying to
+rotation gives you no temporal anchor - useless when you're trying to
 correlate "what happened around 18:22 yesterday".
 """
 from __future__ import annotations
@@ -32,12 +32,40 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import time
 from pathlib import Path
 
 from src.config import settings
 
 
-# Module-level marker — when this attribute exists on the root logger we know
+class _SafeTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
+    """``TimedRotatingFileHandler`` that tolerates Windows file-lock errors.
+
+    When several processes share one log file (uvicorn server, its ``--reload``
+    worker, and the Discord bot), only one can rename it at midnight - the
+    others raise ``PermissionError`` [WinError 32] because the file is still
+    open elsewhere.  The stock handler then retries the rollover on *every*
+    subsequent record, flooding the console with tracebacks.
+
+    Here we swallow the rotation error, make sure the stream stays open, and
+    push ``rolloverAt`` to the next interval so we don't retry until then.
+    Worst case: that process keeps appending to today's file instead of
+    rotating - no data loss, no spam.
+    """
+
+    def doRollover(self) -> None:  # noqa: D102
+        try:
+            super().doRollover()
+        except OSError:
+            try:
+                if self.stream is None:
+                    self.stream = self._open()
+            except OSError:
+                pass
+            self.rolloverAt = self.computeRollover(int(time.time()))
+
+
+# Module-level marker - when this attribute exists on the root logger we know
 # setup has already run and can short-circuit.  The conventional alternative
 # (a module-level _CONFIGURED bool) breaks during pytest, where each test
 # imports a fresh copy; pinning the marker to the logger itself makes the
@@ -79,7 +107,7 @@ def setup_logging(*, level: str | None = None, log_to_file: bool = True) -> None
 
     Args:
         level:        Override ``settings.log_level``.  Useful in tests.
-        log_to_file:  Skip the file handlers when False — used by ``pytest``
+        log_to_file:  Skip the file handlers when False - used by ``pytest``
                       where dumping into ``data/logs/`` per-test would be
                       noise.  The console handler is always added.
     """
@@ -91,7 +119,7 @@ def setup_logging(*, level: str | None = None, log_to_file: bool = True) -> None
     effective_level = getattr(logging, effective_level_name, logging.INFO)
     root.setLevel(effective_level)
 
-    # Wipe any pre-existing handlers added by logging.basicConfig — leaving
+    # Wipe any pre-existing handlers added by logging.basicConfig - leaving
     # them in place duplicates every log line.
     for h in list(root.handlers):
         root.removeHandler(h)
@@ -109,13 +137,13 @@ def setup_logging(*, level: str | None = None, log_to_file: bool = True) -> None
         try:
             _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-            main_handler = logging.handlers.TimedRotatingFileHandler(
+            main_handler = _SafeTimedRotatingFileHandler(
                 filename=str(_MAIN_LOG),
                 when="midnight",
                 backupCount=14,
                 encoding="utf-8",
                 # delay=True avoids opening the file until the first log line
-                # — keeps the FS clean when ``setup_logging`` runs in CI/tests
+                # - keeps the FS clean when ``setup_logging`` runs in CI/tests
                 # that produce zero log output.
                 delay=True,
             )
@@ -123,7 +151,7 @@ def setup_logging(*, level: str | None = None, log_to_file: bool = True) -> None
             main_handler.setFormatter(formatter)
             root.addHandler(main_handler)
 
-            error_handler = logging.handlers.TimedRotatingFileHandler(
+            error_handler = _SafeTimedRotatingFileHandler(
                 filename=str(_ERROR_LOG),
                 when="midnight",
                 backupCount=30,
@@ -133,7 +161,7 @@ def setup_logging(*, level: str | None = None, log_to_file: bool = True) -> None
             error_handler.setLevel(logging.WARNING)
             error_handler.setFormatter(formatter)
             root.addHandler(error_handler)
-        except OSError as exc:  # pragma: no cover — read-only FS shouldn't break startup
+        except OSError as exc:  # pragma: no cover - read-only FS shouldn't break startup
             console.handle(
                 logging.LogRecord(
                     name="logging_config",

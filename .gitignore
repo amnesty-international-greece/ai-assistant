@@ -48,6 +48,10 @@ desktop.ini
 *.log
 data/logs/
 
+# Generated build artifacts (rendered by scripts/render_gallery.py + build_design_bundle.py)
+data/preview/
+*_bundle.zip
+
 # OAuth credentials and tokens (never commit)
 data/google_credentials.json
 data/google_token.json

@@ -1,4 +1,4 @@
-"""Microsoft Graph inbox reader — fetches messages + downloads attachments.
+"""Microsoft Graph inbox reader - fetches messages + downloads attachments.
 
 Used by both:
   * The ``/webhooks/m365/inbox`` route, which receives a notification and
@@ -10,7 +10,7 @@ Subject matching uses Unicode-NFD accent stripping + casefold so all of
 the following count as a hit when the pattern is ``"αρχειο"``:
 
     "[Αρχείο] εισηγηση"
-    "ΑΡΧΕΙΟ — Πρακτικά"
+    "ΑΡΧΕΙΟ - Πρακτικά"
     "fwd: αρχείο - υποψηφιότητα"
     "Archive request"   ← matches the second default pattern "archive"
 """
@@ -82,7 +82,7 @@ class M365InboxClient(M365GraphAuthMixin):
     """Read-only-style inbox queries against the signed-in user's mailbox.
 
     Shares the MSAL token cache with every other M365 client (OneDrive,
-    Mail, Graph subscriptions) via :class:`M365GraphAuthMixin` — a single
+    Mail, Graph subscriptions) via :class:`M365GraphAuthMixin` - a single
     ``ai-assistant auth microsoft`` run covers them all.
     """
 
@@ -93,7 +93,7 @@ class M365InboxClient(M365GraphAuthMixin):
     async def get_message(self, message_id: str) -> dict[str, Any]:
         """Fetch a single message by Graph id (returned in the webhook payload).
 
-        Selects only the fields we need for intake — keeps responses small
+        Selects only the fields we need for intake - keeps responses small
         and avoids accidentally pulling the body's HTML payload twice.
 
         ``internetMessageHeaders`` is included so the board-reply bridge can
@@ -117,7 +117,7 @@ class M365InboxClient(M365GraphAuthMixin):
         """List unread messages in Inbox, newest first.
 
         Used by the daily safety poll.  Returns the same field set as
-        :meth:`get_message` — see ``$select`` above.
+        :meth:`get_message` - see ``$select`` above.
         """
         select = (
             "id,internetMessageId,subject,from,toRecipients,hasAttachments,"
@@ -155,7 +155,7 @@ class M365InboxClient(M365GraphAuthMixin):
         """Download one attachment to disk.
 
         Graph returns the file as a base64-encoded ``contentBytes`` blob
-        on the attachment resource — we decode and write it to
+        on the attachment resource - we decode and write it to
         ``dest_path``, creating parent dirs as needed.
         """
         async with httpx.AsyncClient(timeout=60.0) as client:

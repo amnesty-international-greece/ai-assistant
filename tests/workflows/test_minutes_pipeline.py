@@ -523,3 +523,88 @@ def test_assemble_requires_a_source(tmp_path, temp_db):
                 settings=settings,
                 meeting_ref="ΔΣ07-2026",
             )
+
+
+# ── Per-agenda-item (chunked) drafting ────────────────────────────────────────
+
+
+def test_draft_minutes_chunked_one_call_per_item(monkeypatch):
+    """Chunked drafting makes one bounded LLM call per agenda item (+ opening),
+    stitches a markdown doc, and renders decisions deterministically."""
+    from src.workflows import minutes_pipeline as mp
+
+    calls = []
+
+    class FakeClient:
+        def load_prompt(self, name):
+            return "SYS"
+
+        def generate(self, *, user_prompt, system_prompt, workflow, max_tokens):
+            calls.append({"prompt": user_prompt, "max_tokens": max_tokens})
+            return "Σωμα τμηματος."
+
+    monkeypatch.setattr("src.core.claude.ClaudeClient", FakeClient)
+
+    skeleton = {
+        "meeting_ref": "DS05-2026",
+        "presence": {"present": ["A"], "absent": ["B"]},
+        "items": [
+            {"index": 0, "title": "Item 1", "segments": [{"speaker": "A", "text": "x"}], "votes": []},
+            {"index": 1, "title": "Item 2", "segments": [{"speaker": "B", "text": "y"}], "votes": []},
+        ],
+        "unassigned_segments": [{"speaker": "A", "text": "open"}],
+        "decisions": [
+            {"ref": "R1", "seq": 1, "decision_text": "Approve X",
+             "outcome": "OK", "considerations": ["reason a"]},
+        ],
+    }
+
+    out = mp.draft_minutes_chunked(skeleton, ["NEC"], settings=None)
+
+    assert out is not None
+    # 2 items + 1 opening bucket = 3 bounded calls
+    assert len(calls) == 3
+    assert all(c["max_tokens"] <= 4000 for c in calls)  # bounded, not single-shot
+    assert len(out["sections"]) == 3
+    assert all(s.get("body") for s in out["sections"])
+    assert len(out["decisions"]) == 1
+    md = out["markdown"]
+    assert isinstance(md, str) and "Approve X" in md  # decision rendered verbatim
+
+
+def test_draft_minutes_chunked_returns_none_without_llm(monkeypatch):
+    """If the LLM client can't be constructed, drafting degrades to None."""
+    from src.workflows import minutes_pipeline as mp
+
+    class Boom:
+        def __init__(self, *a, **k):
+            raise RuntimeError("no LLM")
+
+    monkeypatch.setattr("src.core.claude.ClaudeClient", Boom)
+    out = mp.draft_minutes_chunked({"items": []}, [], settings=None)
+    assert out is None
+
+
+def test_assign_decisions_to_items_by_timestamp():
+    """Decisions with no agenda_index are placed into the item whose time window
+    contains their timestamp; already-linked or out-of-range ones are untouched."""
+    from src.workflows.minutes_pipeline import _assign_decisions_to_items
+
+    items = [
+        {"index": 0, "title": "A", "start": "2026-06-09T17:10:00Z", "end": "2026-06-09T17:40:00Z"},
+        {"index": 1, "title": "B", "start": "2026-06-09T17:40:00Z", "end": "2026-06-09T18:30:00Z"},
+    ]
+    decisions = [
+        {"ref": "R1", "ts": "2026-06-09T17:25:00Z"},                      # -> item 0
+        {"ref": "R2", "ts": "2026-06-09T18:00:00Z"},                      # -> item 1
+        {"ref": "R3", "ts": "2026-06-09T19:00:00Z"},                      # after end -> unplaced
+        {"ref": "R4", "agenda_index": 0, "ts": "2026-06-09T18:00:00Z"},   # already linked -> keep
+    ]
+    _assign_decisions_to_items(decisions, items)
+
+    assert decisions[0]["agenda_index"] == 0
+    assert decisions[0]["agenda_assigned_by"] == "timestamp"
+    assert decisions[1]["agenda_index"] == 1
+    assert decisions[2].get("agenda_index") is None          # unresolved stays None
+    assert decisions[3]["agenda_index"] == 0                  # not overwritten
+    assert "agenda_assigned_by" not in decisions[3]

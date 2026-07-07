@@ -1,4 +1,4 @@
-"""Teams cog — /team slash commands for coordinator-managed team membership.
+"""Teams cog - /team slash commands for coordinator-managed team membership.
 
 Authority model: a user with the universal Συντονιστής role AND a team role
 can manage members of that team. Intersection is enforced server-side; the
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class TeamsCog(commands.Cog):
-    """`/team` command group — coordinator self-service for team membership."""
+    """`/team` command group - coordinator self-service for team membership."""
 
     class _TeamCommands(app_commands.Group):
         def __init__(self, cog: "TeamsCog") -> None:
@@ -87,7 +87,7 @@ class TeamsCog(commands.Cog):
                 return teams[0]
             names = ", ".join(t.team_name for _, t in teams)
             await interaction.response.send_message(
-                f"Είσαι μέλος πολλών ομάδων ({names}) — προσδιόρισε με `team:`.",
+                f"Είσαι μέλος πολλών ομάδων ({names}) - προσδιόρισε με `team:`.",
                 ephemeral=True,
             )
             return None
@@ -121,7 +121,7 @@ class TeamsCog(commands.Cog):
 
             if not self._hierarchy_ok(guild, role):
                 await interaction.response.send_message(
-                    f"Σφάλμα: ο ρόλος μου είναι κάτω από `{role.name}` στην ιεραρχία ρόλων — "
+                    f"Σφάλμα: ο ρόλος μου είναι κάτω από `{role.name}` στην ιεραρχία ρόλων - "
                     "δεν μπορώ να τον αναθέσω. Μετακίνησε τον ρόλο του bot ψηλότερα.",
                     ephemeral=True,
                 )
@@ -272,7 +272,7 @@ class TeamsCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.bot.tree.add_command(self._team_commands)
-        logger.info("TeamsCog loaded — /team group registered")
+        logger.info("TeamsCog loaded - /team group registered")
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command("team")

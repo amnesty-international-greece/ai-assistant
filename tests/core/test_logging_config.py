@@ -165,5 +165,5 @@ def test_verbose_libs_env_var_opts_back_in():
     with patch.dict("os.environ", {"AI_ASSISTANT_VERBOSE_LIBS": "1"}, clear=False):
         setup_logging(log_to_file=False)
 
-    # NOTSET means "inherit from root" — we did NOT clip them to WARNING
+    # NOTSET means "inherit from root" - we did NOT clip them to WARNING
     assert logging.getLogger("discord.client").level == logging.NOTSET

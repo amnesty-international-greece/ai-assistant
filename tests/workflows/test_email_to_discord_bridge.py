@@ -1,12 +1,12 @@
 """Tests for the email→Discord board-reply bridge (Phase 4b).
 
 Covers:
-  1. match_board_meeting_anchor  — anchor lookup via References header
-  2. match_board_meeting_anchor  — unknown anchor returns None
-  3. Happy-path inbound reply    — publishes BoardEmailSentPayload(kind='board_reply')
-  4. Loop prevention             — bot own echo is dropped, not mirrored
-  5. Attribution                 — display name derived from From header
-  6. Body truncation             — 3000-char body capped at 1800 chars
+  1. match_board_meeting_anchor  - anchor lookup via References header
+  2. match_board_meeting_anchor  - unknown anchor returns None
+  3. Happy-path inbound reply    - publishes BoardEmailSentPayload(kind='board_reply')
+  4. Loop prevention             - bot own echo is dropped, not mirrored
+  5. Attribution                 - display name derived from From header
+  6. Body truncation             - 3000-char body capped at 1800 chars
 """
 from __future__ import annotations
 

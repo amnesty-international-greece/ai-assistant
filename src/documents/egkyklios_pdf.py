@@ -1,4 +1,4 @@
-"""Egkyklios PDF renderer — Markdown → ReportLab PDF.
+"""Egkyklios PDF renderer - Markdown → ReportLab PDF.
 
 Produces the Γενική Εγκύκλιος Ενημέρωσης document with:
   - Page 1: title block + standard intro paragraphs (no header/footer)
@@ -155,7 +155,7 @@ def _md_inline(text: str) -> str:
     # Date references in brackets: [5 Μαρτίου 2026] → bold
     text = _DATE_REF_RE.sub(r"<b>[\1]</b>", text)
     # Escape remaining & and < that aren't part of our tags
-    # (very light-touch — avoids XML parse errors)
+    # (very light-touch - avoids XML parse errors)
     return text
 
 

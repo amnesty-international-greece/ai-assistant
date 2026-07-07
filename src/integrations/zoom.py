@@ -1,4 +1,4 @@
-"""Zoom integration — schedule meetings and retrieve recordings/transcripts."""
+"""Zoom integration - schedule meetings and retrieve recordings/transcripts."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _ZOOM_API_BASE = "https://api.zoom.us/v2"
 _ZOOM_AUTH_URL = "https://zoom.us/oauth/token"
 
-# Video asset markers (case-insensitive) — matched against a recording file's
+# Video asset markers (case-insensitive) - matched against a recording file's
 # ``file_type`` and ``recording_type``. When ``audio_only=True`` (the default
 # for the minutes pipeline) any file matching one of these is skipped: we never
 # need the large MP4/screen-share/gallery/active-speaker recordings.
@@ -107,11 +107,12 @@ class ZoomClient:
           - waiting_room: False  (registration is the gate, not the waiting room)
           - join_before_host: False  (host must start the meeting first)
           - mute_upon_entry: True
-          - auto_recording: cloud  (full transcript/recording for minutes)
+          - auto_recording: cloud  (auto-start; the sidebar marks the official
+            start and tracks pauses/resumes for timeline↔audio sync)
           - participant_video: True, host_video: True
 
         Registration model:
-          Board members are pre-registered via add_registrants() — they receive
+          Board members are pre-registered via add_registrants() - they receive
           a personal join link directly from Zoom without filling in a form.
           All other participants (regular members, observers) must register via
           the public registration URL (the join_url returned here).  They are
@@ -126,9 +127,9 @@ class ZoomClient:
 
         Returns:
             Zoom API meeting object.  Key fields:
-              id          — numeric meeting ID
-              join_url    — public registration URL (share with non-board members)
-              password    — meeting passcode
+              id          - numeric meeting ID
+              join_url    - public registration URL (share with non-board members)
+              password    - meeting passcode
         """
         duration = duration or settings.zoom.meeting_defaults.duration
         payload = {
@@ -146,6 +147,10 @@ class ZoomClient:
                 "mute_upon_entry":   True,
                 "participant_video": True,   # Video on by default; participants can turn it off
                 "host_video":        True,
+                # Auto-start cloud recording at meeting start (safety net - never
+                # lose a meeting). The Zoom App sidebar only *marks* the official
+                # start and tracks pauses/resumes for timeline↔audio sync; it
+                # stops the recording on ΛΗΞΗ ΣΥΝΕΔΡΙΑΣΗΣ.
                 "auto_recording":    "cloud",
             },
         }
@@ -273,7 +278,7 @@ class ZoomClient:
 
         Video assets are SKIPPED by default (``audio_only=True``): the minutes
         pipeline only needs the mixed ``audio_only`` M4A, the ``timeline`` JSON,
-        chat, and transcript files — never the (large) MP4/screen-share/gallery
+        chat, and transcript files - never the (large) MP4/screen-share/gallery
         recordings.  Pass ``audio_only=False`` to download video as well.
 
         The per-file ``recording_start`` / ``recording_end`` fields are captured
@@ -301,7 +306,7 @@ class ZoomClient:
         recording = await self.get_recording(meeting_id)
         meeting_uuid = recording.get("uuid") or meeting_id
 
-        # UUIDs may contain '/', '\\', '+', '=' — make a filesystem-safe folder.
+        # UUIDs may contain '/', '\\', '+', '=' - make a filesystem-safe folder.
         safe_uuid = re.sub(r"[/\\+=]", "_", str(meeting_uuid))
         if dest_dir is None:
             dest_dir = str(Path("data") / "recordings" / safe_uuid)
@@ -360,7 +365,7 @@ class ZoomClient:
                     )
                     response.raise_for_status()
                     local_path.write_bytes(response.content)
-            except Exception as e:  # noqa: BLE001 — defensive per-file isolation
+            except Exception as e:  # noqa: BLE001 - defensive per-file isolation
                 logger.warning(
                     "Failed to download recording file %s for meeting %s: %s",
                     ident, meeting_uuid, e,
@@ -450,7 +455,7 @@ class ZoomClient:
                     )
                 response.raise_for_status()
                 data = response.json()
-        except Exception as e:  # noqa: BLE001 — best-effort
+        except Exception as e:  # noqa: BLE001 - best-effort
             logger.warning(
                 "Could not fetch participants for meeting %s: %s", meeting_id, e,
             )

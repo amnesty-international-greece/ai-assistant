@@ -1,5 +1,5 @@
 """
-Email gateway — async IMAP poller + SMTP sender for the Google Group ↔ Discord bridge.
+Email gateway - async IMAP poller + SMTP sender for the Google Group ↔ Discord bridge.
 
 Bridges a Gmail account (acting as relay for a Google Group) to Discord forum threads.
 Uses ``aioimaplib`` and ``aiosmtplib`` so the gateway runs on the bot's asyncio event
@@ -80,13 +80,13 @@ class InboundEmail:
     """Parsed representation of a single inbound email message."""
 
     message_id: str
-    """RFC 822 ``Message-ID`` value — angle brackets stripped."""
+    """RFC 822 ``Message-ID`` value - angle brackets stripped."""
 
     request_id: str
     """Short random hex token (8 chars) shared across all audit rows for this email."""
 
     in_reply_to: str | None
-    """RFC 822 ``In-Reply-To`` value — angle brackets stripped, or ``None``."""
+    """RFC 822 ``In-Reply-To`` value - angle brackets stripped, or ``None``."""
 
     references: list[str]
     """Ordered list of ``References`` header tokens, angle brackets stripped."""
@@ -193,7 +193,7 @@ def _parse_address_list(header_value: str | None) -> list[str]:
     """Extract individual email addresses from a comma-separated address header."""
     if not header_value:
         return []
-    # Simple split — handles "Name <addr>, addr2" forms
+    # Simple split - handles "Name <addr>, addr2" forms
     parts = [p.strip() for p in header_value.split(",") if p.strip()]
     result: list[str] = []
     for p in parts:
@@ -249,7 +249,7 @@ def _parse_message(raw_bytes: bytes) -> InboundEmail:
                 raw_data: bytes = part.get_payload(decode=True) or b""
                 if len(raw_data) > EMAIL_ATTACHMENT_MAX_BYTES:
                     logger.warning(
-                        "Dropping attachment %r — size %d bytes exceeds limit %d",
+                        "Dropping attachment %r - size %d bytes exceeds limit %d",
                         filename,
                         len(raw_data),
                         EMAIL_ATTACHMENT_MAX_BYTES,
@@ -315,7 +315,7 @@ class EmailGateway:
     no blocking calls are made on the event loop.
 
     Configuration is read from ``src.config.settings.discord.email_gateway``
-    and ``settings.gmail_app_password`` at construction time — no network
+    and ``settings.gmail_app_password`` at construction time - no network
     activity happens until :meth:`start` or :meth:`poll_once` is called.
     """
 
@@ -351,7 +351,7 @@ class EmailGateway:
         """
         Begin polling IMAP in the background.
 
-        Idempotent — calling :meth:`start` while already running is a no-op.
+        Idempotent - calling :meth:`start` while already running is a no-op.
         """
         if self._running:
             return
@@ -365,7 +365,7 @@ class EmailGateway:
         """
         Stop polling cleanly.
 
-        Idempotent — safe to call even if not started.  Waits for the current
+        Idempotent - safe to call even if not started.  Waits for the current
         poll iteration to finish before returning.
         """
         if not self._running:
@@ -399,7 +399,7 @@ class EmailGateway:
         except Exception as exc:
             # ``%r`` preserves the exception type name when str(exc) is
             # empty (aioimaplib raises bare exceptions on some early
-            # connection failures — observed in production 2026-05-27).
+            # connection failures - observed in production 2026-05-27).
             logger.warning("IMAP connection/login failed: %r", exc)
             raise
 
@@ -506,11 +506,11 @@ class EmailGateway:
         Send an email via SMTP and return the outbound ``Message-ID``.
 
         ``Message-ID`` is always generated fresh as
-        ``<{uuid4}@{EMAIL_MESSAGE_ID_DOMAIN}>`` — callers must persist it if
+        ``<{uuid4}@{EMAIL_MESSAGE_ID_DOMAIN}>`` - callers must persist it if
         they need to correlate future replies.
 
         ``In-Reply-To`` and ``References`` are set per RFC 5322 when provided.
-        Attachment bytes are embedded directly — no temp-file I/O.
+        Attachment bytes are embedded directly - no temp-file I/O.
         """
         outbound_id = f"<{uuid4()}@{EMAIL_MESSAGE_ID_DOMAIN}>"
         to_str = ", ".join(to) if isinstance(to, list) else to
@@ -533,13 +533,13 @@ class EmailGateway:
         elif references:
             msg["References"] = " ".join(f"<{t.strip('<>')}>" for t in references)
 
-        # Body — plain text only; rich rendering is handled by Discord cogs
+        # Body - plain text only; rich rendering is handled by Discord cogs
         msg.set_content(body, subtype="plain", charset="utf-8")
 
         for att in attachments or []:
             if len(att.data) > EMAIL_ATTACHMENT_MAX_BYTES:
                 logger.warning(
-                    "Dropping outbound attachment %r — %d bytes exceeds limit",
+                    "Dropping outbound attachment %r - %d bytes exceeds limit",
                     att.filename,
                     len(att.data),
                 )
@@ -605,12 +605,12 @@ class EmailGateway:
                 raise
             except Exception as exc:
                 # ``%r`` preserves the exception type name when str(exc)
-                # is empty (some aioimaplib failures do that — observed
-                # producing 'IMAP error in poll loop:  — retrying ...' in
+                # is empty (some aioimaplib failures do that - observed
+                # producing 'IMAP error in poll loop:  - retrying ...' in
                 # production 2026-05-27 logs).  ``exc_info`` adds the
                 # traceback at DEBUG-equivalent verbosity for diagnosis.
                 logger.warning(
-                    "IMAP error in poll loop: %r — retrying in %ds", exc, backoff,
+                    "IMAP error in poll loop: %r - retrying in %ds", exc, backoff,
                     extra={"backoff_seconds": backoff},
                     exc_info=True,
                 )

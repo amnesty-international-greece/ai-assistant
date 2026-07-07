@@ -1,4 +1,4 @@
-"""Email sync cog — Google Groups ↔ Discord forum bridge (inbound + outbound)."""
+"""Email sync cog - Google Groups ↔ Discord forum bridge (inbound + outbound)."""
 from __future__ import annotations
 
 import asyncio
@@ -57,9 +57,9 @@ class EmailSyncCog(commands.Cog):
         self._attachment_svc: AttachmentService = AttachmentService()
         self._classifier: EmailClassifier = EmailClassifier(self._channels_store)
         self._gateway: EmailGateway = EmailGateway()
-        # Router is lazy — needs guild, available only after on_ready
+        # Router is lazy - needs guild, available only after on_ready
         self._router: MessageRouter | None = None
-        # Last classification result — set just before _post_to_admin calls
+        # Last classification result - set just before _post_to_admin calls
         self._last_result: ClassificationResult | None = None
 
     async def cog_load(self) -> None:
@@ -69,7 +69,7 @@ class EmailSyncCog(commands.Cog):
         self._classifier.set_bot(self.bot)
         self._gateway.on_inbound(self._handle_inbound)
         await self._gateway.start()
-        logger.info("EmailSyncCog loaded — email gateway started")
+        logger.info("EmailSyncCog loaded - email gateway started")
 
     async def cog_unload(self) -> None:
         if self._gateway:
@@ -85,7 +85,7 @@ class EmailSyncCog(commands.Cog):
         guild_id_str = settings.discord_guild_id
         if not guild_id_str:
             logger.error(
-                "EmailSyncCog: DISCORD_GUILD_ID is not configured — cannot route emails. "
+                "EmailSyncCog: DISCORD_GUILD_ID is not configured - cannot route emails. "
                 "Set discord_guild_id in config.yaml or DISCORD_GUILD_ID in .env."
             )
             return None
@@ -93,7 +93,7 @@ class EmailSyncCog(commands.Cog):
         if guild is None:
             logger.error(
                 "EmailSyncCog: guild %s not found (bot may not have joined yet or ID is wrong) "
-                "— dropping inbound email.",
+                "- dropping inbound email.",
                 guild_id_str,
             )
             return None
@@ -106,22 +106,22 @@ class EmailSyncCog(commands.Cog):
 
     async def _handle_inbound(self, email: InboundEmail) -> None:
         """Process one inbound email: classify → route → post to Discord."""
-        # #2 — honor operator kill-switch
+        # #2 - honor operator kill-switch
         bot_active = await self._state_store.get_bool(STATE_BOT_ACTIVE, default=True)
         if not bot_active:
-            logger.debug("EmailSyncCog: STATE_BOT_ACTIVE is False — skipping inbound email %s", email.message_id)
+            logger.debug("EmailSyncCog: STATE_BOT_ACTIVE is False - skipping inbound email %s", email.message_id)
             return
 
         test_mode = await self._state_store.get_bool(STATE_TEST_MODE_ACTIVE, default=False)
         auto_classify = await self._state_store.get_bool(STATE_AUTO_CLASSIFY, default=True)
         webhook_active = await self._state_store.get_bool(STATE_WEBHOOK_ACTIVE, default=True)
 
-        # #7 — idempotency: skip fresh (non-reply) emails we have already posted
+        # #7 - idempotency: skip fresh (non-reply) emails we have already posted
         if email.in_reply_to is None:
             existing_link = await self._thread_map.lookup_thread(email.message_id)
             if existing_link is not None:
                 logger.debug(
-                    "EmailSyncCog: email %s already posted (thread %s) — skipping duplicate",
+                    "EmailSyncCog: email %s already posted (thread %s) - skipping duplicate",
                     email.message_id,
                     existing_link.discord_thread_id,
                 )
@@ -154,7 +154,7 @@ class EmailSyncCog(commands.Cog):
         # Route
         router = self._get_router()
         if router is None:
-            logger.warning("EmailSyncCog: bot not yet in a guild — dropping email %s", email.message_id)
+            logger.warning("EmailSyncCog: bot not yet in a guild - dropping email %s", email.message_id)
             return
 
         decision = await router.resolve(result, existing_thread_id=existing_thread_id, test_mode=test_mode)
@@ -250,17 +250,17 @@ class EmailSyncCog(commands.Cog):
         webhook_active: bool,
         test_mode: bool = False,
     ) -> discord.Thread:
-        # #10 — strip whitespace before truncating so "   " falls through to "No Subject"
+        # #10 - strip whitespace before truncating so "   " falls through to "No Subject"
         thread_name = (email.subject.strip()[:DISCORD_THREAD_NAME_MAX] or "No Subject")
         parts = self._split_message(body_formatted)
 
-        # #16 — apply forum tags if configured for this channel
+        # #16 - apply forum tags if configured for this channel
         applied_tags: list[discord.Object] = []
         enabled_ch = await self._channels_store.get(str(channel.id), test_mode=test_mode)
         if enabled_ch and enabled_ch.forum_tag_ids:
             applied_tags = [discord.Object(id=int(t)) for t in enabled_ch.forum_tag_ids]
 
-        # Webhooks cannot create forum threads — always use channel.create_thread for the opener.
+        # Webhooks cannot create forum threads - always use channel.create_thread for the opener.
         create_kwargs: dict = {
             "name": thread_name,
             "content": parts[0],
@@ -296,7 +296,7 @@ class EmailSyncCog(commands.Cog):
         webhook_active: bool,
         parent_channel: discord.ForumChannel,
     ) -> None:
-        # #3 — use webhook so messages appear under the original sender's name.
+        # #3 - use webhook so messages appear under the original sender's name.
         # Webhook posts to a forum thread require posting to the parent ForumChannel with thread=thread.
         parts = self._split_message(body_formatted)
         for i, part in enumerate(parts):
@@ -335,18 +335,18 @@ class EmailSyncCog(commands.Cog):
             else settings.discord.admin.admin_channel_id
         )
         if not admin_id:
-            logger.warning("No admin channel configured — dropping UNCERTAIN email %s", email.message_id)
+            logger.warning("No admin channel configured - dropping UNCERTAIN email %s", email.message_id)
             return
         channel = self.bot.get_channel(int(admin_id))
         if channel is None:
             logger.warning(
-                "Admin channel %s not found (not cached or wrong ID) — dropping UNCERTAIN email %s",
+                "Admin channel %s not found (not cached or wrong ID) - dropping UNCERTAIN email %s",
                 admin_id, email.message_id,
             )
             return
         sender = email.from_name or email.from_addr
 
-        # Quoted body snippet — first ~120 chars of plain body
+        # Quoted body snippet - first ~120 chars of plain body
         body_raw = (email.body_plain or "").strip()
         body_snippet = body_raw[:120] + ("…" if len(body_raw) > 120 else "")
 
@@ -375,9 +375,9 @@ class EmailSyncCog(commands.Cog):
             # Ranked candidates field
             candidates: list[str] = []
             if result.channel_id:
-                candidates.append(f"1. <#{result.channel_id}> — {result.confidence:.0%}")
+                candidates.append(f"1. <#{result.channel_id}> - {result.confidence:.0%}")
             for i, alt in enumerate(result.alternates, start=2):
-                candidates.append(f"{i}. <#{alt.channel_id}> — {alt.confidence:.0%}")
+                candidates.append(f"{i}. <#{alt.channel_id}> - {alt.confidence:.0%}")
                 if i >= 3:
                     break
             if candidates:
@@ -393,14 +393,14 @@ class EmailSyncCog(commands.Cog):
 
         if not isinstance(channel, discord.TextChannel):
             logger.warning(
-                "Admin channel %s is %s, not TextChannel — attempting send anyway",
+                "Admin channel %s is %s, not TextChannel - attempting send anyway",
                 admin_id, type(channel).__name__,
             )
         if hasattr(channel, "send"):
             await channel.send(embed=embed, view=view)  # type: ignore[union-attr]
         else:
             logger.warning(
-                "Admin channel %s has no send() method (type=%s) — dropping UNCERTAIN email %s",
+                "Admin channel %s has no send() method (type=%s) - dropping UNCERTAIN email %s",
                 admin_id, type(channel).__name__, email.message_id,
             )
 
@@ -414,7 +414,7 @@ class EmailSyncCog(commands.Cog):
         """Build a triage View with ranked route buttons + defer + spam.
 
         When the classifier returned alternates (ranked mode):
-          Row 0 — up to 3 routing buttons (primary = success/green,
+          Row 0 - up to 3 routing buttons (primary = success/green,
                    alternates = secondary/grey) + 1 defer + 1 spam = 5 max.
 
         When no alternates are available (legacy / first-boot fallback):
@@ -436,7 +436,7 @@ class EmailSyncCog(commands.Cog):
                 channel_id=result.channel_id,  # type: ignore[arg-type]
                 email_message_id=email.message_id,
             ))
-            # Alternate buttons (grey) — up to 2
+            # Alternate buttons (grey) - up to 2
             for alt in (result.alternates or [])[:2]:  # type: ignore[union-attr]
                 view.add_item(_TriageRouteAlternateButton(
                     label=alt.label[:40],
@@ -444,7 +444,7 @@ class EmailSyncCog(commands.Cog):
                     email_message_id=email.message_id,
                 ))
         else:
-            # Legacy fallback — no ranked alternates
+            # Legacy fallback - no ranked alternates
             configured = await self._channels_store.list(test_mode=test_mode)
             if len(configured) <= 5:
                 for ch_cfg in configured:
@@ -497,14 +497,14 @@ class EmailSyncCog(commands.Cog):
         if message.author.bot:
             return
         if message.webhook_id is not None:
-            return  # our own email posts via webhook — skip
+            return  # our own email posts via webhook - skip
         if not isinstance(message.channel, discord.Thread):
             return
 
-        # #2 — honor operator kill-switch
+        # #2 - honor operator kill-switch
         bot_active = await self._state_store.get_bool(STATE_BOT_ACTIVE, default=True)
         if not bot_active:
-            logger.debug("EmailSyncCog: STATE_BOT_ACTIVE is False — skipping outbound reply from thread %s", message.channel.id)
+            logger.debug("EmailSyncCog: STATE_BOT_ACTIVE is False - skipping outbound reply from thread %s", message.channel.id)
             return
 
         thread = message.channel
@@ -514,7 +514,7 @@ class EmailSyncCog(commands.Cog):
 
         original = links[-1]
         test_mode = await self._state_store.get_bool(STATE_TEST_MODE_ACTIVE, default=False)
-        # #1 — test-mode outbound gating
+        # #1 - test-mode outbound gating
         test_email = await self._state_store.get_str(STATE_TEST_EMAIL, default="")
 
         subject = original.subject
@@ -527,11 +527,11 @@ class EmailSyncCog(commands.Cog):
         # Determine the actual recipient, applying test-mode overrides.
         if test_mode:
             if test_email:
-                logger.debug("EmailSyncCog: test_mode — redirecting outbound email to %s", test_email)
+                logger.debug("EmailSyncCog: test_mode - redirecting outbound email to %s", test_email)
                 to = test_email
             else:
                 logger.debug(
-                    "EmailSyncCog: test_mode active but STATE_TEST_EMAIL is empty — skipping outbound send from thread %s",
+                    "EmailSyncCog: test_mode active but STATE_TEST_EMAIL is empty - skipping outbound send from thread %s",
                     thread.id,
                 )
                 await self._stats_store.record(
@@ -582,7 +582,7 @@ class EmailSyncCog(commands.Cog):
 class _TriageRouteButton(discord.ui.Button):
     """Legacy: single-click button routing (used when no ranked alternates available).
 
-    Style is ``primary`` (blurple) — same as original, so the fallback path
+    Style is ``primary`` (blurple) - same as original, so the fallback path
     looks unchanged to the admin.
     """
 
@@ -600,7 +600,7 @@ class _TriageRouteButton(discord.ui.Button):
 
 
 class _TriageRoutePrimaryButton(discord.ui.Button):
-    """Ranked triage — primary (most likely) routing candidate.
+    """Ranked triage - primary (most likely) routing candidate.
 
     Styled ``success`` (green) to signal "this is what the classifier
     recommends most strongly".
@@ -620,7 +620,7 @@ class _TriageRoutePrimaryButton(discord.ui.Button):
 
 
 class _TriageRouteAlternateButton(discord.ui.Button):
-    """Ranked triage — alternate routing candidate.
+    """Ranked triage - alternate routing candidate.
 
     Styled ``secondary`` (grey) to signal lower confidence than the primary.
     """
@@ -661,7 +661,7 @@ class _TriageRouteSelect(discord.ui.Select):
 
 
 class _TriageDeferButton(discord.ui.Button):
-    """Defer triage — keep the card visible, ACK with ephemeral message.
+    """Defer triage - keep the card visible, ACK with ephemeral message.
 
     The email remains in the queue for re-triage later.  No routing is
     recorded; the card stays intact so the admin can return to it.
@@ -684,7 +684,7 @@ class _TriageDeferButton(discord.ui.Button):
             target=self.email_message_id,
         )
         await interaction.response.send_message(
-            "⏰ Παρακάμφθηκε — το email παραμένει στην ουρά για αργότερα.",
+            "⏰ Παρακάμφθηκε - το email παραμένει στην ουρά για αργότερα.",
             ephemeral=True,
         )
 
@@ -730,7 +730,7 @@ async def _do_triage_route(
                 f"❌ Δεν βρέθηκε το κανάλι: {exc}", ephemeral=True,
             )
             return
-    # Note: we don't re-post the full email content here — that would require
+    # Note: we don't re-post the full email content here - that would require
     # re-fetching the email from IMAP, which is out of scope for a triage
     # button.  Instead we record the routing decision as audit_log so the
     # classifier can use it as training signal, and SecGen knows the email

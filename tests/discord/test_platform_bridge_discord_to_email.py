@@ -1,4 +1,4 @@
-"""Tests for PlatformBridgeCog.on_message — Discord→email bridge.
+"""Tests for PlatformBridgeCog.on_message - Discord→email bridge.
 
 Covers:
   1. Bot messages are ignored (loop prevention)
@@ -65,7 +65,7 @@ def _make_thread_message(
     else:
         msg.author = author
 
-    # Channel — must look like a discord.Thread
+    # Channel - must look like a discord.Thread
     channel = MagicMock(spec=discord.Thread)
     channel.id = thread_id
     channel.send = AsyncMock()

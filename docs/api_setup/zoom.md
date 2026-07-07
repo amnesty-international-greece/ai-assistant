@@ -12,9 +12,9 @@ Zoom Server-to-Server OAuth for scheduling meetings and retrieving recordings/tr
 
 ### 2. Configure Scopes
 Required scopes:
-- `meeting:write:admin` — Schedule meetings
-- `recording:read:admin` — Access recordings
-- `user:read:admin` — Read user info
+- `meeting:write:admin` - Schedule meetings
+- `recording:read:admin` - Access recordings
+- `user:read:admin` - Read user info
 
 ### 3. Activate App
 1. Complete all required fields

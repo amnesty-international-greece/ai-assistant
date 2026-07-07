@@ -1,4 +1,4 @@
-"""Scheduler cog — owns the pending-actions background worker.
+"""Scheduler cog - owns the pending-actions background worker.
 
 The worker dispatches due rows in `discord_pending_actions` to handlers
 registered via `scheduler.register_action_handler`. Other cogs register their
@@ -36,7 +36,7 @@ class SchedulerCog(commands.Cog):
             ),
             name="discord_pending_actions_worker",
         )
-        logger.info("SchedulerCog loaded — pending-actions worker started")
+        logger.info("SchedulerCog loaded - pending-actions worker started")
 
     async def cog_unload(self) -> None:
         self._stop_event.set()

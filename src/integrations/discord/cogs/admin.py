@@ -1,4 +1,4 @@
-"""/admin cog — SecGen operations panel (admin-only Discord slash commands).
+"""/admin cog - SecGen operations panel (admin-only Discord slash commands).
 
 Wraps the CLI's data layer so the SecGen can run ops checks from Discord
 without SSH-ing to the host.  Every response is ephemeral; every command
@@ -67,7 +67,7 @@ class _ArchiveCommands(app_commands.Group):
             ).fetchall()
 
             embed = brand_embed(
-                title=f"Archive Workflows — {len(rows)} αποτελέσματα",
+                title=f"Archive Workflows - {len(rows)} αποτελέσματα",
                 color=AMNESTY_YELLOW,
             )
 
@@ -81,8 +81,8 @@ class _ArchiveCommands(app_commands.Group):
                 for row in rows[:20]:
                     data = json.loads(row["data"] or "{}")
                     ctx = data.get("context") or {}
-                    proto = ctx.get("protocol_number", "—")
-                    revision = "ανοιχτή" if is_revision_window_open(ctx) else "—"
+                    proto = ctx.get("protocol_number", "-")
+                    revision = "ανοιχτή" if is_revision_window_open(ctx) else "-"
                     updated = (row["updated_at"] or "")[:19]
                     embed.add_field(
                         name=f"{row['workflow_id'][:8]} • {row['state']}",
@@ -139,7 +139,7 @@ class _ArchiveCommands(app_commands.Group):
             )
 
             embed = brand_embed(
-                title="Archive Workflow — Ακυρώθηκε",
+                title="Archive Workflow - Ακυρώθηκε",
                 description=f"Το workflow `{workflow_id[:8]}` ακυρώθηκε και έγινε rollback.",
                 color=AMNESTY_YELLOW,
             )
@@ -177,7 +177,7 @@ class _MinutesCommands(app_commands.Group):
             docs = google.list_docs_in_folder(folder_id)
 
             embed = brand_embed(
-                title=f"Draft Minutes — {len(docs)} έγγραφα",
+                title=f"Draft Minutes - {len(docs)} έγγραφα",
                 color=AMNESTY_YELLOW,
             )
             if not docs:
@@ -247,12 +247,12 @@ class _M365Commands(app_commands.Group):
                         exp_dt = datetime.fromisoformat(exp_str.replace("Z", "+00:00"))
                         exp_display = fmt_ts(exp_dt, "R")
                     except (ValueError, AttributeError):
-                        exp_display = exp_str[:19] if exp_str else "—"
+                        exp_display = exp_str[:19] if exp_str else "-"
 
                     embed.add_field(
                         name=f"`{row['subscription_id'][:20]}…`",
                         value=(
-                            f"resource: `{row.get('resource', '—')[:60]}`\n"
+                            f"resource: `{row.get('resource', '-')[:60]}`\n"
                             f"λήγει: {exp_display}"
                         ),
                         inline=False,
@@ -264,7 +264,7 @@ class _M365Commands(app_commands.Group):
                     value="\n".join(
                         f"`{s.get('id', '')[:20]}…` expires={s.get('expirationDateTime', '?')[:19]}"
                         for s in remote[:5]
-                    ) or "—",
+                    ) or "-",
                     inline=False,
                 )
             else:
@@ -296,10 +296,10 @@ class _M365Commands(app_commands.Group):
                     f"• `{sid[:20]}…`" for sid in renewed
                 )
             else:
-                desc = "Δεν χρειάζεται ανανέωση — όλα τα subscriptions είναι ενεργά."
+                desc = "Δεν χρειάζεται ανανέωση - όλα τα subscriptions είναι ενεργά."
 
             embed = brand_embed(
-                title="M365 — Ανανέωση Subscriptions",
+                title="M365 - Ανανέωση Subscriptions",
                 description=desc,
                 color=AMNESTY_YELLOW,
             )
@@ -328,7 +328,7 @@ class _M365Commands(app_commands.Group):
                 lines.append(f"❌ Σφάλμα: {result['error']}")
 
             embed = brand_embed(
-                title="M365 Safety Poll — Αποτέλεσμα",
+                title="M365 Safety Poll - Αποτέλεσμα",
                 description="\n".join(lines),
                 color=AMNESTY_YELLOW,
             )
@@ -356,14 +356,14 @@ class _OneDriveCommands(app_commands.Group):
             backup_path = OneDriveClient.PROTOCOL_BACKUP_PATH
 
             embed = brand_embed(
-                title="Πρωτόκολλο — Local Safety Backup",
+                title="Πρωτόκολλο - Local Safety Backup",
                 color=AMNESTY_YELLOW,
             )
 
             if not backup_path.exists():
                 embed.add_field(
                     name="Κατάσταση",
-                    value="**ΔΕΝ ΥΠΑΡΧΕΙ** — τρέξτε ένα archive workflow για να δημιουργηθεί.",
+                    value="**ΔΕΝ ΥΠΑΡΧΕΙ** - τρέξτε ένα archive workflow για να δημιουργηθεί.",
                     inline=False,
                 )
                 embed.add_field(
@@ -400,9 +400,9 @@ class _OneDriveCommands(app_commands.Group):
                 wb = openpyxl.load_workbook(backup_path, data_only=True, read_only=True)
                 tabs = wb.sheetnames
                 wb.close()
-                validity = f"✅ VALID — tabs: {', '.join(tabs[:5])}"
+                validity = f"✅ VALID - tabs: {', '.join(tabs[:5])}"
             except Exception as xlsx_err:
-                validity = f"❌ CORRUPT? — {xlsx_err}"
+                validity = f"❌ CORRUPT? - {xlsx_err}"
 
             embed.add_field(
                 name="Κατάσταση",
@@ -436,15 +436,15 @@ class _OneDriveCommands(app_commands.Group):
             overflow = len(items) - _LS_LIMIT if len(items) > _LS_LIMIT else 0
 
             embed = brand_embed(
-                title=f"OneDrive ls — /{path.strip('/') or '(root)'}",
-                description=f"{len(items)} αντικείμενα{'  (+{} more — refine path:)'.format(overflow) if overflow else ''}",
+                title=f"OneDrive ls - /{path.strip('/') or '(root)'}",
+                description=f"{len(items)} αντικείμενα{'  (+{} more - refine path:)'.format(overflow) if overflow else ''}",
                 color=AMNESTY_YELLOW,
             )
 
             if not items:
                 embed.add_field(
                     name="(κενός φάκελος)",
-                    value="—",
+                    value="-",
                     inline=False,
                 )
             else:
@@ -464,7 +464,7 @@ class _OneDriveCommands(app_commands.Group):
 
                 if overflow:
                     embed.set_footer(
-                        text=f"+{overflow} ακόμα — χρησιμοποιήστε path: για να φιλτράρετε"
+                        text=f"+{overflow} ακόμα - χρησιμοποιήστε path: για να φιλτράρετε"
                     )
 
                 embed.add_field(name="Αρχεία & Φάκελοι", value=value, inline=False)
@@ -479,7 +479,7 @@ class _OneDriveCommands(app_commands.Group):
 
 
 class AdminCog(commands.Cog):
-    """`/admin` slash command group — SecGen-only ops panel."""
+    """`/admin` slash command group - SecGen-only ops panel."""
 
     class _AdminCommands(app_commands.Group):
         def __init__(self, cog: "AdminCog") -> None:
@@ -524,7 +524,7 @@ class AdminCog(commands.Cog):
                 )
 
                 embed = brand_embed(
-                    title=f"Audit Log — τελευταίες {len(entries)} εγγραφές"
+                    title=f"Audit Log - τελευταίες {len(entries)} εγγραφές"
                     + (f" ({workflow})" if workflow else ""),
                     color=AMNESTY_YELLOW,
                 )
@@ -540,7 +540,7 @@ class AdminCog(commands.Cog):
                         action = entry.get("action", "?")
                         actor = entry.get("actor", "?")
                         timestamp = entry.get("timestamp", "?")[:19]
-                        target = entry.get("target") or "—"
+                        target = entry.get("target") or "-"
                         embed.add_field(
                             name=f"{action} • {actor}",
                             value=f"{timestamp} | target: {target[:80]}",
@@ -559,8 +559,8 @@ class AdminCog(commands.Cog):
             description="Δείξε τις τελευταίες εγγραφές από το log αρχείο",
         )
         @app_commands.describe(
-            scope="Ποιο log να δείξω — main (default) ή errors-only",
-            lines="Αριθμός γραμμών (default 25, max 60 — Discord embed cap)",
+            scope="Ποιο log να δείξω - main (default) ή errors-only",
+            lines="Αριθμός γραμμών (default 25, max 60 - Discord embed cap)",
             pattern="Προαιρετικό regex φίλτρο",
         )
         @app_commands.choices(scope=[
@@ -607,7 +607,7 @@ class AdminCog(commands.Cog):
                     return
 
                 # Compose as a fenced code block.  Discord caps a message at
-                # 2000 chars — back off the tail until it fits.
+                # 2000 chars - back off the tail until it fits.
                 while tail:
                     body = "```\n" + "\n".join(tail) + "\n```"
                     if len(body) <= 1950:
@@ -615,7 +615,7 @@ class AdminCog(commands.Cog):
                     tail = tail[1:]  # drop oldest until under the cap
 
                 header = (
-                    f"**{target.name}** · last {len(tail)} line(s)"
+                    f"**{target.name}** - last {len(tail)} line(s)"
                     + (f" matching `{pattern}`" if pattern else "")
                 )
                 await interaction.followup.send(
@@ -632,7 +632,7 @@ class AdminCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.bot.tree.add_command(self._commands)
-        logger.info("AdminCog loaded — /admin group registered")
+        logger.info("AdminCog loaded - /admin group registered")
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command("admin")

@@ -31,7 +31,7 @@ def test_strip_angle_brackets_no_brackets():
 
 
 def test_strip_angle_brackets_empty_string():
-    # Empty string is falsy — treated like None
+    # Empty string is falsy - treated like None
     assert _strip_angle_brackets("") is None
 
 
@@ -100,7 +100,7 @@ def test_decode_header_value_greek_base64():
 
 
 # ---------------------------------------------------------------------------
-# _parse_message — simple email
+# _parse_message - simple email
 # ---------------------------------------------------------------------------
 
 
@@ -158,7 +158,7 @@ def test_parse_message_received_at_is_utc(sample_email_bytes):
 
 
 # ---------------------------------------------------------------------------
-# _parse_message — multipart email
+# _parse_message - multipart email
 # ---------------------------------------------------------------------------
 
 
@@ -188,7 +188,7 @@ def test_parse_multipart_from_addr(multipart_email_bytes):
 
 
 # ---------------------------------------------------------------------------
-# _parse_message — HTML-only email (fallback to html.unescape)
+# _parse_message - HTML-only email (fallback to html.unescape)
 # ---------------------------------------------------------------------------
 
 

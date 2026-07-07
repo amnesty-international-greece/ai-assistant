@@ -1,4 +1,4 @@
-"""Stats cog — weekly digest background task and /stats slash command."""
+"""Stats cog - weekly digest background task and /stats slash command."""
 from __future__ import annotations
 
 import asyncio
@@ -99,7 +99,7 @@ class StatsCog(commands.Cog):
         window_label: str,
     ) -> discord.Embed:
         embed = discord.Embed(
-            title=f"Weekly Stats Digest — {window_label}",
+            title=f"Weekly Stats Digest - {window_label}",
             color=discord.Color.yellow(),
             timestamp=datetime.now(timezone.utc),
         )
@@ -128,7 +128,7 @@ class StatsCog(commands.Cog):
     # NOTE: the standalone `/stats` slash command was retired during the
     # Discord bot modernization (see docs/plans/discord_bot_modernization.md §B.1).
     # It now lives as `/ai-assistant stats` with a time-range Select menu
-    # (built in phase B6 — see AiAssistantCog).
+    # (built in phase B6 - see AiAssistantCog).
     # The digest loop (and StatsStore-publishing helpers) remain here.
 
 

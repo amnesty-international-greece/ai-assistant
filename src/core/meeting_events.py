@@ -1,4 +1,4 @@
-"""Board-meeting events store — deterministic capture backbone for minutes.
+"""Board-meeting events store - deterministic capture backbone for minutes.
 
 Records discrete MEETING EVENTS captured during a board meeting to the
 ``meeting_events`` SQLite table (defined in :mod:`src.core.audit`).  This is the
@@ -37,6 +37,7 @@ VALID_EVENT_TYPES = {
     "presence",
     "off_topic",
     "note",
+    "decision",   # captured live from the Zoom sidebar: ref + text + outcome
 }
 
 

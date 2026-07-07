@@ -1,4 +1,4 @@
-"""Audit logging system — records every platform action to SQLite."""
+"""Audit logging system - records every platform action to SQLite."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ CREATE INDEX IF NOT EXISTS idx_director_briefings_meeting_ref
 -- cells.  Today only ``meeting_ref`` is mirrored (the value of D5).  The
 -- mirror is refreshed on every successful read AND on every successful write
 -- by ``GoogleClient.read_meeting_ref`` / ``reset_agenda_sheet``, so a Sheets
--- API outage doesn't block the workflow — we fall back to the last known
+-- API outage doesn't block the workflow - we fall back to the last known
 -- good value here.
 CREATE TABLE IF NOT EXISTS agenda_sheet_state (
     key TEXT PRIMARY KEY,
@@ -631,7 +631,7 @@ _MEETING_REF_CACHE_KEY = "meeting_ref"
 def set_meeting_ref_cache(ref: str) -> None:
     """Persist the most recently observed valid meeting_ref from D5.
 
-    Idempotent — repeated writes of the same value just bump ``updated_at``.
+    Idempotent - repeated writes of the same value just bump ``updated_at``.
     Best-effort by convention: callers should wrap in ``try/except`` and log
     rather than fail the workflow if the cache write fails (the Sheet read
     already succeeded; the cache is only a fallback for *future* reads).
@@ -676,7 +676,7 @@ def record_director_briefing(
     """Insert a new ``director_briefings`` row, return its ``id``.
 
     Called by the email-intake flow the moment a briefing attachment hits
-    disk — well before the archive workflow assigns a protocol number.
+    disk - well before the archive workflow assigns a protocol number.
     Later, ``update_director_briefing_archive_result`` fills in the
     SharePoint URL + protocol number once the upload completes.
     """
@@ -761,7 +761,7 @@ def upsert_rss_feed(
 ) -> None:
     """Insert a new feed or update an existing one's label/enabled flag.
 
-    last_seen_guid is NOT touched here — that's owned by
+    last_seen_guid is NOT touched here - that's owned by
     :func:`update_rss_feed_cursor` so we never accidentally lose dedup state
     while editing a feed's display name.
     """
@@ -778,7 +778,7 @@ def upsert_rss_feed(
 
 
 def delete_rss_feed(feed_url: str) -> None:
-    """Remove a feed and ALL its routes (cascade by hand — no FK constraint)."""
+    """Remove a feed and ALL its routes (cascade by hand - no FK constraint)."""
     conn = _get_connection()
     conn.execute("DELETE FROM rss_routes WHERE feed_url = ?", (feed_url,))
     conn.execute("DELETE FROM rss_feeds WHERE feed_url = ?", (feed_url,))

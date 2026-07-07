@@ -1,4 +1,4 @@
-"""/forum cog — forum routing & channel configuration (B6 full implementation).
+"""/forum cog - forum routing & channel configuration (B6 full implementation).
 
 Replaces:
   • /discord-admin add-channel         → button "Add" inside /forum channels
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 def _auto_tag(bot: commands.Bot, channel_id: str) -> str:
     """Derive the routing tag from the Discord channel name via greek_upper.
 
-    Falls back to '—' if the channel can't be resolved.
+    Falls back to '-' if the channel can't be resolved.
     """
     try:
         ch = bot.get_channel(int(channel_id))
@@ -45,7 +45,7 @@ def _auto_tag(bot: commands.Bot, channel_id: str) -> str:
             return greek_upper(ch.name)
     except Exception:
         pass
-    return "—"
+    return "-"
 
 
 # ── Add-channel select view ──────────────────────────────────────────────────
@@ -173,7 +173,7 @@ class ChannelTableView(discord.ui.View):
     async def _populate(self) -> None:
         """Populate per-row Remove / Details buttons (or fallback Select).
 
-        Operates on the **current page's** rows only — the prev/next buttons
+        Operates on the **current page's** rows only - the prev/next buttons
         re-render the view with a different page slice.
         With 2 buttons per row, the threshold for inline buttons is raised to 6:
         6 rows × 2 buttons = 12 components, safely under Discord's 25-component
@@ -183,7 +183,7 @@ class ChannelTableView(discord.ui.View):
         all_rows = await self.cog._channels_store.list(test_mode=test_mode)
         page_rows, total_pages = self._slice(all_rows)
 
-        # Pagination chrome — only shown when there's more than one page.
+        # Pagination chrome - only shown when there's more than one page.
         if total_pages > 1:
             prev_btn = discord.ui.Button(
                 label="‹ Προηγούμενη",
@@ -217,7 +217,7 @@ class ChannelTableView(discord.ui.View):
         all_rows = await self.cog._channels_store.list(test_mode=test_mode)
         page_rows, total_pages = self._slice(all_rows)
         embed = brand_embed(
-            title="Forum Channels — Δρομολόγηση Email",
+            title="Forum Channels - Δρομολόγηση Email",
             description=(
                 f"Συνολικά: **{len(all_rows)}** κανάλια "
                 f"({'TEST mode' if test_mode else 'production'})"
@@ -314,18 +314,18 @@ class _RowDetailsButton(discord.ui.Button):
             recent = 0
 
         embed = brand_embed(
-            title=f"Λεπτομέρειες — <#{self.row.channel_id}>",
+            title=f"Λεπτομέρειες - <#{self.row.channel_id}>",
             color=AMNESTY_YELLOW,
         )
         embed.add_field(name="Κανάλι", value=f"<#{self.row.channel_id}>", inline=False)
         embed.add_field(name="Routing tag", value=f"`{tag}`", inline=True)
-        embed.add_field(name="Test mode", value="✅" if self.row.test_mode else "—", inline=True)
+        embed.add_field(name="Test mode", value="✅" if self.row.test_mode else "-", inline=True)
         embed.add_field(name="Δρομολογήσεις (30d)", value=str(recent), inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class _RowSelect(discord.ui.Select):
-    """Fallback when there are >6 rows — pick row first, then action."""
+    """Fallback when there are >6 rows - pick row first, then action."""
 
     def __init__(self, cog: "ForumCog", rows: list) -> None:
         self.cog = cog
@@ -373,7 +373,7 @@ class _RowSelect(discord.ui.Select):
 
 
 class ForumCog(commands.Cog):
-    """`/forum` slash command group — admin-only."""
+    """`/forum` slash command group - admin-only."""
 
     class _ForumCommands(app_commands.Group):
         def __init__(self, cog: "ForumCog") -> None:
@@ -420,7 +420,7 @@ class ForumCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.bot.tree.add_command(self._commands)
-        logger.info("ForumCog loaded — /forum group registered")
+        logger.info("ForumCog loaded - /forum group registered")
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command("forum")

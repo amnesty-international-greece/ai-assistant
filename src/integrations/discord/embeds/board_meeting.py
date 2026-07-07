@@ -4,15 +4,15 @@ Every Discord message the board-meeting workflow emits is defined here as a
 pure builder.  Edit copy / fields / buttons here to restyle the live posts.
 
 Lifecycle order (matches the meeting flow):
-    1. board_thread_opened_embed   — private thread opens (scheduling email out)
-    2. scheduling_mirror_embed     — "fill availability + agenda" mirror
-    3. public_invitation_embed     — members-visible agenda thread (on schedule)
-    4. milestone_published_embed   — "invitation published" note in board thread
-    5. invitation_mirror_embed     — final invitation mirror in board thread
-    6. reminder_embed              — N-hours-before countdown
-    7. minutes_mirror_embed        — minutes draft/final mirror (board email)
-    8. minutes_shared_embed        — minutes Drive link (board.minutes.shared)
-    9. cancellation_embed          — meeting cancelled notice
+    1. board_thread_opened_embed   - private thread opens (scheduling email out)
+    2. scheduling_mirror_embed     - "fill availability + agenda" mirror
+    3. public_invitation_embed     - members-visible agenda thread (on schedule)
+    4. milestone_published_embed   - "invitation published" note in board thread
+    5. invitation_mirror_embed     - final invitation mirror in board thread
+    6. reminder_embed              - N-hours-before countdown
+    7. minutes_mirror_embed        - minutes draft/final mirror (board email)
+    8. minutes_shared_embed        - minutes Drive link (board.minutes.shared)
+    9. cancellation_embed          - meeting cancelled notice
 
 Convention: builders that may carry link buttons return
 ``(embed, view | None)``; plain notices return just ``embed``.
@@ -20,10 +20,15 @@ Convention: builders that may carry link buttons return
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import discord
 
 from src.integrations.discord.brand import AMNESTY_YELLOW, brand_embed, fmt_ts
+
+# Meeting times in the agenda sheet are Athens-local wall-clock times, so a naive
+# datetime means "Europe/Athens", not UTC.
+_ATHENS_TZ = ZoneInfo("Europe/Athens")
 
 
 def _prefix(test_mode: bool) -> str:
@@ -42,7 +47,7 @@ def _parse_dt(value: str | datetime | None) -> datetime | None:
         except ValueError:
             return None
     if isinstance(dt, datetime):
-        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+        return dt.replace(tzinfo=_ATHENS_TZ) if dt.tzinfo is None else dt
     return None
 
 
@@ -58,7 +63,7 @@ def board_thread_opened_embed(
 ) -> discord.Embed:
     """Opening post of the private board thread (fires with the scheduling email)."""
     embed = brand_embed(
-        title=f"{_prefix(test_mode)}Νέος κύκλος συνεδρίασης · {meeting_ref}",
+        title=f"{_prefix(test_mode)}Νέος κύκλος συνεδρίασης - {meeting_ref}",
         description=(
             "Ο κύκλος αυτής της συνεδρίασης ξεκίνησε.  Όλα τα emails του Δ.Σ. "
             "(προγραμματισμός, τελική πρόσκληση, πρακτικά) θα δημοσιεύονται "
@@ -83,7 +88,7 @@ def scheduling_mirror_embed(
     agenda_url: str = "",
     test_mode: bool = False,
 ) -> tuple[discord.Embed, discord.ui.View | None]:
-    """📅 Scheduling email mirror — availability poll + agenda sheet links."""
+    """📅 Scheduling email mirror - availability poll + agenda sheet links."""
     embed = brand_embed(
         title=f"{_prefix(test_mode)}📅 Προγραμματισμός Συνεδρίασης",
         description=(
@@ -128,7 +133,7 @@ def public_invitation_embed(
 ) -> tuple[discord.Embed, discord.ui.View | None]:
     """Members-visible invitation embed for the public agenda forum thread."""
     if starts_at.tzinfo is None:
-        starts_at = starts_at.replace(tzinfo=timezone.utc)
+        starts_at = starts_at.replace(tzinfo=_ATHENS_TZ)
     embed = brand_embed(
         title="Πρόσκληση Συνεδρίασης ΔΣ",
         color=AMNESTY_YELLOW,
@@ -179,11 +184,12 @@ def invitation_mirror_embed(
     meeting_ref: str,
     zoom_url: str = "",
     agenda_url: str = "",
+    invitation_pdf_url: str = "",
     meeting_datetime: str | datetime | None = None,
     agenda_summary: str = "",
     test_mode: bool = False,
 ) -> tuple[discord.Embed, discord.ui.View | None]:
-    """📩 Final invitation mirror — date/time, agenda, Zoom button."""
+    """📩 Final invitation mirror - date/time, agenda, Zoom link, invitation PDF."""
     starts_at = _parse_dt(meeting_datetime)
     embed = brand_embed(
         title=f"{_prefix(test_mode)}📩 Πρόσκληση Συνεδρίασης ΔΣ",
@@ -197,20 +203,16 @@ def invitation_mirror_embed(
     if agenda_summary:
         embed.add_field(name="Ημερήσια Διάταξη", value=agenda_summary[:1024], inline=False)
     if zoom_url:
-        embed.add_field(
-            name="Σύνδεσμος Zoom",
-            value="*(βλέπε email για προσωπικό σύνδεσμο)*",
-            inline=False,
-        )
+        embed.add_field(name="Σύνδεσμος Zoom", value=zoom_url, inline=False)
 
     view = discord.ui.View(timeout=None)
     has_buttons = False
-    if zoom_url:
+    if invitation_pdf_url:
         view.add_item(discord.ui.Button(
-            label="Zoom (γενικός σύνδεσμος)",
+            label="Πρόσκληση",
             style=discord.ButtonStyle.link,
-            url=zoom_url,
-            emoji="🎥",
+            url=invitation_pdf_url,
+            emoji="📄",
         ))
         has_buttons = True
     if agenda_url:
@@ -234,7 +236,7 @@ def reminder_embed(
 ) -> discord.Embed:
     """⏰ N-hours-before reminder with a live ``<t:R>`` countdown."""
     if starts_at.tzinfo is None:
-        starts_at = starts_at.replace(tzinfo=timezone.utc)
+        starts_at = starts_at.replace(tzinfo=_ATHENS_TZ)
     embed = brand_embed(
         title="Υπενθύμιση Συνεδρίασης",
         description=(
@@ -257,10 +259,10 @@ def minutes_mirror_embed(
     is_draft: bool = True,
     test_mode: bool = False,
 ) -> tuple[discord.Embed, discord.ui.View | None]:
-    """📄 Minutes email mirror — draft (for comment) or finalised."""
+    """📄 Minutes email mirror - draft (for comment) or finalised."""
     prefix = _prefix(test_mode)
     if is_draft:
-        title = f"{prefix}📄 Πρόχειρα Πρακτικά — προς σχολιασμό"
+        title = f"{prefix}📄 Πρόχειρα Πρακτικά - προς σχολιασμό"
         description = (
             f"Τα **πρόχειρα πρακτικά** της συνεδρίασης **{meeting_ref}** "
             "είναι διαθέσιμα για σχολιασμό.  Παρακαλώ αφήστε τα σχόλιά σας απευθείας στο έγγραφο."

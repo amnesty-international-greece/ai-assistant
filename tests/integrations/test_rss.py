@@ -1,10 +1,10 @@
 """Tests for the RSS fetch/parse module + the storage helpers it relies on.
 
 Covers (replacing MonitoRSS):
-  • parse_feed_bytes — RSS 2.0 with namespaces, missing dates, missing guid
+  • parse_feed_bytes - RSS 2.0 with namespaces, missing dates, missing guid
   • strip_html / extract_first_image
-  • filter_new_items — dedup behaviour with and without cursor
-  • item_matches_route — substring URL + regex title combinations
+  • filter_new_items - dedup behaviour with and without cursor
+  • item_matches_route - substring URL + regex title combinations
   • Storage round-trips: upsert / list / delete for feeds + routes
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ def fresh_db(tmp_path):
         yield
 
 
-# Sample RSS payload — minimum viable RSS 2.0 with the same shape amnesty.gr
+# Sample RSS payload - minimum viable RSS 2.0 with the same shape amnesty.gr
 # emits.  Includes namespaces, custom dc:creator, embedded image in description.
 # Defined as str + .encode() so the Greek characters survive (Python bytes
 # literals only accept ASCII).
@@ -88,7 +88,7 @@ def test_parse_feed_bytes_returns_normalized_items():
 def test_parse_feed_bytes_strips_html_for_description_plain():
     from src.integrations.rss import parse_feed_bytes
     items = parse_feed_bytes(_SAMPLE_RSS)
-    # First item description contained <p>, <img> — should be stripped clean
+    # First item description contained <p>, <img> - should be stripped clean
     plain = items[0].description_plain
     assert "<" not in plain and ">" not in plain
     assert "Body text here" in plain
@@ -111,7 +111,7 @@ def test_parse_feed_bytes_handles_missing_guid():
 
 def test_strip_html_decodes_entities():
     from src.integrations.rss import strip_html
-    assert strip_html("<p>foo &amp; bar &mdash; baz</p>") == "foo & bar — baz"
+    assert strip_html("<p>foo &amp; bar &mdash; baz</p>") == "foo & bar - baz"
 
 
 def test_extract_first_image_picks_first_src():
@@ -160,7 +160,7 @@ def test_filter_new_items_empty_when_cursor_matches_newest():
 def test_item_matches_route_url_substring():
     from src.integrations.rss import item_matches_route, parse_feed_bytes
     items = parse_feed_bytes(_SAMPLE_RSS)
-    # Article item — link contains /news/articles/
+    # Article item - link contains /news/articles/
     article = items[1]
     assert item_matches_route(article, url_pattern="/news/articles/", title_pattern=None)
     assert not item_matches_route(article, url_pattern="/news/press/", title_pattern=None)
@@ -175,7 +175,7 @@ def test_item_matches_route_title_regex_case_insensitive():
 
 
 def test_item_matches_route_wildcard_when_no_patterns():
-    """When BOTH filters are empty/None, the route is a wildcard — match everything."""
+    """When BOTH filters are empty/None, the route is a wildcard - match everything."""
     from src.integrations.rss import item_matches_route, parse_feed_bytes
     items = parse_feed_bytes(_SAMPLE_RSS)
     for item in items:
@@ -194,7 +194,7 @@ def test_item_matches_route_url_and_title_are_AND():
 
 
 def test_item_matches_route_bad_regex_fails_closed():
-    """Malformed title regex doesn't crash — just no match."""
+    """Malformed title regex doesn't crash - just no match."""
     from src.integrations.rss import item_matches_route, parse_feed_bytes
     items = parse_feed_bytes(_SAMPLE_RSS)
     assert not item_matches_route(items[0], url_pattern=None, title_pattern="(unclosed")

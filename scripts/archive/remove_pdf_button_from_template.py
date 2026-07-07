@@ -27,7 +27,7 @@ async def main() -> None:
         resp.raise_for_status()
     html: str = resp.json().get("htmlContent", "")
     if _PDF_BUTTON_BLOCK not in html:
-        print("PDF button not found — nothing to remove.")
+        print("PDF button not found - nothing to remove.")
         return
     html = html.replace(_PDF_BUTTON_BLOCK, "", 1)
     await BrevoClient().update_template(TEMPLATE_ID, html_content=html, workflow="template_patch")

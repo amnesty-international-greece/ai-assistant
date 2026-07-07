@@ -3,16 +3,16 @@
 This package is the design surface: each function here is a **pure builder**
 that takes plain data and returns a ready-to-send ``discord.Embed`` (and, when
 the post has buttons, a ``discord.ui.View``).  No I/O, no bus, no Discord
-fetching — just the visual/structural definition of each message.
+fetching - just the visual/structural definition of each message.
 
 Hand this whole folder to a designer: editing copy, colours, field order,
 emoji, and button labels here changes the live posts without touching any
 workflow or handler logic.
 
 Domains:
-    board_meeting  — the ΔΣ meeting lifecycle (thread open → scheduling →
+    board_meeting  - the ΔΣ meeting lifecycle (thread open → scheduling →
                      invitation → reminder → minutes → cancellation).
-    egkyklios      — member-facing circular announcements.
+    egkyklios      - member-facing circular announcements.
 
 Each builder returns one of:
     * ``discord.Embed``                              (no interactive buttons)

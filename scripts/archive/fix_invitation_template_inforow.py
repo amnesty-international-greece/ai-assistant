@@ -69,7 +69,7 @@ async def main() -> None:
     if not html:
         raise RuntimeError(f"Template {TEMPLATE_ID} returned empty htmlContent")
 
-    # 2. Apply replacements — fail loudly if any fragment is missing so we
+    # 2. Apply replacements - fail loudly if any fragment is missing so we
     #    don't silently push an unchanged template.
     applied = 0
     for old, new in REPLACEMENTS:
@@ -80,7 +80,7 @@ async def main() -> None:
         applied += 1
 
     if applied == 0:
-        raise RuntimeError("No replacements applied — template structure has drifted.")
+        raise RuntimeError("No replacements applied - template structure has drifted.")
     print(f"Applied {applied}/{len(REPLACEMENTS)} replacements.")
 
     # 3. Push back

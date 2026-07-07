@@ -1,4 +1,4 @@
-"""Email-route intake — process inbox messages into archive workflows.
+"""Email-route intake - process inbox messages into archive workflows.
 
 Single entry point :func:`process_inbox_message` is shared by both:
 
@@ -16,7 +16,7 @@ Decision flow per message::
     7. mark email read + mark seen as 'archived' (with workflow_id)
 
 The Greek confirmation template lives at
-``assets/email_templates/archive_confirmation.html`` — read on every call
+``assets/email_templates/archive_confirmation.html`` - read on every call
 via :func:`src.core.email_templates.render_email`.
 """
 
@@ -50,7 +50,7 @@ _PDF_CT = "application/pdf"
 _PDF_EXT_RE = re.compile(r"\.pdf$", re.IGNORECASE)
 _INBOX_DIR = Path("data") / "inbox"
 
-# The bot's own outbound identity — emails FROM this address that carry the
+# The bot's own outbound identity - emails FROM this address that carry the
 # Discord bridge marker are our own echoes coming back; skip them.
 _BOT_IDENTITY = "members@amnesty.org.gr"
 # Marker prepended by the Discord→email agent so we can detect our own echoes.
@@ -61,7 +61,7 @@ _DISCORD_BRIDGE_MARKER = " via Discord]"
 _DISCORD_BODY_CAP = 1800
 
 # Phase 5: extensions we can auto-convert to PDF at intake.  Mirrors the
-# allow-list in src.utils.pdf_convert — kept in sync because the email route
+# allow-list in src.utils.pdf_convert - kept in sync because the email route
 # needs to pick the right attachment BEFORE convert_to_pdf gets a chance.
 _CONVERTIBLE_EXT_RE = re.compile(
     r"\.(pdf|docx?|odt|rtf|xlsx?|ods|csv|pptx?|odp|jpe?g|png|bmp|tiff?|gif|heif|heic)$",
@@ -94,7 +94,7 @@ def _find_pdf_attachment(attachments: list[dict[str, Any]]) -> dict[str, Any] | 
 
     Accepts PDFs directly, plus any non-PDF type the converter can handle
     (DOCX, ODT, JPG, PNG, HEIC, ...).  Returns None if 0 or 2+ candidates
-    are present — the workflow refuses to guess when multiple files came in
+    are present - the workflow refuses to guess when multiple files came in
     the same email, since we can only archive one per πρωτόκολλο entry.
     """
     candidates = [
@@ -122,7 +122,7 @@ async def _send_failure_reply(
             title="Δεν αρχειοθετήθηκε<br/>το έγγραφό σας.",
             header_ref="ΣΦΑΛΜΑ ΑΡΧΕΙΟΘΕΤΗΣΗΣ",
             footer_note=(
-                "Διεθνής Αμνηστία — Ελληνικό Τμήμα · "
+                "Διεθνής Αμνηστία - Ελληνικό Τμήμα - "
                 "Αυτή είναι αυτόματη απάντηση από το AI Assistant."
             ),
             subject=message.get("subject", "(no subject)"),
@@ -135,15 +135,15 @@ async def _send_failure_reply(
             to=sender_email,
             workflow="email_intake",
         )
-    except Exception as e:  # pragma: no cover — best-effort
+    except Exception as e:  # pragma: no cover - best-effort
         logger.warning("Failed to send failure reply: %s", e)
 
 
 def _extract_internet_message_headers(message: dict[str, Any]) -> dict[str, str]:
     """Return a flat dict of RFC 5322 headers from a Graph message envelope.
 
-    Graph exposes these as ``message["internetMessageHeaders"]`` — a list of
-    ``{"name": "...", "value": "..."}`` objects — when the field is selected.
+    Graph exposes these as ``message["internetMessageHeaders"]`` - a list of
+    ``{"name": "...", "value": "..."}`` objects - when the field is selected.
     If the field is absent (not selected, or message predates Graph change),
     fall back to an empty dict.
     """
@@ -165,7 +165,7 @@ def match_board_meeting_anchor(
     is found.
     """
     # Collect all candidate message-IDs to check: In-Reply-To first, then
-    # every token in References (preserving order — In-Reply-To is the direct
+    # every token in References (preserving order - In-Reply-To is the direct
     # parent and is most likely to match).
     candidates: list[str] = []
 
@@ -269,7 +269,7 @@ async def _mirror_board_reply(
     _on_board_email_sent cog handler posts it to the Discord thread.
 
     The body_html field carries the pre-rendered Discord post content
-    (plain text, not actual HTML) — the cog's _html_to_plain call will
+    (plain text, not actual HTML) - the cog's _html_to_plain call will
     be a no-op on already-plain content.
     """
     from src.core.event_bus import bus
@@ -337,7 +337,7 @@ async def process_inbox_message(
             :meth:`M365InboxClient.get_message`.  Must include
             ``id``, ``internetMessageId``, ``from``, ``subject``,
             ``hasAttachments``.
-        source: ``"webhook"`` or ``"safety_poll"`` — included in audit
+        source: ``"webhook"`` or ``"safety_poll"`` - included in audit
             log entries for traceability.
 
     Returns:
@@ -377,7 +377,7 @@ async def process_inbox_message(
     headers = _extract_internet_message_headers(message)
     meeting_id = match_board_meeting_anchor(headers)
     if meeting_id is not None:
-        # Loop prevention — two cases:
+        # Loop prevention - two cases:
         # 1. The email came FROM the bot's own address AND carries the
         #    Discord-bridge marker in the body: this is our own outbound
         #    Discord→email echo bouncing back via the distribution list.
@@ -391,7 +391,7 @@ async def process_inbox_message(
             or _DISCORD_BRIDGE_MARKER in body_content
         )
         if bot_from and has_bridge_marker:
-            # Our own echo — mark seen and drop silently.
+            # Our own echo - mark seen and drop silently.
             mark_email_seen(imid, outcome="loop_skipped",
                             notes=f"discord_bridge_echo|{meeting_id}")
             log_action(
@@ -414,7 +414,7 @@ async def process_inbox_message(
         #    addresses board@) → every board member already sees the email
         #    in their inbox.  We treat it as a normal board reply: mirror to
         #    Discord verbatim, plus archive any briefing attachment in the
-        #    background (no bot announcement — would be duplicate info).
+        #    background (no bot announcement - would be duplicate info).
         #
         # 2. board@ absent (Director replied just to members@) → the email
         #    is private to the bot.  We archive any briefing and post a
@@ -431,7 +431,7 @@ async def process_inbox_message(
                 from src.workflows.director_briefing_intake import (
                     process_director_briefing_email,
                 )
-                # send_announcement only when board@ is NOT on the email —
+                # send_announcement only when board@ is NOT on the email -
                 # otherwise the announcement would duplicate what the board
                 # is about to see via the regular mirror below.
                 await process_director_briefing_email(
@@ -447,7 +447,7 @@ async def process_inbox_message(
                 )
 
             if board_visible:
-                # Sub-path 1 — board sees the email directly; mirror as usual.
+                # Sub-path 1 - board sees the email directly; mirror as usual.
                 return await _mirror_board_reply(
                     message=message,
                     meeting_id=meeting_id,
@@ -457,7 +457,7 @@ async def process_inbox_message(
                     subject=subject,
                 )
 
-            # Sub-path 2 — private to members@; no Discord mirror.  The
+            # Sub-path 2 - private to members@; no Discord mirror.  The
             # announcement (if any briefing was found) is already published.
             mark_email_seen(
                 imid, outcome="director_private_handled", notes=meeting_id,
@@ -493,7 +493,7 @@ async def process_inbox_message(
     if not subject_matches(subject):
         mark_email_seen(imid, outcome="rejected_subject",
                         notes=f"subject={subject!r}")
-        # Don't bother replying — sender allow-list passed, but they didn't
+        # Don't bother replying - sender allow-list passed, but they didn't
         # ask for archiving.  Common case: regular board correspondence.
         return {"outcome": "rejected_subject"}
 
@@ -517,7 +517,7 @@ async def process_inbox_message(
             inbox, message,
             reason=(
                 "Δεν εντοπίστηκε αρχείο που μπορούμε να αρχειοθετήσουμε (ή στείλατε "
-                "πολλά — στείλτε ένα κάθε φορά).  Δεκτά: PDF, DOCX, ODT, RTF, "
+                "πολλά - στείλτε ένα κάθε φορά).  Δεκτά: PDF, DOCX, ODT, RTF, "
                 "εικόνες (JPG/PNG/HEIC)."
             ),
             sender_email=sender_email,
@@ -528,7 +528,7 @@ async def process_inbox_message(
     _INBOX_DIR.mkdir(parents=True, exist_ok=True)
     pdf_name = pdf_meta.get("name") or "attachment.pdf"
     # ``tempfile.TemporaryDirectory`` handles the create + cleanup contract
-    # natively — exiting the ``with`` block (success, failure, or exception)
+    # natively - exiting the ``with`` block (success, failure, or exception)
     # always rmtrees the directory.  Idiomatic Python; replaces the manual
     # try/finally + shutil.rmtree pattern used before.  Per-message tempdir
     # so two concurrent intakes with the same filename can't collide.
@@ -569,7 +569,7 @@ async def _process_after_download(
     this in a clean ``try / finally`` that guarantees tempdir cleanup.
     """
     # Test-sender check: emails from settings.testing.test_email are routed
-    # through the archive workflow in TEST MODE — no SharePoint upload, no
+    # through the archive workflow in TEST MODE - no SharePoint upload, no
     # πρωτόκολλο write, and the workflow rolls back on completion.  This
     # lets the developer drive a real end-to-end run from a personal inbox
     # without polluting production state.
@@ -583,7 +583,7 @@ async def _process_after_download(
             details={"reason": "sender matches settings.testing.test_email"},
         )
         logger.info(
-            "Email from %s matches testing.test_email — forcing TEST MODE",
+            "Email from %s matches testing.test_email - forcing TEST MODE",
             sender_email,
         )
 
@@ -646,7 +646,7 @@ async def _process_after_download(
                     to=sender_email,
                     workflow="email_intake",
                 )
-            except Exception as e:  # pragma: no cover — best-effort
+            except Exception as e:  # pragma: no cover - best-effort
                 logger.warning("Failed to send reservation-pending reply: %s", e)
             log_action(
                 workflow="email_intake",
@@ -665,7 +665,7 @@ async def _process_after_download(
                 "pending_reservation_confirmation": pending_confirm,
             }
 
-        # Workflow failed cleanly — record + reply
+        # Workflow failed cleanly - record + reply
         mark_email_seen(imid, workflow_id=wf.workflow_id, outcome="failed",
                         notes=result.get("error", "workflow did not complete"))
         await _send_failure_reply(
@@ -675,11 +675,11 @@ async def _process_after_download(
         )
         return {"outcome": "failed", "workflow_id": wf.workflow_id}
 
-    # Success — send the confirmation reply
+    # Success - send the confirmation reply
     ctx = wf.context
     llm_result = ctx.get("llm_result") or {}
     test_banner = (
-        '<div class="test-banner">TEST MODE — δεν αρχειοθετήθηκε πραγματικά. '
+        '<div class="test-banner">TEST MODE - δεν αρχειοθετήθηκε πραγματικά. '
         'Καμία εγγραφή δεν προστέθηκε στο πρωτόκολλο και κανένα αρχείο '
         'δεν ανέβηκε στο SharePoint.</div>'
         if test_mode else ""
@@ -702,11 +702,11 @@ async def _process_after_download(
             test_mode_banner=test_banner,
             proto=proto,
             doc_title=llm_result.get("title", "?"),
-            labels=", ".join(llm_result.get("labels", [])) or "—",
-            kuria_simeia=llm_result.get("key_points", "") or "—",
-            folder=ctx.get("remote_folder", "—"),
+            labels=", ".join(llm_result.get("labels", [])) or "-",
+            kuria_simeia=llm_result.get("key_points", "") or "-",
+            folder=ctx.get("remote_folder", "-"),
             workflow_id=wf.workflow_id,
-            revision_until=ctx.get("revision_open_until", "—"),
+            revision_until=ctx.get("revision_open_until", "-"),
             share_link=ctx.get("share_link") or "#",
         )
         await mail.send_reply(
@@ -716,7 +716,7 @@ async def _process_after_download(
             to=sender_email,
             workflow="email_intake",
         )
-    except Exception as e:  # pragma: no cover — best-effort
+    except Exception as e:  # pragma: no cover - best-effort
         logger.warning("Failed to send confirmation reply for %s: %s", imid, e)
 
     try:
@@ -725,7 +725,7 @@ async def _process_after_download(
         logger.warning("Failed to mark message as read: %s", e)
 
     # Test-mode runs: roll back so the reserved protocol number is released and
-    # the workflow_state row is marked cancelled — mirrors what the CLI
+    # the workflow_state row is marked cancelled - mirrors what the CLI
     # `archive submit --test` flow does when the user presses Enter at the
     # cleanup prompt.
     if test_mode:
@@ -738,7 +738,7 @@ async def _process_after_download(
                 target=sender_email,
                 details={"workflow_id": wf.workflow_id},
             )
-        except Exception as e:  # pragma: no cover — best-effort
+        except Exception as e:  # pragma: no cover - best-effort
             logger.warning("Test-mode rollback failed for %s: %s", wf.workflow_id, e)
 
     mark_email_seen(
@@ -785,7 +785,7 @@ async def run_safety_poll() -> dict[str, Any]:
         try:
             result = await process_inbox_message(msg, source="safety_poll")
             counts[result["outcome"]] = counts.get(result["outcome"], 0) + 1
-        except Exception as e:  # pragma: no cover — defensive
+        except Exception as e:  # pragma: no cover - defensive
             logger.exception("Safety poll error processing message: %s", e)
             counts["error"] = counts.get("error", 0) + 1
 

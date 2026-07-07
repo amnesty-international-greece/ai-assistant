@@ -1,4 +1,4 @@
-"""Brevo (formerly Sendinblue) integration — newsletter distribution."""
+"""Brevo (formerly Sendinblue) integration - newsletter distribution."""
 
 from __future__ import annotations
 
@@ -219,7 +219,7 @@ class BrevoClient:
             if not response.is_success:
                 logger.error("Brevo API key verification failed (%s): %s", response.status_code, response.text)
             response.raise_for_status()
-        logger.info("Brevo API key verified — account active")
+        logger.info("Brevo API key verified - account active")
         return response.json()
 
     async def send_campaign_now(

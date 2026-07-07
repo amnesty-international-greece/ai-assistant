@@ -1,4 +1,4 @@
-"""Constants for the Discord integration — every magic number lives here."""
+"""Constants for the Discord integration - every magic number lives here."""
 from __future__ import annotations
 
 # ── Discord platform limits ──────────────────────────────────────────────────
@@ -6,7 +6,7 @@ DISCORD_MESSAGE_MAX_CHARS = 2000
 DISCORD_EMBED_DESCRIPTION_MAX = 4096
 DISCORD_THREAD_NAME_MAX = 100
 
-# Safe send limit used by split_message — leaves 100-char headroom for suffixes
+# Safe send limit used by split_message - leaves 100-char headroom for suffixes
 # ("..." continuation marker) appended by the message splitter.
 DISCORD_MESSAGE_SAFE_CHARS = 1900
 

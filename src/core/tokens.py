@@ -1,11 +1,11 @@
-"""Unified token store — persists OAuth tokens in data/tokens.json.
+"""Unified token store - persists OAuth tokens in data/tokens.json.
 
 Current state (2026-05-23)
 --------------------------
 Only Microsoft uses this store; Google's OAuth token still lives in its
 own file ``data/google_token.json`` (see ``src/integrations/google_drive.py``).
 The Google migration was scoped but not executed because Google's helper
-is already small, working, and gitignored — there's no value in churning
+is already small, working, and gitignored - there's no value in churning
 auth code for a single-file cleanup.
 
 If/when Google moves here, the file shape becomes:
@@ -57,7 +57,7 @@ def get_section(service: str) -> dict[str, Any]:
 def set_section(service: str, data: dict[str, Any]) -> None:
     """Write *data* into tokens.json under key *service*.
 
-    Uses write-to-temp-then-rename for atomicity — a reader always sees a
+    Uses write-to-temp-then-rename for atomicity - a reader always sees a
     complete, valid JSON file (never a partial write).
 
     On Windows, os.replace can raise PermissionError if another thread is

@@ -35,5 +35,5 @@ GOOGLE_PROJECT_ID=ai-in-ai-platform
 ```
 
 ### 6. First Authentication
-Run the platform — it will open a browser window for OAuth consent on first use.
+Run the platform - it will open a browser window for OAuth consent on first use.
 The token will be saved to `data/google_token.json` for subsequent use.

@@ -1,6 +1,6 @@
 """Typed event payloads for the platform event bus.
 
-Constants at top — use these strings everywhere instead of bare literals so
+Constants at top - use these strings everywhere instead of bare literals so
 typos surface as ImportError, not as silently-ignored events.
 """
 from __future__ import annotations
@@ -60,7 +60,8 @@ class BoardEmailSentPayload:
     poll_url: str = ""        # scheduling: availability-poll link
     agenda_url: str = ""      # scheduling + invitation: Google Sheet URL
     zoom_url: str = ""        # invitation: general Zoom meeting URL
-    meeting_datetime: str = ""  # invitation: ISO "YYYY-MM-DDTHH:MM" (UTC)
+    invitation_pdf_url: str = ""  # invitation: OneDrive/SharePoint share link to the invitation PDF
+    meeting_datetime: str = ""  # invitation: ISO "YYYY-MM-DDTHH:MM" (Europe/Athens local)
     agenda_summary: str = ""  # invitation: newline-separated agenda items
     doc_url: str = ""         # minutes_draft / minutes_final: Google Doc link
 

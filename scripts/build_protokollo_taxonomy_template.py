@@ -1,9 +1,9 @@
-"""Generate `assets/protokollo_taxonomy_template.xlsx` — a clean reference
+"""Generate `assets/protokollo_taxonomy_template.xlsx` - a clean reference
 copy of the Ετικέτες + Κατηγορίες tabs that the archive workflow reads at
 runtime from the live ``[Πρωτόκολλο] Αρχείο ΔΣ.xlsx`` on SharePoint.
 
 Run this once (or whenever the taxonomy changes) to keep a versioned local
-template alongside the codebase.  It does NOT touch the live xlsx — copy
+template alongside the codebase.  It does NOT touch the live xlsx - copy
 the contents into SharePoint manually.
 
 Usage:
@@ -20,7 +20,7 @@ from openpyxl.utils import get_column_letter
 
 # ── Tag taxonomy ─────────────────────────────────────────────────────────────
 # 16 tags.  Order = expected display order (functional groups, not alphabetical).
-# Descriptions are the per-tag usage rules — what the LLM reads when deciding
+# Descriptions are the per-tag usage rules - what the LLM reads when deciding
 # which tags to apply to a new document.  Keep them prescriptive and short.
 TAGS: list[tuple[str, str]] = [
     ("Διοικητικά",
@@ -30,11 +30,11 @@ TAGS: list[tuple[str, str]] = [
 
     ("Πρακτικά",
      "Πρακτικά συνεδριάσεων ΔΣ ή ΓΣ. Συνδυάζεται πάντα με Διοικητικά. Για επίσημα "
-     "πρακτικά που έχουν εγκριθεί από το όργανο — όχι για πρόχειρα / draft."),
+     "πρακτικά που έχουν εγκριθεί από το όργανο - όχι για πρόχειρα / draft."),
 
     ("Προσκλήσεις",
      "Πρόσκληση σε συνεδρίαση ΔΣ ή Γενικής Συνέλευσης. Συνδυάζεται με Διοικητικά. "
-     "Δεν περιλαμβάνει εισηγητικά κείμενα — γι' αυτά χρησιμοποίησε Εισηγήσεις."),
+     "Δεν περιλαμβάνει εισηγητικά κείμενα - γι' αυτά χρησιμοποίησε Εισηγήσεις."),
 
     ("Εισηγήσεις",
      "Έγγραφα που εισηγούνται/προτείνουν θέματα προς συζήτηση ή ψήφιση στο ΔΣ. "
@@ -73,7 +73,7 @@ TAGS: list[tuple[str, str]] = [
 
     ("Πολιτικές",
      "Πολιτικές θέσεις και κείμενα τοποθέτησης σε ζητήματα ανθρωπίνων δικαιωμάτων. "
-     "Δεν είναι κανονισμός — αυτό αφορά εσωτερική λειτουργία. Πολιτικές = τι λέει "
+     "Δεν είναι κανονισμός - αυτό αφορά εσωτερική λειτουργία. Πολιτικές = τι λέει "
      "η Διεθνής Αμνηστία προς τα έξω."),
 
     ("Γραφείο",
@@ -83,7 +83,7 @@ TAGS: list[tuple[str, str]] = [
 
     ("Μέλη",
      "Λίστες μελών, φόρουμ μελών, μηχανισμοί λήψης αναφορών μελών, αλληλογραφία "
-     "μεταξύ μελών και ΔΣ. Όχι για υποψηφιότητες — αυτές έχουν δική τους ετικέτα."),
+     "μεταξύ μελών και ΔΣ. Όχι για υποψηφιότητες - αυτές έχουν δική τους ετικέτα."),
 
     ("Διεθνές",
      "Έγγραφα του Διεθνούς Κινήματος (International Movement / Secretariat): "
@@ -98,12 +98,12 @@ TAGS: list[tuple[str, str]] = [
 
     ("Εκπαίδευση",
      "Εκπαιδευτικό υλικό, HRE (Human Rights Education), επιμορφωτικά σεμινάρια. "
-     "Διατηρείται για μελλοντική χρήση — μέχρι σήμερα δεν έχει χρησιμοποιηθεί."),
+     "Διατηρείται για μελλοντική χρήση - μέχρι σήμερα δεν έχει χρησιμοποιηθεί."),
 ]
 
 
 # ── Canonical categories ─────────────────────────────────────────────────────
-# Finalised SecGen list — 27 patterns grouped by lifecycle (ΔΣ → ΓΣ →
+# Finalised SecGen list - 27 patterns grouped by lifecycle (ΔΣ → ΓΣ →
 # επιτροπές → εγκύκλιοι → αναφορές → οικονομικά → στρατηγικός σχεδιασμός
 # → υποψηφιότητες → κανονιστικά → διεθνές).
 #
@@ -226,7 +226,7 @@ def build_workbook(dest: Path) -> None:
     ws.freeze_panes = "A2"
 
     # ─ Κατηγορίες ────────────────────────────────────────────────────────
-    # Two columns only — title pattern + default tags — matching the live
+    # Two columns only - title pattern + default tags - matching the live
     # πρωτόκολλο xlsx convention.  Κύρια Σημεία conventions live in code
     # (workflows pre-fill them) rather than in this reference sheet.
     ws2 = wb.create_sheet("Κατηγορίες")
@@ -245,8 +245,8 @@ def build_workbook(dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     wb.save(dest)
     print(f"[OK] Wrote {dest}")
-    print(f"  • Tab 'Ετικέτες'   — {len(TAGS)} tags")
-    print(f"  • Tab 'Κατηγορίες' — {len(CATEGORIES)} canonical patterns")
+    print(f"  • Tab 'Ετικέτες'   - {len(TAGS)} tags")
+    print(f"  • Tab 'Κατηγορίες' - {len(CATEGORIES)} canonical patterns")
 
 
 if __name__ == "__main__":

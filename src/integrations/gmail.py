@@ -1,4 +1,4 @@
-"""Gmail integration — send emails via Gmail API."""
+"""Gmail integration - send emails via Gmail API."""
 
 from __future__ import annotations
 

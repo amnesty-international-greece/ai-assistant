@@ -251,7 +251,7 @@ def manifest_to_segments(
             pieces = transcriber.transcribe(
                 local_path, language=language, initial_prompt=prompt
             )
-        except Exception as exc:  # noqa: BLE001 — isolate one bad file
+        except Exception as exc:  # noqa: BLE001 - isolate one bad file
             logger.warning(
                 "Transcriber failed on %r: %s", local_path, exc
             )

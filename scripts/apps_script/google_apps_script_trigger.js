@@ -1,5 +1,5 @@
 /**
- * AI Assistant Platform — Google Sheets Auto-Trigger
+ * AI Assistant Platform - Google Sheets Auto-Trigger
  * =================================================
  *
  * Trigger model
@@ -15,7 +15,7 @@
  * to tell the workflow to skip the manual scheduling-email + approval gate
  * and jump straight to read_agenda.  Everything else (date, time, type,
  * location, agenda items, durations) is read directly from this sheet by
- * the workflow's read_agenda step — no point duplicating that work here.
+ * the workflow's read_agenda step - no point duplicating that work here.
  *
  * Idempotency
  * -----------
@@ -30,21 +30,21 @@
  * description "ai-assistant:cycle-locked". This sits ON TOP of the user's
  * manually-configured per-range protections (it does not modify or replace
  * them). The Python reset removes ONLY the protection whose description
- * matches "ai-assistant:cycle-locked" — the user's protections stay intact.
+ * matches "ai-assistant:cycle-locked" - the user's protections stay intact.
  *
  * Installation
  * ------------
  *   1. Google Sheet → Extensions → Apps Script → replace Code.gs with this file.
  *   2. Save (disk icon).
  *   3. Edit WEBHOOK_URL below to your public AI Assistant endpoint.
- *   4. Run setup() once from the editor — it installs the onEdit trigger.
+ *   4. Run setup() once from the editor - it installs the onEdit trigger.
  *
  * Debug helpers
  * -------------
  *   - testTrigger()    : reads D5 from this sheet and fires a test_mode
  *                        payload at the webhook (skips the requirement
  *                        of physically checking the boxes).
- *   - resetSheetState(): manual recovery — removes the script-owned protection.
+ *   - resetSheetState(): manual recovery - removes the script-owned protection.
  *                        Python normally does this via reset_agenda_sheet()
  *                        after minutes finalize.
  */
@@ -77,7 +77,7 @@ function setup() {
 
 
 /**
- * onEdit handler — fires on EVERY cell edit.
+ * onEdit handler - fires on EVERY cell edit.
  *
  * Fast-path: if the edited cell is not in D16:D18 we exit immediately
  * (a few microseconds). Real work only happens when an approval checkbox
@@ -94,20 +94,20 @@ function onSheetEdit(e) {
   if (col !== 4) return;
   if (row < 16 || row > 18) return;
 
-  // Read all three approval cells — proceed only if all are TRUE
+  // Read all three approval cells - proceed only if all are TRUE
   var values = sheet.getRange(APPROVAL_RANGE).getValues();
   var allChecked = values.every(function(r) { return r[0] === true; });
   if (!allChecked) return;
 
-  // Read the meeting_ref from D5 — used only for idempotency on the Python side
+  // Read the meeting_ref from D5 - used only for idempotency on the Python side
   var meetingRef = String(sheet.getRange(MEETING_REF_CELL).getValue()).trim();
   if (!meetingRef) {
-    Logger.log("Approval boxes checked but " + MEETING_REF_CELL + " is empty — aborting.");
+    Logger.log("Approval boxes checked but " + MEETING_REF_CELL + " is empty - aborting.");
     return;
   }
 
   // Fire the webhook with a MINIMAL payload.  The workflow's read_agenda
-  // step will pull date/time/type/location/agenda items from THIS sheet —
+  // step will pull date/time/type/location/agenda items from THIS sheet -
   // no point sending them via the payload only to be overwritten.
   try {
     var payload = {
@@ -146,7 +146,7 @@ function _postPayload(payload) {
 /**
  * Add the script-owned "cycle locked" protection.
  *
- * IMPORTANT: this is identified by its DESCRIPTION (not name, not range —
+ * IMPORTANT: this is identified by its DESCRIPTION (not name, not range -
  * the user has their own per-range protections we must not touch). We only
  * add a new protection if one with our description does not already exist,
  * and we only ever remove a protection whose description matches.
@@ -156,12 +156,12 @@ function _addCycleLock(sheet) {
   for (var i = 0; i < existing.length; i++) {
     if (existing[i].getDescription() === LOCK_DESCRIPTION) return;  // already locked
   }
-  // Cover A1:K30 — comfortably wider than any interactive cell
+  // Cover A1:K30 - comfortably wider than any interactive cell
   // (D5..D18 metadata + H7:K agenda items).
   var range = sheet.getRange("A1:K30");
   var protection = range.protect().setDescription(LOCK_DESCRIPTION);
 
-  // Empty editor list — everyone is excluded for the locked window.
+  // Empty editor list - everyone is excluded for the locked window.
   // (We must keep the script owner as an editor; Apps Script enforces
   // at least one editor per protection.)
   var me = Session.getEffectiveUser();
@@ -174,7 +174,7 @@ function _addCycleLock(sheet) {
 
 
 /**
- * Manual debug — mirrors onSheetEdit's payload but reads from the CURRENT
+ * Manual debug - mirrors onSheetEdit's payload but reads from the CURRENT
  * sheet state, so the test exercises the same data path as a real cycle.
  * test_mode is hardcoded TRUE so any side effects (Zoom, emails) stay
  * redirected to settings.testing.test_email on the Python side.
@@ -183,7 +183,7 @@ function testTrigger() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var meetingRef = String(sheet.getRange(MEETING_REF_CELL).getValue()).trim();
   if (!meetingRef) {
-    Logger.log("ERROR: " + MEETING_REF_CELL + " is empty — cannot build test payload.");
+    Logger.log("ERROR: " + MEETING_REF_CELL + " is empty - cannot build test payload.");
     return;
   }
   var payload = {
@@ -198,7 +198,7 @@ function testTrigger() {
 
 
 /**
- * Manual recovery — remove our script-owned protection.
+ * Manual recovery - remove our script-owned protection.
  * Python normally does this via reset_agenda_sheet() after minutes finalize;
  * this function is only for manual recovery from a stuck state.
  */

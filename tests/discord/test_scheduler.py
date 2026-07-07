@@ -1,4 +1,4 @@
-"""Tests for src.integrations.discord.scheduler — PendingActionsStore and the worker."""
+"""Tests for src.integrations.discord.scheduler - PendingActionsStore and the worker."""
 from __future__ import annotations
 
 import asyncio

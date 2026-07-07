@@ -127,13 +127,13 @@ def _parse_vtt(path: Path) -> str:
                 if text:
                     current_parts.append(text)
             else:
-                # New speaker — flush previous
+                # New speaker - flush previous
                 if current_speaker is not None:
                     collapsed.append(f"{current_speaker}: {' '.join(current_parts)}")
                 current_speaker = speaker
                 current_parts = [text] if text else []
         else:
-            # Continuation line without a speaker label — append to current
+            # Continuation line without a speaker label - append to current
             if current_speaker is not None:
                 current_parts.append(line)
             else:

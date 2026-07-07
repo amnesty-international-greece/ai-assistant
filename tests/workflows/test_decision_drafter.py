@@ -129,7 +129,7 @@ def test_propose_decision_end_to_end_and_render():
     assert any(a["article"] == 15 for a in proposal["candidate_articles"])
 
     rendered = render_decision(proposal)
-    # Header, numbered considerations, ΑΠΟΦΑΣΗ line + ref, decision text — in order.
+    # Header, numbered considerations, ΑΠΟΦΑΣΗ line + ref, decision text - in order.
     assert "Το Διοικητικό Συμβούλιο, έχοντας υπόψη:" in rendered
     assert "1. Τα πρακτικά της συνεδρίασης υπ’ αριθμόν ΔΣ11-2025." in rendered
     assert "2. Το άρθρο 15 του Καταστατικού." in rendered

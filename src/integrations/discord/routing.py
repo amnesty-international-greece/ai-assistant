@@ -1,4 +1,4 @@
-"""MessageRouter — maps a ClassificationResult to a Discord channel + thread."""
+"""MessageRouter - maps a ClassificationResult to a Discord channel + thread."""
 from __future__ import annotations
 
 import logging

@@ -5,7 +5,7 @@ ConfidentialClientApplication + acquire_token_silent + persist) was duplicated
 across :class:`OneDriveClient`, :class:`M365MailClient`,
 :class:`M365InboxClient`, and :class:`GraphSubscriptionsClient`.  Any change
 to the auth flow had to be made in all four files (and was a frequent source
-of drift — slightly different error messages, slightly different scope sets).
+of drift - slightly different error messages, slightly different scope sets).
 
 The :class:`M365GraphAuthMixin` collapses that into one definition.  Each
 client subclasses the mixin, sets its own ``_SCOPES`` class attribute, and
@@ -13,7 +13,7 @@ gets ``_get_token()`` / ``_headers()`` / ``_persist_cache()`` for free.
 
 The shared token cache (``data/tokens.json``) is established once via
 ``ai-assistant auth microsoft`` and serves every scope set the mixin
-declares — Files.ReadWrite.All, Mail.ReadWrite, etc.  No per-client
+declares - Files.ReadWrite.All, Mail.ReadWrite, etc.  No per-client
 re-authentication required.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ class M365GraphAuthMixin:
     """Drop-in mixin providing MSAL token acquisition for Graph clients.
 
     Subclasses MUST set:
-        ``_SCOPES``: list[str] — the OAuth scopes this client needs (e.g.
+        ``_SCOPES``: list[str] - the OAuth scopes this client needs (e.g.
                       ``["Files.ReadWrite.All"]`` or ``["Mail.ReadWrite"]``).
 
     Subclasses gain:
@@ -54,7 +54,7 @@ class M365GraphAuthMixin:
 
     The mixin's ``__init__`` initialises ``self._cache`` and ``self._app``;
     subclasses can call ``super().__init__()`` from their own ``__init__``,
-    or — if they have no other init logic — skip overriding ``__init__``
+    or - if they have no other init logic - skip overriding ``__init__``
     entirely.
     """
 
@@ -90,7 +90,7 @@ class M365GraphAuthMixin:
         """
         if not self._SCOPES:
             raise RuntimeError(
-                f"{type(self).__name__} declares no _SCOPES — set it on the class."
+                f"{type(self).__name__} declares no _SCOPES - set it on the class."
             )
 
         accounts = self._app.get_accounts()

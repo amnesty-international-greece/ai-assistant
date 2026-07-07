@@ -4,11 +4,11 @@ Fires when ``director@amnesty.org.gr`` replies on a board-meeting email
 thread with attachments.
 
 **Classification is filename-based**.  The Director simply hits "Reply"
-on the thread — the email subject stays whatever Outlook prepends to
+on the thread - the email subject stays whatever Outlook prepends to
 ``Συνεδρίαση ΔΣXX``.  What identifies the briefing is the PDF's filename:
 a non-image attachment whose name contains ``Εισηγητικό`` or
 ``Ενημερωτικό`` (case + τόνος insensitive) is the briefing.  Εισηγητικό
-wins when both kinds appear among attachments — it's the more specific
+wins when both kinds appear among attachments - it's the more specific
 kind (adds the ``Εισηγήσεις`` label on top of Ενημερωτικά).
 
 Behaviour split:
@@ -16,9 +16,9 @@ Behaviour split:
     extraction): canonical title, canonical Κύρια Σημεία, kind-specific
     Ετικέτες.  A local copy lands at
     ``data/director_briefings/{meeting_ref}/{filename}`` regardless of
-    later /board cancel — the Γενική Εγκύκλιος workflow uses these.
+    later /board cancel - the Γενική Εγκύκλιος workflow uses these.
   - **Other attachments** ride the standard ``ArchiveWorkflow`` with full
-    LLM extraction — the bot treats them like any other attachment the
+    LLM extraction - the bot treats them like any other attachment the
     Director happened to send along.
 
 No filename matches the briefing keyword → no briefing at all; every
@@ -30,7 +30,7 @@ User decisions baked in (2026-05-29):
   - Ετικέτες:
       * Εισηγητικά: ["Εισηγήσεις", "Αναφορές", "Γραφείο"]
       * Ενημερωτικά: ["Αναφορές", "Γραφείο"]
-  - ``/board cancel`` does **NOT** roll the briefing back — the Director
+  - ``/board cancel`` does **NOT** roll the briefing back - the Director
     likely won't re-send for a short postponement.  SecGen handles edge
     cases manually.
 """
@@ -53,7 +53,7 @@ DIRECTOR_EMAIL = "director@amnesty.org.gr"
 
 # Used as both subject markers AND filename markers.  greek_upper() handles
 # τόνος/case before comparison so the actual subject text can be "εισηγητικό",
-# "Εισηγητικό", "ΕΙΣΗΓΗΤΙΚΟ", "εισηγητικο" — they all match.
+# "Εισηγητικό", "ΕΙΣΗΓΗΤΙΚΟ", "εισηγητικο" - they all match.
 KIND_EISIGITIKO = "ΕΙΣΗΓΗΤΙΚΟ"
 KIND_ENIMEROTIKO = "ΕΝΗΜΕΡΩΤΙΚΟ"
 
@@ -69,7 +69,7 @@ _LABELS_BY_KIND = {
     KIND_ENIMEROTIKO: ["Αναφορές", "Γραφείο"],
 }
 
-# Image extensions never count as briefing candidates — phone screenshots,
+# Image extensions never count as briefing candidates - phone screenshots,
 # signature blocks, scanned letterheads, etc.
 _IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp",
@@ -87,7 +87,7 @@ def is_director(sender_email: str) -> bool:
     return (sender_email or "").strip().lower() == DIRECTOR_EMAIL.lower()
 
 
-# board@ identity — same constant as the workflow uses for outbound sends.
+# board@ identity - same constant as the workflow uses for outbound sends.
 BOARD_EMAIL = "board@amnesty.org.gr"
 
 
@@ -95,7 +95,7 @@ def board_in_recipients(message: dict) -> bool:
     """True iff ``board@amnesty.org.gr`` appears in TO / CC / BCC of *message*.
 
     When board@ is on the recipient list, every board member sees the
-    Director's email directly in their inbox — so the bot can mirror it to
+    Director's email directly in their inbox - so the bot can mirror it to
     Discord verbatim, same as any other board-thread reply.
 
     When the only recipient is ``members@amnesty.org.gr`` (the bot itself),
@@ -104,7 +104,7 @@ def board_in_recipients(message: dict) -> bool:
 
     Args:
         message: Graph message dict (must have ``toRecipients`` / ``ccRecipients`` /
-            ``bccRecipients`` — Graph's ``$select`` typically includes them).
+            ``bccRecipients`` - Graph's ``$select`` typically includes them).
 
     Returns:
         ``True`` if board@ found in any recipient field, else ``False``.
@@ -129,7 +129,7 @@ def classify_filename(filename: str) -> str | None:
 
     Filename match is τόνος + case insensitive via :func:`greek_upper`.
     Εισηγητικό wins when both keywords appear in the same filename
-    (it's the more specific kind — adds the ``Εισηγήσεις`` label).
+    (it's the more specific kind - adds the ``Εισηγήσεις`` label).
     """
     if not filename:
         return None
@@ -190,7 +190,7 @@ def briefing_labels(kind: str) -> list[str]:
 def local_copy_path(meeting_ref: str, filename: str) -> Path:
     """Compute the target path for the persistent local copy.
 
-    The local copy survives ``/board cancel`` — it's what the future
+    The local copy survives ``/board cancel`` - it's what the future
     Γενική Εγκύκλιος workflow will scan to compile content.  Path
     components are sanitised against directory traversal.
     """
@@ -204,7 +204,7 @@ def prefill_archive_context(*, meeting_ref: str, kind: str) -> dict[str, Any]:
 
     Sets ``_skip_llm=True`` and pre-fills ``llm_result`` so the workflow
     uses our metadata verbatim instead of asking Gemini what the document
-    is about.  ``kuria_simeia`` is **deliberately left empty** — the
+    is about.  ``kuria_simeia`` is **deliberately left empty** - the
     Director's actual key points vary per cycle, so the SecGen fills them
     in by hand during πρωτόκολλο review rather than the bot baking in a
     rigid template.
@@ -214,8 +214,8 @@ def prefill_archive_context(*, meeting_ref: str, kind: str) -> dict[str, Any]:
         "llm_result": {
             "title": briefing_title(meeting_ref, kind),
             "labels": briefing_labels(kind),
-            "kuria_simeia": "",   # left blank on purpose — SecGen fills in
-            # Existing protocol number left blank — archive workflow assigns
+            "kuria_simeia": "",   # left blank on purpose - SecGen fills in
+            # Existing protocol number left blank - archive workflow assigns
             # the next available number from the πρωτόκολλο xlsx.
             "existing_protocol": "",
         },

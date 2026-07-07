@@ -1,4 +1,4 @@
-"""Minutes pipeline orchestrator — one configurable entry point.
+"""Minutes pipeline orchestrator - one configurable entry point.
 
 This module is the thin, configurable seam that wires the *already-built*
 minutes components into a single flow:
@@ -9,17 +9,17 @@ minutes components into a single flow:
 
 The heavy lifting lives elsewhere and is NOT reimplemented here:
 
-* :mod:`src.workflows.minutes_skeleton` — the pure, deterministic skeleton core.
-* :mod:`src.workflows.minutes_transcription` — manifest→segments orchestration,
+* :mod:`src.workflows.minutes_skeleton` - the pure, deterministic skeleton core.
+* :mod:`src.workflows.minutes_transcription` - manifest→segments orchestration,
   the ``Transcriber`` protocol, and the real ``FasterWhisperTranscriber``.
-* :mod:`src.core.meeting_events` — the captured-events store.
+* :mod:`src.core.meeting_events` - the captured-events store.
 
 Design rules honoured here:
 
 * Importing this module never requires faster-whisper or any LLM SDK. The real
   ASR transcriber is constructed lazily by the factory only when selected, and
   the LLM client is lazy-imported inside :func:`draft_from_skeleton`.
-* :func:`assemble_minutes` NEVER crashes on a missing/failed LLM — drafting
+* :func:`assemble_minutes` NEVER crashes on a missing/failed LLM - drafting
   degrades to ``draft=None`` with a logged warning.
 * All datetimes used for transcript-file alignment are timezone-aware UTC.
 """
@@ -83,6 +83,8 @@ def build_glossary(settings) -> list[str]:
     members = settings.workflows.board_meeting.board_members or []
     terms: list[str] = [f"{m.first_name} {m.last_name}" for m in members]
     terms.extend(_ORG_NAMES)
+    # Operator-supplied acronyms / English terms / Amnesty jargon (config).
+    terms.extend(getattr(settings.minutes_pipeline, "glossary_extra", []) or [])
 
     seen: set[str] = set()
     glossary: list[str] = []
@@ -324,11 +326,11 @@ def parse_transcript_file(path, *, base: datetime) -> list[TranscriptSegment]:
 
     Two formats are supported and auto-detected:
 
-    1. **WebVTT** — the file ends in ``.vtt`` or its content starts with
+    1. **WebVTT** - the file ends in ``.vtt`` or its content starts with
        ``WEBVTT``. Cue blocks ``HH:MM:SS.mmm --> HH:MM:SS.mmm`` then text; the
        speaker comes from a leading ``<v Name>`` tag or a ``"Name: text"``
        prefix. Cue offsets are added to ``base`` to get wall-clock time.
-    2. **Zoom copy / plain** — the format produced by Zoom's "copy transcript"
+    2. **Zoom copy / plain** - the format produced by Zoom's "copy transcript"
        button: repeating blocks of a ``SpeakerName`` line, an ``HH:MM:SS`` line,
        then one or more text lines, separated by blank lines. The ``HH:MM:SS`` is
        an offset (seconds since meeting start); wall-clock = ``base + offset``.
@@ -353,6 +355,45 @@ def parse_transcript_file(path, *, base: datetime) -> list[TranscriptSegment]:
 
     segments.sort(key=lambda s: s.start)
     return segments
+
+
+def vtt_cues_to_offsets(path) -> list[tuple[str, float, float]]:
+    """Parse a WebVTT file into raw ``(text, start_offset, end_offset)`` tuples
+    (seconds from the cue clock), WITHOUT speaker stripping.
+
+    Used for speaker-less captions (e.g. Zoom's ``closed_caption.vtt``) that will
+    instead be attributed via a recording timeline. A leading ``<v Name>`` tag,
+    if any, is dropped (the timeline supplies the speaker). Malformed cues are
+    skipped.
+    """
+
+    text = Path(path).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    out: list[tuple[str, float, float]] = []
+    i, n = 0, len(lines)
+    while i < n:
+        m = _VTT_TIME_RE.search(lines[i].strip())
+        if not m:
+            i += 1
+            continue
+        try:
+            start_off = _vtt_offset_to_seconds(m.group(1))
+            end_off = _vtt_offset_to_seconds(m.group(2))
+        except (ValueError, IndexError):
+            i += 1
+            continue
+        i += 1
+        buf: list[str] = []
+        while i < n and lines[i].strip():
+            buf.append(lines[i].strip())
+            i += 1
+        cue = " ".join(buf).strip()
+        voice = _VTT_VOICE_RE.match(cue)
+        if voice:
+            cue = voice.group(2).strip()
+        if cue:
+            out.append((cue, start_off, end_off))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -423,9 +464,208 @@ def draft_from_skeleton(skeleton: dict, glossary: list[str], settings) -> dict |
         if not raw:
             return None
         return _parse_llm_json(raw)
-    except Exception as exc:  # noqa: BLE001 — drafting must never crash assemble
+    except Exception as exc:  # noqa: BLE001 - drafting must never crash assemble
         logger.warning("Minutes drafting failed; continuing without draft: %s", exc)
         return None
+
+
+# ---------------------------------------------------------------------------
+# Per-agenda-item drafting (bounded output; no single-shot truncation)
+# ---------------------------------------------------------------------------
+
+def _compact_transcript(segments: list[dict], *, limit_chars: int = 28000) -> str:
+    """Render skeleton segments as compact ``speaker: text`` lines for the LLM.
+
+    Far cheaper in tokens than the raw segment JSON. Truncated with a marker if a
+    single agenda item somehow exceeds *limit_chars* (rare; keeps one item's call
+    within budget no matter how long the discussion ran)."""
+    lines: list[str] = []
+    for s in segments or []:
+        text = (s.get("text") or "").strip()
+        if not text:
+            continue
+        speaker = (s.get("speaker") or "").strip()
+        lines.append(f"{speaker}: {text}" if speaker else text)
+    out = "\n".join(lines)
+    if len(out) > limit_chars:
+        out = out[:limit_chars] + "\n[... απόσπασμα συντομεύτηκε ...]"
+    return out
+
+
+def _render_decision_block(d: dict) -> list[str]:
+    """Render ONE decision deterministically (faithful, no LLM).
+
+    Decisions are already-formal text from the in-meeting sidebar, so they are
+    rendered verbatim - never paraphrased by a model - with their «έχοντας υπόψη»
+    considerations and the «Αποφασίζει» resolution."""
+    ref = (d.get("ref") or "").strip()
+    outcome = (d.get("outcome") or "").strip()
+    lines = [f"### {ref}" + (f" - {outcome}" if outcome else "")]
+    considerations = d.get("considerations") or []
+    if considerations:
+        lines.append("Έχοντας υπόψη:")
+        lines.extend(f"- {c}" for c in considerations if str(c).strip())
+    text = (d.get("decision_text") or "").strip()
+    if text:
+        lines.append(f"**Αποφασίζει:** {text}")
+    lines.append("")
+    return lines
+
+
+def _render_minutes_markdown(
+    skeleton: dict, sections: list[dict], decisions: list[dict]
+) -> str:
+    """Stitch the per-item section bodies into one Greek document, nesting each
+    decision under the agenda item it belongs to (by ``agenda_index``); any
+    decision we still can't place lands in a trailing «Λοιπές Αποφάσεις»."""
+
+    def _norm(title: str) -> str:
+        return " ".join((title or "").split()).strip().lower()
+
+    # Group decisions by agenda-item TITLE, not index: the sidebar's
+    # decision.agenda_index is 0-based while the skeleton's item.index is 1-based,
+    # so index matching mis-slots/drops decisions. Titles are unambiguous and
+    # also carried by timestamp-assigned decisions.
+    by_title: dict[str, list[dict]] = {}
+    unplaced: list[dict] = []
+    for d in decisions or []:
+        title = (d.get("agenda_item") or "").strip()
+        if title:
+            by_title.setdefault(_norm(title), []).append(d)
+        else:
+            unplaced.append(d)
+
+    def _names(people) -> list[str]:
+        # Presence entries are {"name", "role"} dicts; tolerate bare strings too.
+        names: list[str] = []
+        for p in people or []:
+            name = (p.get("name") if isinstance(p, dict) else str(p)) or ""
+            name = name.strip()
+            if name:
+                names.append(name)
+        return names
+
+    ref = (skeleton.get("meeting_ref") or "").strip()
+    presence = skeleton.get("presence") or {}
+    out = [f"# Πρακτικά Συνεδρίασης {ref}".rstrip(), ""]
+    present = _names(presence.get("present"))
+    absent = _names(presence.get("absent"))
+    if present:
+        out.append("**Παρόντες:** " + ", ".join(present))
+    if absent:
+        out.append("**Απόντες:** " + ", ".join(absent))
+    out.append("")
+    for sec in sections:
+        title = (sec.get("title") or "").strip()
+        out.append(f"## {title}")
+        out.append((sec.get("body") or "").strip())
+        out.append("")
+        # Decisions taken under this agenda item, rendered verbatim beneath it.
+        item_decisions = by_title.get(_norm(title))
+        if item_decisions:
+            out.append("**Αποφάσεις:**")
+            out.append("")
+            for d in sorted(item_decisions, key=lambda x: x.get("seq") or 0):
+                out.extend(_render_decision_block(d))
+
+    # Decisions we couldn't tie to an item (no index, no timestamp match).
+    if unplaced:
+        out.append("## Λοιπές Αποφάσεις")
+        out.append("")
+        for d in sorted(unplaced, key=lambda x: x.get("seq") or 0):
+            out.extend(_render_decision_block(d))
+
+    return "\n".join(out).strip() + "\n"
+
+
+def _draft_section(
+    client, system_prompt: str, *, title: str, transcript: str,
+    votes: list | None, glossary: list[str],
+) -> str:
+    """One bounded LLM call drafting the πρακτικά body for a single agenda item."""
+    parts = [
+        "Σύνταξε ΜΟΝΟ το σώμα των πρακτικών για το παρακάτω θέμα ημερήσιας διάταξης, "
+        "σε επίσημο, τρίτο-πρόσωπο ύφος. Απόδωσε πιστά τη συζήτηση και τις θέσεις των "
+        "ομιλητών, χωρίς να παραλείπεις ουσιώδη σημεία και χωρίς να προσθέτεις στοιχεία "
+        "που δεν προκύπτουν από το κείμενο. Μην επαναλάβεις τον τίτλο ως επικεφαλίδα.",
+        "",
+        f"Ονόματα/όροι: {', '.join(glossary) if glossary else ''}",
+        "",
+        f"## Θέμα\n{title}",
+    ]
+    if votes:
+        parts.append(f"\n## Ψηφοφορίες (JSON)\n{json.dumps(votes, ensure_ascii=False)}")
+    parts.append(f"\n## Απομαγνητοφώνηση (ομιλητής: κείμενο)\n{transcript}")
+    raw = client.generate(
+        user_prompt="\n".join(parts),
+        system_prompt=system_prompt,
+        workflow="minutes_pipeline",
+        max_tokens=4000,
+    )
+    return (raw or "").strip()
+
+
+def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict | None:
+    """Draft πρακτικά item-by-item, then stitch - robust for long meetings.
+
+    The single-shot :func:`draft_from_skeleton` caps the whole meeting at one
+    LLM output, which truncates multi-hour meetings. Here each agenda item (plus
+    a leading «Έναρξη / Διαδικαστικά» bucket for pre/inter-item talk) gets its
+    own bounded call, and the formal decisions are rendered deterministically.
+    Returns ``None`` on any setup failure (so ``assemble_minutes`` degrades to
+    no draft); individual item failures degrade to an empty body for that item.
+    """
+    try:
+        from src.core.claude import ClaudeClient
+
+        client = ClaudeClient()
+        system_prompt = client.load_prompt("board_minutes")
+    except Exception as exc:  # noqa: BLE001 - drafting must never crash assemble
+        logger.warning("Chunked drafting unavailable; continuing without draft: %s", exc)
+        return None
+
+    sections: list[dict] = []
+
+    unassigned = skeleton.get("unassigned_segments") or []
+    if unassigned:
+        try:
+            body = _draft_section(
+                client, system_prompt, title="Έναρξη / Διαδικαστικά",
+                transcript=_compact_transcript(unassigned), votes=None, glossary=glossary,
+            )
+            if body:
+                sections.append({"index": -1, "title": "Έναρξη / Διαδικαστικά", "body": body})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Opening-section draft failed: %s", exc)
+
+    for item in skeleton.get("items", []):
+        segs = item.get("segments") or []
+        votes = item.get("votes") or []
+        if not segs and not votes:
+            continue
+        try:
+            body = _draft_section(
+                client, system_prompt, title=item.get("title", ""),
+                transcript=_compact_transcript(segs), votes=votes, glossary=glossary,
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate one bad item
+            logger.warning("Item draft failed for %r: %s", item.get("title"), exc)
+            body = ""
+        sections.append(
+            {"index": item.get("index"), "title": item.get("title"), "body": body}
+        )
+
+    if not sections:
+        return None
+
+    decisions = skeleton.get("decisions") or []
+    return {
+        "meeting_ref": skeleton.get("meeting_ref"),
+        "presence": skeleton.get("presence", {}),
+        "sections": sections,
+        "decisions": decisions,
+        "markdown": _render_minutes_markdown(skeleton, sections, decisions),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -456,16 +696,19 @@ def _agenda_items_from_events(events: list[dict]) -> list[str]:
     """
 
     advances = [e for e in events if e.get("event_type") == "agenda_advance"]
-    entries: list[tuple[int, int, str]] = []  # (to_index, seen_order, title)
+    entries: list[tuple[int, int, str]] = []  # (sort_index, seen_order, title)
     for order, ev in enumerate(advances):
         payload = ev.get("payload") or {}
-        title = (payload.get("title") or "").strip()
+        # Canonical fields are title/to_index; the Zoom sidebar emits item/index.
+        title = (payload.get("title") or payload.get("item") or "").strip()
         if not title:
             continue
-        to_index = payload.get("to_index")
-        if not isinstance(to_index, int):
-            to_index = 10 ** 6 + order  # push index-less items to the end, stable
-        entries.append((to_index, order, title))
+        sort_index = payload.get("to_index")
+        if not isinstance(sort_index, int):
+            sort_index = payload.get("index")  # sidebar's 0-based position
+        if not isinstance(sort_index, int):
+            sort_index = 10 ** 6 + order  # push index-less items to the end, stable
+        entries.append((sort_index, order, title))
 
     entries.sort(key=lambda t: (t[0], t[1]))
     items: list[str] = []
@@ -475,6 +718,42 @@ def _agenda_items_from_events(events: list[dict]) -> list[str]:
             seen.add(title)
             items.append(title)
     return items
+
+
+def _assign_decisions_to_items(decisions: list[dict], items: list[dict]) -> None:
+    """Fill a missing ``agenda_index``/``agenda_item`` on each decision from its
+    timestamp, using the agenda item whose ``[start, end)`` window contains it.
+
+    Mutates ``decisions`` in place. Decisions that already carry an integer
+    ``agenda_index`` are left untouched. Ones we resolve are tagged
+    ``agenda_assigned_by = "timestamp"`` so it's auditable that the link was
+    inferred (not captured live). Used because the Zoom sidebar only stamps an
+    agenda index when an item is actively highlighted, which it loses on panel
+    reopen.
+    """
+
+    windows: list[tuple[datetime, datetime | None, object, str]] = []
+    for it in items:
+        start = _parse_iso_utc(it.get("start") or "")
+        if start is None:
+            continue
+        end = _parse_iso_utc(it.get("end") or "")
+        windows.append((start, end, it.get("index"), it.get("title") or ""))
+    if not windows:
+        return
+
+    for d in decisions:
+        if isinstance(d.get("agenda_index"), int):
+            continue
+        ts = _parse_iso_utc(d.get("ts") or "")
+        if ts is None:
+            continue
+        for start, end, index, title in windows:
+            if ts >= start and (end is None or ts < end):
+                d["agenda_index"] = index
+                d["agenda_item"] = title
+                d["agenda_assigned_by"] = "timestamp"
+                break
 
 
 def _derive_base(
@@ -533,7 +812,7 @@ def _find_mixed_audio_file(manifest: dict) -> dict | None:
 
     The mixed audio is an ``audio_only`` file under ``recording_files`` (NOT a
     per-participant track). When several qualify we prefer the largest by
-    ``file_size`` — the mixed track captures every speaker, so it is the biggest.
+    ``file_size`` - the mixed track captures every speaker, so it is the biggest.
     """
 
     candidates = [
@@ -569,7 +848,7 @@ def segments_from_manifest(
     ``recording_files``), transcribe the single mixed audio once and label each
     piece with the dominant active speaker from the timeline (see
     :mod:`src.workflows.timeline_speakers`). Timeline usernames are Zoom display
-    names (often Latin) used verbatim — Latin->Greek roster matching is out of
+    names (often Latin) used verbatim - Latin->Greek roster matching is out of
     scope.
 
     Fallback path: otherwise, defer to the per-participant
@@ -639,6 +918,7 @@ def assemble_minutes(
     meeting_ref: str,
     manifest_path=None,
     transcript_path=None,
+    timeline_path=None,
     reuse_transcript: bool = False,
     meeting_start: datetime | None = None,
     draft: bool = False,
@@ -652,8 +932,8 @@ def assemble_minutes(
     store; agenda items are derived from ``agenda_advance`` events.
 
     Returns a dict with keys: ``meeting_ref``, ``skeleton``, ``segment_count``,
-    ``source`` (``"manifest"`` | ``"transcript"``), ``skeleton_path``, and —
-    when ``draft=True`` — ``draft`` (dict or ``None``) and ``draft_path``.
+    ``source`` (``"manifest"`` | ``"transcript"``), ``skeleton_path``, and -
+    when ``draft=True`` - ``draft`` (dict or ``None``) and ``draft_path``.
 
     Outputs are written under
     ``settings.minutes_pipeline.transcripts_dir/<safe meeting_ref>/``:
@@ -674,10 +954,30 @@ def assemble_minutes(
         cache = _transcript_cache_path(settings, meeting_ref)
         if not cache.exists():
             raise ValueError(
-                f"no cached transcript at {cache} — run a --manifest build first"
+                f"no cached transcript at {cache} - run a --manifest build first"
             )
         segments = _remap_speakers(
             _segments_from_json(json.loads(cache.read_text(encoding="utf-8"))), aliases
+        )
+        skeleton = build_minutes_skeleton(
+            meeting_ref=meeting_ref,
+            agenda_items=agenda_items,
+            events=events,
+            segments=segments,
+            roster=roster,
+            ignore_speakers={UNKNOWN_SPEAKER},
+        )
+        segment_count = len(segments)
+    elif transcript_path and timeline_path:
+        # Speaker-less captions (e.g. Zoom closed_caption.vtt) attributed via the
+        # recording timeline: fast (no ASR) AND speaker-coded. Cue offsets and
+        # timeline offsets share the same 0 = meeting-start origin.
+        source = "transcript+timeline"
+        base = _derive_base(meeting_ref, events, meeting_start)
+        raw = vtt_cues_to_offsets(transcript_path)
+        intervals = parse_timeline(timeline_path)
+        segments = _remap_speakers(
+            attribute_segments(raw, intervals, base=base), aliases
         )
         skeleton = build_minutes_skeleton(
             meeting_ref=meeting_ref,
@@ -738,18 +1038,37 @@ def assemble_minutes(
         segment_count = sum(len(item.get("segments", [])) for item in skeleton["items"])
         segment_count += len(skeleton.get("unassigned_segments", []))
         # Cache the raw transcript so future runs (re-draft, re-process) skip the
-        # expensive ASR — load it back with reuse_transcript=True.
+        # expensive ASR - load it back with reuse_transcript=True.
         cache = _transcript_cache_path(settings, meeting_ref)
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(json.dumps(_segments_to_json(segments), ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         raise ValueError("provide manifest_path, transcript_path, or reuse_transcript")
 
+    # Surface formal decisions captured in-meeting (Zoom sidebar) onto the
+    # skeleton. ``build_minutes_skeleton`` doesn't model ``decision`` events, so
+    # we attach them as a top-level list - they then appear in skeleton.json and
+    # in the LLM draft input (the draft serialises the whole skeleton). We carry
+    # each event's ``ts`` so decisions missing an ``agenda_index`` (e.g. the Zoom
+    # panel lost the highlighted item on reopen) can be assigned to the agenda
+    # item whose time window contains them.
+    decisions = []
+    for e in events:
+        if e.get("event_type") != "decision":
+            continue
+        payload = dict(e.get("payload") or {})
+        payload.setdefault("ts", e.get("ts"))
+        decisions.append(payload)
+    if decisions:
+        _assign_decisions_to_items(decisions, skeleton.get("items") or [])
+        skeleton["decisions"] = decisions
+
     result: dict = {
         "meeting_ref": meeting_ref,
         "skeleton": skeleton,
         "segment_count": segment_count,
         "source": source,
+        "decision_count": len(decisions),
     }
 
     # Write outputs.
@@ -762,7 +1081,8 @@ def assemble_minutes(
     result["skeleton_path"] = str(skeleton_path)
 
     if draft:
-        draft_obj = draft_from_skeleton(skeleton, glossary, settings)
+        # Per-agenda-item drafting (bounded output, no single-shot truncation).
+        draft_obj = draft_minutes_chunked(skeleton, glossary, settings)
         result["draft"] = draft_obj
         if draft_obj is not None:
             draft_path = out_dir / "draft.json"
@@ -770,5 +1090,11 @@ def assemble_minutes(
                 json.dumps(draft_obj, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             result["draft_path"] = str(draft_path)
+            # Human-readable stitched minutes for quick review.
+            markdown = draft_obj.get("markdown") or ""
+            if markdown:
+                md_path = out_dir / "draft.md"
+                md_path.write_text(markdown, encoding="utf-8")
+                result["draft_md_path"] = str(md_path)
 
     return result

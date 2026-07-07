@@ -1,4 +1,4 @@
-"""Tests for src.core.event_bus — the in-process async pub-sub."""
+"""Tests for src.core.event_bus - the in-process async pub-sub."""
 from __future__ import annotations
 
 import pytest

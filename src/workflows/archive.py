@@ -1,18 +1,18 @@
 """Archive workflow (Phase 1 + 2): file a PDF into SharePoint + πρωτόκολλο.
 
 Six steps:
-  1. intake             — validate the input file (PDF only) + extract text
-  2. extract_metadata   — LLM proposes title / tags / Κύρια Σημεία; fallback
+  1. intake             - validate the input file (PDF only) + extract text
+  2. extract_metadata   - LLM proposes title / tags / Κύρια Σημεία; fallback
                           to the recent-entries second pass if low confidence
                           or ad-hoc category
-  3. resolve_protocol   — reuse an existing protocol number if the doc already
+  3. resolve_protocol   - reuse an existing protocol number if the doc already
                           has one, otherwise reserve the next available number
                           via the SQLite protocol_reservations table
-  4. upload_and_register— upload PDF to ``Αρχείο/Αρχείο ανά έτος/{year}/`` and
+  4. upload_and_register- upload PDF to ``Αρχείο/Αρχείο ανά έτος/{year}/`` and
                           append a row to ``[Πρωτόκολλο] Αρχείο ΔΣ.xlsx``
-  5. notify             — Phase 1 prints a CLI summary; Phase 3 will replace
+  5. notify             - Phase 1 prints a CLI summary; Phase 3 will replace
                           this with a threaded email reply
-  6. revision_window    — Phase 2: park the workflow in ``revision_open`` state
+  6. revision_window    - Phase 2: park the workflow in ``revision_open`` state
                           for 72h so ``ai-assistant archive review`` can amend it
 
 Rollback unwinds:
@@ -20,7 +20,7 @@ Rollback unwinds:
   - delete uploaded SharePoint file
   - release the protocol reservation (the uncommitted ones; committed rows
     stay so we can audit who grabbed which number)
-  - delete the local PDF copy (only if we made one — never the original)
+  - delete the local PDF copy (only if we made one - never the original)
 """
 from __future__ import annotations
 
@@ -162,7 +162,7 @@ class ArchiveWorkflow(BaseWorkflow):
         (``_step_upload_and_register`` short-circuits), so a rollback that
         called delete_protocol_row would catastrophically remove a PRE-EXISTING
         production row that just happens to share the protocol number.  This
-        actually happened in production on 2026-05-27 — two real rows were
+        actually happened in production on 2026-05-27 - two real rows were
         deleted via a test-mode cancel before this guard was added.
         """
         test_mode = bool(ctx.get("test_mode"))
@@ -173,8 +173,8 @@ class ArchiveWorkflow(BaseWorkflow):
 
         # 1) Delete protocol row (non-fatal)
         # Skipped in two cases:
-        #   • test mode — the row was never written.
-        #   • reservation-fill — SecGen made the row before we touched it.
+        #   • test mode - the row was never written.
+        #   • reservation-fill - SecGen made the row before we touched it.
         #     Rolling back our partial work must NOT delete SecGen's row.
         skip_row_delete_reason = ""
         if test_mode:
@@ -189,11 +189,11 @@ class ArchiveWorkflow(BaseWorkflow):
                 logger.warning("Rollback: delete_protocol_row failed (non-fatal): %s", exc)
         elif protocol_number:
             logger.info(
-                "Rollback: skipping delete_protocol_row for %s — %s.",
+                "Rollback: skipping delete_protocol_row for %s - %s.",
                 protocol_number, skip_row_delete_reason,
             )
 
-        # 2) Delete uploaded SharePoint file (non-fatal) — test_mode skips
+        # 2) Delete uploaded SharePoint file (non-fatal) - test_mode skips
         remote_filename = ctx.get("remote_filename") or ""
         if remote_filename and year_str and ctx.get("upload_file_id") and not test_mode:
             try:
@@ -204,7 +204,7 @@ class ArchiveWorkflow(BaseWorkflow):
                 logger.warning("Rollback: delete_file failed (non-fatal): %s", exc)
         elif remote_filename and test_mode:
             logger.info(
-                "Rollback (TEST MODE): skipping delete_file for %s — "
+                "Rollback (TEST MODE): skipping delete_file for %s - "
                 "no file was uploaded.",
                 remote_filename,
             )
@@ -218,7 +218,7 @@ class ArchiveWorkflow(BaseWorkflow):
             logger.warning("Rollback: release_protocol_reservation failed: %s", exc)
 
         # 4) Delete the local PDF copy IF we made one (never delete the user's
-        # original input file — only files we copied into data/output/).
+        # original input file - only files we copied into data/output/).
         local_copy = ctx.get("local_copy_path") or ""
         if local_copy:
             try:
@@ -238,7 +238,7 @@ class ArchiveWorkflow(BaseWorkflow):
         to PDF via LibreOffice headless before the rest of the pipeline runs.
         The original filename (incl. its real extension) is preserved in
         ``pdf_filename_orig`` so the LLM still sees what the sender actually
-        sent — useful for title selection.
+        sent - useful for title selection.
         """
         from src.utils.pdf_convert import (
             ConversionError, convert_to_pdf, is_pdf, needs_conversion,
@@ -251,7 +251,7 @@ class ArchiveWorkflow(BaseWorkflow):
         if not input_path.exists():
             return StepResult(success=False, message=f"File not found: {input_path}")
 
-        # Original filename — used downstream by the LLM and the final archive
+        # Original filename - used downstream by the LLM and the final archive
         # name (we strip the converter's extension and append "[YYYY_NNN] <title>.pdf").
         original_filename = input_path.name
         converted_from: str | None = None
@@ -290,7 +290,7 @@ class ArchiveWorkflow(BaseWorkflow):
         # Take ONE snapshot of the πρωτόκολλο xlsx for the entire workflow run.
         # All subsequent reads (taxonomy, categories, recent entries, row
         # lookups, max-seq) use this snapshot via OneDriveClient's backup
-        # path — one network download per run instead of one per read.
+        # path - one network download per run instead of one per read.
         # Skipped in test mode (the test harness stubs read methods).
         if not ctx.get("test_mode") and not ctx.get("_skip_workbook_refresh"):
             try:
@@ -443,7 +443,7 @@ class ArchiveWorkflow(BaseWorkflow):
         llm_result = ctx.get("llm_result") or {}
         existing = (llm_result.get("existing_protocol") or "").strip()
         if existing and _PROTO_RE.match(existing):
-            # The document already carries this protocol number — trust it.
+            # The document already carries this protocol number - trust it.
             # The pre-existence gate downstream (``_step_collision_check``)
             # will reject this if a different file is already archived under
             # the same number, so we don't need to re-check here.
@@ -473,7 +473,7 @@ class ArchiveWorkflow(BaseWorkflow):
         )
 
     async def _step_collision_check(self, ctx: dict[str, Any]) -> StepResult:
-        """Pre-existence check (renamed from the old "collision_check" — same
+        """Pre-existence check (renamed from the old "collision_check" - same
         step slot, new semantics as of 2026-05-27).
 
         The previous collision-gate model is GONE.  The bot now NEVER
@@ -482,18 +482,18 @@ class ArchiveWorkflow(BaseWorkflow):
 
         Three branches:
 
-        * ``protocol_source == "reserved"`` — fresh reservation owned by THIS
+        * ``protocol_source == "reserved"`` - fresh reservation owned by THIS
           workflow.  No row exists yet by construction.  Proceed.
 
-        * **No πρωτόκολλο row** for the claimed number — proceed.  The user
+        * **No πρωτόκολλο row** for the claimed number - proceed.  The user
           claimed a number nobody else has used; we'll append normally.
 
         * **Row exists AND a file exists in SharePoint** at
-          ``Αρχείο ανά έτος/{year}/[{proto}] *.pdf`` — HARD FAIL.  Refuse to
+          ``Αρχείο ανά έτος/{year}/[{proto}] *.pdf`` - HARD FAIL.  Refuse to
           overwrite.  This is the safety guardrail: SecGen must move/rename
           the existing file manually before we'll touch anything.
 
-        * **Row exists, no file** — treated as a SecGen pre-reservation.
+        * **Row exists, no file** - treated as a SecGen pre-reservation.
           Compare the LLM-extracted title against the row's title:
           - **Match** (substring containment, normalised) → proceed in
             "filling-reservation" mode (see ``_step_upload_and_register``
@@ -523,7 +523,7 @@ class ArchiveWorkflow(BaseWorkflow):
             existing_row = await self.onedrive.find_protocol_row(proto)
         except Exception as exc:
             # Best-effort: if the lookup itself fails, fail OPEN (let the
-            # workflow proceed) — the upload step will surface any real
+            # workflow proceed) - the upload step will surface any real
             # collision via SharePoint's own error.
             logger.warning("Pre-existence check: find_protocol_row failed: %s", exc)
             return StepResult(
@@ -536,10 +536,10 @@ class ArchiveWorkflow(BaseWorkflow):
             return StepResult(
                 success=True,
                 data={"pre_existence_check": "no_row"},
-                message=f"Protocol {proto} not yet in πρωτόκολλο — claim is free.",
+                message=f"Protocol {proto} not yet in πρωτόκολλο - claim is free.",
             )
 
-        # Row exists — check if a file is also archived for this number.
+        # Row exists - check if a file is also archived for this number.
         try:
             file_exists = await self.onedrive.file_exists_for_protocol(proto)
         except Exception as exc:
@@ -550,19 +550,19 @@ class ArchiveWorkflow(BaseWorkflow):
             file_exists = False
 
         if file_exists:
-            # HARD FAIL — never overwrite an archived file.  SecGen handles
+            # HARD FAIL - never overwrite an archived file.  SecGen handles
             # this case manually outside the bot.
             return StepResult(
                 success=False,
                 message=(
                     f"Πρωτόκολλο {proto} έχει ήδη αρχειοθετηθεί (υπάρχει και "
                     f"εγγραφή και αρχείο στο SharePoint).  Το bot δεν αντικαθιστά "
-                    f"υπάρχοντα αρχεία — επικοινωνήστε με τη Γραμματεία για "
+                    f"υπάρχοντα αρχεία - επικοινωνήστε με τη Γραμματεία για "
                     f"χειροκίνητη επέμβαση."
                 ),
             )
 
-        # Row exists, no file — treat as a SecGen pre-reservation.  Decide
+        # Row exists, no file - treat as a SecGen pre-reservation.  Decide
         # whether to fill it automatically or defer.
         existing_title = (existing_row.get("title") or "").strip()
         proposed_title = ((ctx.get("llm_result") or {}).get("title") or "").strip()
@@ -585,7 +585,7 @@ class ArchiveWorkflow(BaseWorkflow):
                 ),
             )
 
-        # Title mismatch — defer to SecGen for confirmation.
+        # Title mismatch - defer to SecGen for confirmation.
         pending = {
             "protocol_number": proto,
             "existing_row": existing_row,
@@ -606,7 +606,7 @@ class ArchiveWorkflow(BaseWorkflow):
                 "match_confidence": match_confidence,
                 "raised_at": pending["raised_at"],
             })
-        except Exception as exc:  # pragma: no cover — best-effort
+        except Exception as exc:  # pragma: no cover - best-effort
             logger.debug("reservation-confirm event publish failed (non-fatal): %s", exc)
 
         return StepResult(
@@ -718,7 +718,7 @@ class ArchiveWorkflow(BaseWorkflow):
                     )
                 else:
                     logger.info(
-                        "Reservation-fill: row %s already complete — only "
+                        "Reservation-fill: row %s already complete - only "
                         "attached the file, no metadata changes.",
                         protocol_number,
                     )
@@ -783,14 +783,14 @@ class ArchiveWorkflow(BaseWorkflow):
         if ctx.get("share_link"):
             summary_lines.append(f"    Share link: {ctx['share_link']}")
         if ctx.get("test_mode"):
-            summary_lines.append("    (TEST MODE — nothing was actually uploaded)")
+            summary_lines.append("    (TEST MODE - nothing was actually uploaded)")
         print("\n".join(summary_lines))
         return StepResult(success=True, data={}, message="CLI summary printed.")
 
     async def _step_revision_window(self, ctx: dict[str, Any]) -> StepResult:
         """Record the revision-window deadline; do NOT block.
 
-        The workflow returns ``completed`` immediately — the revision window is
+        The workflow returns ``completed`` immediately - the revision window is
         enforced by ``ai-assistant archive review``, which checks
         ``revision_open_until`` before allowing amendments.  Storing the
         deadline in workflow context is enough; no background timer needed.
@@ -829,7 +829,7 @@ def _normalize_title(s: str) -> str:
 
 
 def _title_match_confidence(reserved: str, proposed: str) -> float:
-    """Score 0.0–1.0 of how likely the proposed title refers to the reserved slot.
+    """Score 0.0-1.0 of how likely the proposed title refers to the reserved slot.
 
     Used by ``_step_collision_check`` to decide whether to auto-fill a
     SecGen-pre-reserved πρωτόκολλο row or defer to SecGen for confirmation.
@@ -841,7 +841,7 @@ def _title_match_confidence(reserved: str, proposed: str) -> float:
       • Otherwise → 0.0
 
     The 0.85 substring case catches realistic edits like SecGen writing
-    "Πρακτικά ΔΣ04" and the submitter providing "Πρακτικά ΔΣ04-2026" — or
+    "Πρακτικά ΔΣ04" and the submitter providing "Πρακτικά ΔΣ04-2026" - or
     vice versa.  String-similarity could be added later (Levenshtein /
     token-set ratio); strict substring is the conservative starting point.
     """
@@ -860,7 +860,7 @@ def _sanitise_filename(name: str) -> str:
     """Strip filesystem-hostile characters and collapse whitespace."""
     cleaned = _BAD_FILENAME_CHARS.sub("-", name).strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
-    # Limit length to a sensible 200 chars — Windows path limit safety
+    # Limit length to a sensible 200 chars - Windows path limit safety
     return cleaned[:200] or "untitled"
 
 
@@ -888,16 +888,16 @@ async def apply_amendments(
     Touches three places (in this order, so a failure mid-flight leaves the
     system in a sane recoverable state):
 
-      1. **SharePoint file** — rename if ``title`` or ``protocol_id`` changed
+      1. **SharePoint file** - rename if ``title`` or ``protocol_id`` changed
          (the leaf is ``[{protocol_id}] {title}.pdf``, so a change to either
          demands a new filename).
-      2. **πρωτόκολλο xlsx row** — update title (col C), key_points (col D),
+      2. **πρωτόκολλο xlsx row** - update title (col C), key_points (col D),
          and/or tags (col E) via :meth:`OneDriveClient.update_protocol_row`.
-      3. **Workflow context** — patched in-memory; caller is responsible for
+      3. **Workflow context** - patched in-memory; caller is responsible for
          persisting via ``save_workflow_state``.
 
-    Test-mode (``ctx['test_mode']``) skips steps 1 and 2 entirely — only the
-    in-memory context update happens — mirroring the original archive
+    Test-mode (``ctx['test_mode']``) skips steps 1 and 2 entirely - only the
+    in-memory context update happens - mirroring the original archive
     workflow's test-mode behaviour.
 
     Args:
@@ -909,7 +909,7 @@ async def apply_amendments(
 
     Returns:
         Dict ``{applied: [...], remote_filename: ..., row_updated: bool}``
-        describing what changed — handy for the CLI summary.
+        describing what changed - handy for the CLI summary.
     """
     # Use the module-level OneDriveClient binding (imported at top) so test
     # patches on `src.workflows.archive.OneDriveClient` take effect.
@@ -954,11 +954,11 @@ async def apply_amendments(
     elif needs_rename and test_mode:
         new_filename = f"[{final_proto}] {_sanitise_filename(final_title)}.pdf"
         ctx["remote_filename"] = new_filename
-        result_summary["renamed_to"] = new_filename + "  [TEST — not actually renamed]"
+        result_summary["renamed_to"] = new_filename + "  [TEST - not actually renamed]"
 
     # ── Step 2: πρωτόκολλο xlsx row update ──────────────────────────────────
     # We update if title/labels/key_points changed.  protocol_id changes are
-    # handled separately below — they require finding the row by the OLD id
+    # handled separately below - they require finding the row by the OLD id
     # then editing column A as well.
     if (new_title is not None or new_labels is not None or new_key_points is not None) and not test_mode:
         labels_str = ", ".join(new_labels) if new_labels is not None else None
@@ -984,7 +984,7 @@ async def apply_amendments(
         if new_key_points is not None: applied.append("key_points")
         result_summary["row_updated"] = "skipped (test mode)"
 
-    # ── protocol_id change support (cross-row rewrite — limited) ────────────
+    # ── protocol_id change support (cross-row rewrite - limited) ────────────
     # Same-year: handled by SharePoint rename (above) + a column-A rewrite.
     # Cross-year: not yet supported (would need delete + re-append across
     # sheets); print a warning and leave the row's column A alone.
@@ -992,7 +992,7 @@ async def apply_amendments(
         old_year = current_proto[:4] if len(current_proto) >= 4 else ""
         new_year = new_protocol_id[:4] if len(new_protocol_id) >= 4 else ""
         if old_year == new_year:
-            # Same year — we already updated the row's other columns via
+            # Same year - we already updated the row's other columns via
             # update_protocol_row(current_proto, ...).  Now also rewrite
             # column A by deleting + re-appending so the new id takes effect.
             try:
@@ -1026,13 +1026,13 @@ async def apply_amendments(
         else:
             result_summary["protocol_id_warning"] = (
                 f"Cross-year change ({current_proto} → {new_protocol_id}) "
-                "not supported — adjust the πρωτόκολλο manually."
+                "not supported - adjust the πρωτόκολλο manually."
             )
     elif new_protocol_id and new_protocol_id != current_proto and test_mode:
         ctx["protocol_number"] = new_protocol_id
         applied.append("protocol_id")
         result_summary["protocol_id_rewrite"] = (
-            f"{current_proto} → {new_protocol_id}  [TEST — xlsx unchanged]"
+            f"{current_proto} → {new_protocol_id}  [TEST - xlsx unchanged]"
         )
 
     # ── Step 3: in-memory context patch (always happens; caller persists) ───

@@ -1,4 +1,4 @@
-"""Webhook endpoints — receive external triggers and launch workflows."""
+"""Webhook endpoints - receive external triggers and launch workflows."""
 
 from __future__ import annotations
 
@@ -30,14 +30,14 @@ class InviteWebhookPayload(BaseModel):
     (D16/D17/D18) all become TRUE for the upcoming meeting.
 
     All fields are optional.  The Apps Script auto-trigger sends just
-    ``raw_meeting_id`` + ``start_at_step`` — the workflow's ``read_agenda``
+    ``raw_meeting_id`` + ``start_at_step`` - the workflow's ``read_agenda``
     step pulls everything else from the sheet itself.  Legacy / manual
     callers may still send the full set; unknown fields are ignored.
     """
     raw_meeting_id: str = ""     # verbatim D5, e.g. "ΔΣ04-2026"
     start_at_step: str = ""      # "" → run full workflow; else jump to this step
     test_mode: bool = False
-    # ── legacy fields (manual webhook calls only — auto-trigger doesn't send) ──
+    # ── legacy fields (manual webhook calls only - auto-trigger doesn't send) ──
     meeting_number: str = ""
     meeting_date: str = ""       # YYYY-MM-DD
     meeting_time: str = ""       # HH:MM
@@ -84,6 +84,80 @@ def _find_in_progress_invite(raw_meeting_id: str) -> str | None:
     return None
 
 
+def _find_scheduling_context(raw_meeting_id: str) -> dict | None:
+    """Return the saved context of this meeting's scheduling-email workflow.
+
+    The scheduling email (step 1) stores ``email_thread_anchor`` + ``poll_url``
+    on its own workflow, which then pauses at ``await_approval``.  A webhook run
+    that jumps to ``read_agenda`` starts a *fresh* workflow, so it must inherit
+    that anchor - otherwise ``send_board_email`` has no thread to reply to and
+    the final board invitation is silently skipped.
+
+    Matches on ``raw_meeting_id`` or the legacy ``meeting_ref`` key (the
+    scheduling workflow predates ``raw_meeting_id``), and requires an anchor to
+    be present.  Returns the most recently updated match, or None.
+    """
+    if not raw_meeting_id:
+        return None
+    try:
+        from src.core.audit import _get_connection
+        conn = _get_connection()
+        rows = conn.execute(
+            "SELECT data FROM workflow_state "
+            "WHERE workflow_name = 'board_meeting_invitation' "
+            "ORDER BY updated_at DESC"
+        ).fetchall()
+        target = raw_meeting_id.strip()
+        for row in rows:
+            try:
+                data = json.loads(row["data"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            ctx = data.get("context") or {}
+            ref = (ctx.get("raw_meeting_id") or ctx.get("meeting_ref") or "").strip()
+            if ref == target and ctx.get("email_thread_anchor"):
+                return ctx
+    except Exception as e:
+        logger.warning("Could not look up scheduling anchor for %s: %s", raw_meeting_id, e)
+    return None
+
+
+async def _auto_resume_gates(wf, result: dict) -> dict:
+    """Drive a webhook workflow through its approval gates unattended.
+
+    The engine halts on every ``requires_approval`` step; the interactive CLI
+    resumes each one with a human prompt.  A webhook run has no human in the
+    loop - the board already approved by ticking D16/D17/D18 - so each gate is
+    auto-approved here.
+
+    This is safe: the real side effects (live newsletter send, Discord
+    choreography) are governed by ``test_mode`` and the Brevo list config
+    *inside* the steps, not by these gates.  Approving a gate never itself
+    triggers a send - in test mode the newsletter is flagged ``skipped`` before
+    the gate, and in live mode it has already gone out in ``send_newsletter``.
+    """
+    guard = 0
+    while result.get("status") == "awaiting_approval":
+        guard += 1
+        if guard > 5:
+            logger.error(
+                "Auto-resume exceeded %d gates for workflow %s - aborting to avoid a loop",
+                guard, wf.workflow_id,
+            )
+            break
+        gate = result.get("step", "")
+        logger.info("Webhook auto-approving gate %r (workflow %s)", gate, wf.workflow_id)
+        log_action(
+            workflow="board_meeting_invitation",
+            action="approval_given",
+            actor="sheets_trigger",
+            target=gate,
+            details={"workflow_id": wf.workflow_id, "gate": gate, "auto": True},
+        )
+        result = await wf.approve_and_resume()
+    return result
+
+
 async def _run_invite_workflow(payload: InviteWebhookPayload) -> None:
     """Run the invitation workflow asynchronously."""
     from src.workflows.board_meeting_invitation import BoardMeetingInvitationWorkflow
@@ -124,8 +198,29 @@ async def _run_invite_workflow(payload: InviteWebhookPayload) -> None:
             initial_data["agenda_items"] = payload.agenda_items
             initial_data["_skip_read_agenda"] = True
 
+        # Inherit the scheduling email's thread anchor (+ poll) so the final
+        # board invitation lands as a reply in the existing thread instead of
+        # being skipped for lack of an anchor.
+        sched_ctx = _find_scheduling_context(payload.raw_meeting_id)
+        if sched_ctx:
+            initial_data.setdefault("email_thread_anchor", sched_ctx.get("email_thread_anchor", ""))
+            if sched_ctx.get("poll_url"):
+                initial_data.setdefault("poll_url", sched_ctx["poll_url"])
+            logger.info(
+                "Webhook: inherited scheduling thread anchor for %s",
+                payload.raw_meeting_id,
+            )
+        else:
+            logger.warning(
+                "Webhook: no prior scheduling anchor for %s - final board email will be skipped",
+                payload.raw_meeting_id or "(none)",
+            )
+
         result = await wf.run(initial_data)
-        logger.info("Webhook workflow completed: %s", result.get("status"))
+        # No human in the loop - auto-approve the live gates the board already
+        # authorised via the sheet checkboxes (PDF review, newsletter confirm).
+        result = await _auto_resume_gates(wf, result)
+        logger.info("Webhook workflow finished: %s", result.get("status"))
 
     except Exception as e:
         logger.error("Webhook workflow failed: %s", e)
@@ -145,7 +240,7 @@ async def webhook_invite(
     a duplicate run.
     """
     logger.info(
-        "Invite webhook received — meeting %s on %s at %s (raw=%s)",
+        "Invite webhook received - meeting %s on %s at %s (raw=%s)",
         payload.meeting_number,
         payload.meeting_date,
         payload.meeting_time,
@@ -155,7 +250,7 @@ async def webhook_invite(
     existing_id = _find_in_progress_invite(payload.raw_meeting_id)
     if existing_id:
         logger.info(
-            "Duplicate webhook for %s — workflow %s already in progress; skipping",
+            "Duplicate webhook for %s - workflow %s already in progress; skipping",
             payload.raw_meeting_id, existing_id,
         )
         return {
@@ -177,7 +272,7 @@ async def webhook_health() -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Microsoft Graph webhook — members@amnesty.org.gr inbox  (Phase 3)
+# Microsoft Graph webhook - members@amnesty.org.gr inbox  (Phase 3)
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Graph's lifecycle for a webhook subscription:
@@ -189,7 +284,7 @@ async def webhook_health() -> dict:
 #      stored when creating the subscription (forgery defence), then
 #      fetch the full message and run the intake pipeline.
 #
-# We answer 202 immediately and process the message in BackgroundTasks —
+# We answer 202 immediately and process the message in BackgroundTasks -
 # Graph will retry with backoff if we don't acknowledge inside 30s.
 
 
@@ -207,7 +302,7 @@ async def _process_graph_notification(notification: dict[str, Any]) -> None:
         inbox = M365InboxClient()
         message = await inbox.get_message(message_id)
         await process_inbox_message(message, source="webhook")
-    except Exception as e:  # pragma: no cover — defensive
+    except Exception as e:  # pragma: no cover - defensive
         logger.exception("Failed to process Graph notification: %s", e)
 
 
@@ -220,8 +315,8 @@ async def webhook_m365_inbox(
     """Receive Graph subscription notifications.
 
     Two modes (Graph spec):
-      * ``?validationToken=...`` — subscription handshake; echo as text/plain.
-      * JSON body                — actual change notification.
+      * ``?validationToken=...`` - subscription handshake; echo as text/plain.
+      * JSON body                - actual change notification.
     """
     # ── Validation handshake ─────────────────────────────────────────────────
     if validationToken is not None:
@@ -264,7 +359,7 @@ async def webhook_m365_inbox(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Zoom webhook — cloud recording completed  (minutes pipeline, stage 0)
+# Zoom webhook - cloud recording completed  (minutes pipeline, stage 0)
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # Zoom's lifecycle for a webhook endpoint:
@@ -319,7 +414,7 @@ def _verify_zoom_signature(headers: Any, raw_body: bytes) -> bool:
     secret_token = settings.zoom_webhook_secret_token or ""
     if not secret_token:
         logger.warning(
-            "ZOOM_WEBHOOK_SECRET_TOKEN is not configured — accepting Zoom "
+            "ZOOM_WEBHOOK_SECRET_TOKEN is not configured - accepting Zoom "
             "webhook WITHOUT signature verification (dev mode only)."
         )
         return True
@@ -355,7 +450,7 @@ async def _process_zoom_recording(meeting_uuid: str) -> None:
             len(manifest.get("files", [])),
             manifest.get("dest_dir"),
         )
-    except Exception as e:  # pragma: no cover — defensive
+    except Exception as e:  # pragma: no cover - defensive
         logger.exception(
             "Failed to download Zoom recording assets for %s: %s", meeting_uuid, e,
         )
@@ -369,11 +464,11 @@ async def webhook_zoom_recording(
     """Receive Zoom webhook events for cloud recordings.
 
     Handles three cases:
-      * ``endpoint.url_validation`` — CRC handshake (always answered 200, even
-        if the signature can't be verified — this is what lets the URL save).
-      * ``recording.completed``     — verify signature, schedule asset download,
+      * ``endpoint.url_validation`` - CRC handshake (always answered 200, even
+        if the signature can't be verified - this is what lets the URL save).
+      * ``recording.completed``     - verify signature, schedule asset download,
         ack 202.
-      * any other event            — verify signature, log, ack 202.
+      * any other event            - verify signature, log, ack 202.
     """
     raw = await request.body()
     try:
@@ -415,7 +510,7 @@ async def webhook_zoom_recording(
         logger.info("Zoom recording.completed accepted for meeting %s", meeting_uuid)
         return Response(status_code=202)
 
-    # ── Any other (subscribed) event — acknowledge and ignore ────────────────
+    # ── Any other (subscribed) event - acknowledge and ignore ────────────────
     logger.info("Ignoring unsupported Zoom webhook event: %s", event)
     log_action(
         workflow="minutes",

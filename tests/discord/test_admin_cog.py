@@ -4,7 +4,7 @@ Focuses on the data-layer logic wrapped by each command, not the Discord
 wiring (wiring is integration-tested against the test server).
 
 Pattern mirrors test_brand_embed.py / test_teams_cog.py:
-  * No real Discord bot is constructed — we use MagicMock for interactions.
+  * No real Discord bot is constructed - we use MagicMock for interactions.
   * Async tests use pytest-asyncio (``@pytest.mark.asyncio``).
   * External integrations (ArchiveWorkflow, OneDriveClient, GoogleClient,
     GraphSubscriptionsClient, run_safety_poll) are mocked with
@@ -35,7 +35,7 @@ from src.integrations.discord.cogs.admin import (
 # established BEFORE any test-level patch on src.core.audit runs.
 # Without this, the first test that calls cmd_subscriptions() triggers the
 # import inside a patch context, leaving the module's name permanently bound
-# to the mock — breaking later tests that call renew_expiring() directly.
+# to the mock - breaking later tests that call renew_expiring() directly.
 import src.integrations.m365.subscriptions  # noqa: F401
 
 

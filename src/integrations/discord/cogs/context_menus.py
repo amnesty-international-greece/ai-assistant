@@ -41,7 +41,7 @@ class ContextMenusCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.bot.tree.add_command(self._archive_message)
-        logger.info("ContextMenusCog loaded — message context menu registered")
+        logger.info("ContextMenusCog loaded - message context menu registered")
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command(
@@ -67,7 +67,7 @@ class ContextMenusCog(commands.Cog):
             )
             return
 
-        # Look for an archivable attachment — accept anything the converter
+        # Look for an archivable attachment - accept anything the converter
         # supports (PDF, DOCX, ODT, RTF, JPG, PNG, etc.).
         import re as _re
         accepted = _re.compile(
@@ -83,7 +83,7 @@ class ContextMenusCog(commands.Cog):
             return
         if len(candidates) > 1:
             await interaction.response.send_message(
-                f"Το μήνυμα έχει {len(candidates)} συνημμένα — αρχειοθετούμε ένα τη φορά. "
+                f"Το μήνυμα έχει {len(candidates)} συνημμένα - αρχειοθετούμε ένα τη φορά. "
                 "Παρακαλώ προωθήστε το επιθυμητό σε νέο μήνυμα.",
                 ephemeral=True,
             )
@@ -132,7 +132,7 @@ class ContextMenusCog(commands.Cog):
             if pending:
                 await interaction.followup.send(
                     f"📥 Ο αρ.πρωτ. `{pending.get('protocol_number')}` είναι "
-                    f"δεσμευμένος από τη Γραμματεία — αναμονή επιβεβαίωσης.",
+                    f"δεσμευμένος από τη Γραμματεία - αναμονή επιβεβαίωσης.",
                     ephemeral=True,
                 )
             else:
@@ -142,7 +142,7 @@ class ContextMenusCog(commands.Cog):
                 )
             return
 
-        # Success — same embed shape as /archive submit
+        # Success - same embed shape as /archive submit
         ctx = wf.context
         llm = ctx.get("llm_result") or {}
         embed = brand_embed(
@@ -155,7 +155,7 @@ class ContextMenusCog(commands.Cog):
         )
         embed.add_field(name="Αρ. Πρωτ.", value=f"`{ctx.get('protocol_number', '?')}`", inline=True)
         embed.add_field(name="Τίτλος", value=llm.get("title", "?"), inline=True)
-        embed.add_field(name="Ετικέτες", value=", ".join(llm.get("labels", [])) or "—", inline=False)
+        embed.add_field(name="Ετικέτες", value=", ".join(llm.get("labels", [])) or "-", inline=False)
 
         from datetime import datetime as _dt
         revision_until = ctx.get("revision_open_until", "")

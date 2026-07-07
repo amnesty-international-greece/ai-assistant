@@ -193,7 +193,7 @@ async def test_resolve_reason_contains_label_and_confidence():
 
 
 # ---------------------------------------------------------------------------
-# MessageRouter.truncate (static method — pure, no guild needed)
+# MessageRouter.truncate (static method - pure, no guild needed)
 # ---------------------------------------------------------------------------
 
 

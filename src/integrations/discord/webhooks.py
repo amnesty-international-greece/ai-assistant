@@ -1,4 +1,4 @@
-"""WebhookManager — create, cache, and send via Discord channel webhooks."""
+"""WebhookManager - create, cache, and send via Discord channel webhooks."""
 from __future__ import annotations
 
 import logging

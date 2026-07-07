@@ -1,1 +1,1 @@
-# Discord integration package — see constants.py for all magic numbers.
+# Discord integration package - see constants.py for all magic numbers.

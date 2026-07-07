@@ -39,7 +39,7 @@ from src.integrations.discord.constants import CLASSIFIER_UNCERTAIN_LABEL
 
 
 # ---------------------------------------------------------------------------
-# Part A — confidence_bar()
+# Part A - confidence_bar()
 # ---------------------------------------------------------------------------
 
 
@@ -92,7 +92,7 @@ def test_confidence_bar_custom_segments():
 
 
 # ---------------------------------------------------------------------------
-# Part A — AMNESTY_FLAME
+# Part A - AMNESTY_FLAME
 # ---------------------------------------------------------------------------
 
 
@@ -104,7 +104,7 @@ def test_amnesty_flame_is_defined_and_not_yellow():
 
 
 # ---------------------------------------------------------------------------
-# Part B — Classifier: multiline ranked-response parsing
+# Part B - Classifier: multiline ranked-response parsing
 # ---------------------------------------------------------------------------
 
 
@@ -164,7 +164,7 @@ def test_classifier_multiline_primary_below_threshold_falls_back():
 
 
 # ---------------------------------------------------------------------------
-# Part C — Triage view structure
+# Part C - Triage view structure
 # ---------------------------------------------------------------------------
 
 
@@ -200,7 +200,7 @@ def _run(coro):
 
     Uses ``asyncio.run`` (not ``get_event_loop().run_until_complete``) so we
     don't depend on whatever leftover loop pytest-asyncio may or may not
-    leave around — the latter raises ``RuntimeError: There is no current
+    leave around - the latter raises ``RuntimeError: There is no current
     event loop`` once another test closes the policy's default loop.
     """
     return asyncio.run(coro)

@@ -273,7 +273,7 @@ async def test_await_approval_parks_workflow(workflow):
     approval_step = next(s for s in define_steps_result if s.name == "await_approval")
     assert approval_step.requires_approval is True
 
-    # Simulate: call the step handler directly — it should succeed and mark approved
+    # Simulate: call the step handler directly - it should succeed and mark approved
     ctx = {"egkyklios_draft_id": 0, "test_mode": False}
     with patch("src.workflows.egkyklios_general.update_egkyklios_draft"):
         result = await workflow._step_await_approval(ctx)

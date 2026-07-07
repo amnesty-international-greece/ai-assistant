@@ -1,16 +1,16 @@
 """Γενική Εγκύκλιος Ενημέρωσης workflow.
 
 Step order (10 steps):
-  1.  gather_sources          — resolve period, validate sources exist, idempotency guard
-  2.  extract_briefing_texts  — read each briefing PDF via extract_pdf_text()
-  3.  extract_meeting_summaries — pull minutes text from workflow_state rows
-  4.  draft_circular          — LLM call → Markdown saved to disk + DB row created
-  5.  render_pdf              — Markdown → branded ReportLab PDF
-  6.  notify_board_for_review — M365 email to board + director with PDF attachment
-  7.  await_approval          — halt until SecGen approves (requires_approval=True)
-  8.  archive_to_sharepoint   — upload PDF + append protocol row
-  9.  send_brevo_campaign     — create & send Brevo campaign to members
-  10. publish_event           — emit EVENT_EGKYKLIOS_PUBLISHED on event bus
+  1.  gather_sources          - resolve period, validate sources exist, idempotency guard
+  2.  extract_briefing_texts  - read each briefing PDF via extract_pdf_text()
+  3.  extract_meeting_summaries - pull minutes text from workflow_state rows
+  4.  draft_circular          - LLM call → Markdown saved to disk + DB row created
+  5.  render_pdf              - Markdown → branded ReportLab PDF
+  6.  notify_board_for_review - M365 email to board + director with PDF attachment
+  7.  await_approval          - halt until SecGen approves (requires_approval=True)
+  8.  archive_to_sharepoint   - upload PDF + append protocol row
+  9.  send_brevo_campaign     - create & send Brevo campaign to members
+  10. publish_event           - emit EVENT_EGKYKLIOS_PUBLISHED on event bus
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def _period_title(period_start: str, period_end: str) -> str:
             return f"{m_start} {year}"
         return f"{m_start} - {m_end} {year}"
     except Exception:
-        return f"{period_start} – {period_end}"
+        return f"{period_start} - {period_end}"
 
 
 def _default_quarter(test_mode: bool = False) -> tuple[str, str]:
@@ -101,7 +101,7 @@ def _default_quarter(test_mode: bool = False) -> tuple[str, str]:
 
 
 class EgkykliosGeneralWorkflow(BaseWorkflow):
-    """Γενική Εγκύκλιος Ενημέρωσης — full 10-step workflow."""
+    """Γενική Εγκύκλιος Ενημέρωσης - full 10-step workflow."""
 
     def __init__(self, actor: str = "secgen") -> None:
         self._onedrive: OneDriveClient | None = None
@@ -146,7 +146,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
         without a KeyError.  The debug runner forces ``test_mode=True`` (skips
         SharePoint upload; Brevo stays draft/test); it is intentionally NOT set
         here.  Note: ``gather_sources`` performs a live DB idempotency check and
-        may fail if a non-cancelled draft already overlaps this period — pass
+        may fail if a non-cancelled draft already overlaps this period - pass
         ``--set period_start=...`` to move the window if needed.
         """
         return {
@@ -247,7 +247,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 return StepResult(
                     success=False,
                     message=(
-                        f"Υπάρχει ήδη εγκύκλιος για την περίοδο {row['period_start']} – {row['period_end']} "
+                        f"Υπάρχει ήδη εγκύκλιος για την περίοδο {row['period_start']} - {row['period_end']} "
                         f"(id={row['id']}, status={row['status']}). "
                         "Ακυρώστε τη προηγούμενη πριν δημιουργήσετε νέα."
                     ),
@@ -261,14 +261,14 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             return StepResult(
                 success=False,
                 message=(
-                    f"Δεν βρέθηκαν πηγές για την περίοδο {period_start} – {period_end}. "
+                    f"Δεν βρέθηκαν πηγές για την περίοδο {period_start} - {period_end}. "
                     "Απαιτείται τουλάχιστον ένα εισηγητικό/ενημερωτικό Διευθυντή ή "
                     "ένα σύνολο πρακτικών συνεδρίασης."
                 ),
             )
 
         logger.info(
-            "[%s] gather_sources: %d briefing(s), %d minutes row(s) in %s – %s",
+            "[%s] gather_sources: %d briefing(s), %d minutes row(s) in %s - %s",
             self.workflow_id, len(briefings), len(minutes_rows), period_start, period_end,
         )
 
@@ -380,7 +380,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 text = str(row_ctx["secgen_notes"])[:3000]
 
             if not text:
-                text = f"[Πρακτικά συνεδρίασης {workflow_id} — δεν βρέθηκε κείμενο στο context]"
+                text = f"[Πρακτικά συνεδρίασης {workflow_id} - δεν βρέθηκε κείμενο στο context]"
 
             summaries.append({
                 "workflow_id": workflow_id,
@@ -409,7 +409,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
         # Build source bundles for the prompt
         briefings_text = ""
         for bt in briefing_texts:
-            scan_note = " [ΣΚΑΝΑΡΙΣΜΕΝΟ — περιορισμένη ανάγνωση]" if bt.get("is_scan") else ""
+            scan_note = " [ΣΚΑΝΑΡΙΣΜΕΝΟ - περιορισμένη ανάγνωση]" if bt.get("is_scan") else ""
             briefings_text += (
                 f"\n--- {bt['kind']} / Συνεδρίαση {bt['meeting_ref']} "
                 f"({bt.get('archived_at', '')[:10]}){scan_note} ---\n"
@@ -531,7 +531,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             else:
                 return StepResult(
                     success=False,
-                    message="Δεν βρέθηκε πρόχειρο Markdown — εκτελέστε ξανά το βήμα draft_circular.",
+                    message="Δεν βρέθηκε πρόχειρο Markdown - εκτελέστε ξανά το βήμα draft_circular.",
                 )
 
         pdf_filename = f"{period_start}_{period_end}_draft.pdf"
@@ -578,7 +578,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             return StepResult(
                 success=True,
                 data={"review_email_skipped": True},
-                message="Ειδοποίηση παρελήφθη — M365 δεν έχει ρυθμιστεί",
+                message="Ειδοποίηση παρελήφθη - M365 δεν έχει ρυθμιστεί",
             )
 
         pdf_path = Path(pdf_path_str) if pdf_path_str else None
@@ -591,13 +591,13 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             return StepResult(
                 success=True,
                 data={"review_email_skipped": True},
-                message="[TEST] Ειδοποίηση παρελήφθη — testing.test_email δεν έχει οριστεί",
+                message="[TEST] Ειδοποίηση παρελήφθη - testing.test_email δεν έχει οριστεί",
             )
 
         subject = f"Πρόχειρο Γενικής Εγκυκλίου: {title}"
         body_html = (
             f"<p>Επισυνάπτεται το πρόχειρο της <strong>Γενικής Εγκυκλίου Ενημέρωσης "
-            f"— {title}</strong> για έγκριση.</p>"
+            f"- {title}</strong> για έγκριση.</p>"
             f"<p>Παρακαλούμε ελέγξτε το περιεχόμενο και επικοινωνήστε με τον Γενικό "
             f"Γραμματέα για τυχόν διορθώσεις ή έγκριση αποστολής.</p>"
         )
@@ -658,7 +658,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
         return StepResult(
             success=True,
             data={"approved": True, "approved_by": self.actor},
-            message="Εγκυκλίος εγκρίθηκε — συνέχεια εκτέλεσης",
+            message="Εγκυκλίος εγκρίθηκε - συνέχεια εκτέλεσης",
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -677,7 +677,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             return StepResult(
                 success=True,
                 data={"archive_skipped": True},
-                message="Αρχειοθέτηση παρελήφθη — OneDrive δεν έχει ρυθμιστεί",
+                message="Αρχειοθέτηση παρελήφθη - OneDrive δεν έχει ρυθμιστεί",
             )
 
         pdf_path_str: str = ctx.get("draft_pdf_path", "")
@@ -696,7 +696,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             logger.warning("Αποτυχία ανάκτησης αριθμού πρωτοκόλλου: %s", e)
             protocol_number = f"{date.today().year}_000"
 
-        filename = f"[{protocol_number}] Γενική Εγκύκλιος Ενημέρωσης — {title}.pdf"
+        filename = f"[{protocol_number}] Γενική Εγκύκλιος Ενημέρωσης - {title}.pdf"
         remote_folder = f"Αρχείο/Εγκύκλιοι/Γενικές/{year_str}"
 
         try:
@@ -721,7 +721,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             await self.onedrive.append_protocol_row(
                 protocol_id=protocol_number,
                 date_str=date.today().isoformat(),
-                title=f"Γενική Εγκύκλιος Ενημέρωσης — {title}",
+                title=f"Γενική Εγκύκλιος Ενημέρωσης - {title}",
                 main_points="",
                 tags="Εγκύκλιοι, Ενημέρωση Μελών",
             )
@@ -760,7 +760,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             return StepResult(
                 success=True,
                 data={"brevo_skipped": True},
-                message="Brevo παρελήφθη — brevo.newsletter_template_id δεν έχει οριστεί",
+                message="Brevo παρελήφθη - brevo.newsletter_template_id δεν έχει οριστεί",
             )
 
         list_ids: list[int] = (
@@ -774,7 +774,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             return StepResult(
                 success=True,
                 data={"brevo_skipped": True},
-                message="Brevo παρελήφθη — δεν υπάρχουν list IDs",
+                message="Brevo παρελήφθη - δεν υπάρχουν list IDs",
             )
 
         # Load email template and fill placeholders
@@ -790,7 +790,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 f"<p><a href='{sharepoint_url}'>Κατεβάστε την εγκύκλιο</a></p>"
             )
 
-        subject = f"Γενική Εγκύκλιος Ενημέρωσης — {title}"
+        subject = f"Γενική Εγκύκλιος Ενημέρωσης - {title}"
         campaign_name = f"Εγκύκλιος {title}"
         test_addr = settings.testing.test_email
 
@@ -836,7 +836,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             )
         except Exception as e:
             return StepResult(
-                success=True,  # non-fatal — circular is already archived
+                success=True,  # non-fatal - circular is already archived
                 data={"brevo_skipped": True},
                 message=f"Αποτυχία Brevo (non-fatal): {e}",
             )
@@ -871,5 +871,5 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
         return StepResult(
             success=True,
             data={"event_published": True, "sent_at": sent_at},
-            message=f"EVENT_EGKYKLIOS_PUBLISHED εκδόθηκε — {title}",
+            message=f"EVENT_EGKYKLIOS_PUBLISHED εκδόθηκε - {title}",
         )

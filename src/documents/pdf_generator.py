@@ -71,10 +71,10 @@ def generate_pdf(
 
     Args:
         content: Dictionary with document structure:
-            - title: str — Document title
-            - subtitle: str — Optional subtitle (e.g., date, reference number)
-            - sections: list[dict] — Each with 'heading' and 'body' keys
-            - footer: str — Optional footer text
+            - title: str - Document title
+            - subtitle: str - Optional subtitle (e.g., date, reference number)
+            - sections: list[dict] - Each with 'heading' and 'body' keys
+            - footer: str - Optional footer text
         output_path: Where to save the PDF.
         workflow: Workflow name for audit logging.
 
@@ -140,12 +140,12 @@ def embed_signatures(
         input_pdf: Source PDF path.
         output_pdf: Output path for signed PDF.
         signatures: List of signature configs, each with:
-            - image_path: str — path to signature image (PNG/JPG)
-            - x: float — x position from left edge (points)
-            - y: float — y position from bottom edge (points)
-            - width: float — display width (points)
-            - height: float — display height (points)
-            - label: str — text label below signature (e.g., "Ο Πρόεδρος")
+            - image_path: str - path to signature image (PNG/JPG)
+            - x: float - x position from left edge (points)
+            - y: float - y position from bottom edge (points)
+            - width: float - display width (points)
+            - height: float - display height (points)
+            - label: str - text label below signature (e.g., "Ο Πρόεδρος")
         page_number: Page to sign (default -1 = last page).
         workflow: Workflow name for audit logging.
 

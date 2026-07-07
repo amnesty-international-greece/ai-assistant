@@ -8,7 +8,7 @@ Owns the Discord side of the RSS pipeline:
     posts genuinely-new content
 
 Triggered by:
-  • The scheduler's ``rss.poll_feeds`` job (every 15 min) — see
+  • The scheduler's ``rss.poll_feeds`` job (every 15 min) - see
     :mod:`src.core.scheduler`.
   • CLI ``ai-assistant rss poll-now`` (manual / debugging).
   • Slash command ``/ai-assistant rss-poll-now`` (Admin).
@@ -62,7 +62,7 @@ _BOOTSTRAP_POST_LIMIT = 1
 class RssFeedsCog(commands.Cog):
     """Polls RSS feeds and posts new items to Discord channels."""
 
-    # Poll cadence — every 15 minutes per the user-confirmed choice.  Edit
+    # Poll cadence - every 15 minutes per the user-confirmed choice.  Edit
     # here (not in scheduler.py) since RSS lives in the bot's event loop,
     # not the FastAPI scheduler's.
     POLL_INTERVAL_MINUTES = 15
@@ -79,17 +79,17 @@ class RssFeedsCog(commands.Cog):
         ai_group = self.bot.tree.get_command("ai-assistant")
         if ai_group is None or not isinstance(ai_group, app_commands.Group):
             logger.warning(
-                "RssFeedsCog: /ai-assistant group not found on tree — "
+                "RssFeedsCog: /ai-assistant group not found on tree - "
                 "RSS slash commands will not be registered.  Check cog load order."
             )
         else:
             try:
                 ai_group.add_command(self._commands_group)
-                logger.info("RssFeedsCog loaded — /ai-assistant rss subgroup registered")
+                logger.info("RssFeedsCog loaded - /ai-assistant rss subgroup registered")
             except discord.app_commands.errors.CommandAlreadyRegistered:
                 logger.debug("RssFeedsCog: /ai-assistant rss already registered (cog reload?)")
 
-        # Start the polling loop.  Lives inside the bot's event loop — no
+        # Start the polling loop.  Lives inside the bot's event loop - no
         # APScheduler dependency.  Skips the first immediate run (we don't
         # want to blast posts within seconds of every bot reboot); the loop
         # naturally fires POLL_INTERVAL_MINUTES later.
@@ -108,10 +108,10 @@ class RssFeedsCog(commands.Cog):
 
     @tasks.loop(minutes=POLL_INTERVAL_MINUTES)
     async def _poll_loop(self) -> None:
-        """Background poll — runs every POLL_INTERVAL_MINUTES."""
+        """Background poll - runs every POLL_INTERVAL_MINUTES."""
         try:
             await self.poll_all_feeds()
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:  # pragma: no cover - defensive
             logger.exception("RSS poll loop crashed: %s", exc)
 
     @_poll_loop.before_loop
@@ -140,7 +140,7 @@ class RssFeedsCog(commands.Cog):
             feed_url = feed["feed_url"]
             try:
                 feed_summary = await self._poll_one_feed(feed)
-            except Exception as exc:  # pragma: no cover — defensive
+            except Exception as exc:  # pragma: no cover - defensive
                 logger.exception("RSS poll failed for %s: %s", feed_url, exc)
                 feed_summary = {"errors": 1, "new_items": 0, "posted": 0}
             summary[feed_url] = feed_summary
@@ -164,7 +164,7 @@ class RssFeedsCog(commands.Cog):
 
         new_items = filter_new_items(items, last_seen_guid=last_seen_guid)
         if last_seen_guid is None and new_items:
-            # First poll for this feed — don't replay the entire archive.
+            # First poll for this feed - don't replay the entire archive.
             # Keep just the most recent so the user gets a sample.
             new_items = new_items[:_BOOTSTRAP_POST_LIMIT]
 
@@ -176,7 +176,7 @@ class RssFeedsCog(commands.Cog):
 
         routes = list_rss_routes(feed_url)
         if not routes:
-            logger.info("RSS feed %s has no routes — new items dropped", feed_url)
+            logger.info("RSS feed %s has no routes - new items dropped", feed_url)
             # Still advance the cursor so we don't keep re-evaluating the same items
             update_rss_feed_cursor(feed_url, new_items[0].guid)
             return {"new_items": len(new_items), "posted": 0, "errors": 0}
@@ -204,7 +204,7 @@ class RssFeedsCog(commands.Cog):
                     errors += 1
 
         # Advance cursor to the newest item we processed (regardless of whether
-        # it matched any route — we never want to revisit it).
+        # it matched any route - we never want to revisit it).
         update_rss_feed_cursor(feed_url, new_items[0].guid)
         return {"new_items": len(new_items), "posted": posted, "errors": errors}
 
@@ -232,7 +232,7 @@ class RssFeedsCog(commands.Cog):
             await channel.send(embed=embed)  # type: ignore[union-attr]
         else:
             logger.warning(
-                "RSS: target channel %s is %s — cannot send",
+                "RSS: target channel %s is %s - cannot send",
                 target_channel_id, type(channel).__name__,
             )
             return
@@ -360,10 +360,10 @@ class RssFeedsCog(commands.Cog):
                 )
             for feed in feeds[:10]:
                 routes = list_rss_routes(feed["feed_url"])
-                cursor = feed.get("last_seen_guid") or "—"
+                cursor = feed.get("last_seen_guid") or "-"
                 polled = feed.get("last_polled_at") or "never"
                 value = (
-                    f"**Label:** {feed.get('label') or '—'}\n"
+                    f"**Label:** {feed.get('label') or '-'}\n"
                     f"**Enabled:** {'✓' if feed.get('enabled') else '✗'}\n"
                     f"**Routes:** {len(routes)}\n"
                     f"**Last poll:** {polled}\n"
@@ -387,7 +387,7 @@ class RssFeedsCog(commands.Cog):
             lines = []
             for feed_url, stats in summary.items():
                 lines.append(
-                    f"`{feed_url[:60]}` — new={stats['new_items']}, "
+                    f"`{feed_url[:60]}` - new={stats['new_items']}, "
                     f"posted={stats['posted']}, errors={stats['errors']}"
                 )
             await interaction.followup.send(

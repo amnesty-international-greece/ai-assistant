@@ -249,7 +249,7 @@ def test_archive_review_amend_renames_sharepoint_file(mock_db, capsys):
 
 
 def test_archive_review_amend_cross_year_protocol_warning(mock_db, capsys):
-    """Cross-year protocol_id changes are NOT applied to xlsx — warning emitted."""
+    """Cross-year protocol_id changes are NOT applied to xlsx - warning emitted."""
     from src.core.audit import save_workflow_state
     from datetime import datetime, timezone, timedelta
 
@@ -293,7 +293,7 @@ def test_archive_review_amend_cross_year_protocol_warning(mock_db, capsys):
 
 @pytest.mark.asyncio
 async def test_collision_check_passes_when_protocol_is_reserved(mock_db):
-    """A freshly-reserved protocol number can never collide — instant pass."""
+    """A freshly-reserved protocol number can never collide - instant pass."""
     from src.workflows.archive import ArchiveWorkflow
 
     wf = ArchiveWorkflow()
@@ -339,12 +339,12 @@ async def test_collision_check_hard_fail_when_row_and_file_both_exist(mock_db):
     ctx = {
         "protocol_source": "document",
         "protocol_number": "2026_017",
-        "llm_result": {"title": "πρακτικα δσ03"},  # title doesn't matter — file exists
+        "llm_result": {"title": "πρακτικα δσ03"},  # title doesn't matter - file exists
     }
     result = await wf._step_collision_check(ctx)
     assert result.success is False
     assert "ήδη αρχειοθετηθεί" in result.message
-    # CRITICAL: no pending state is set — this is a flat fail, not a deferral.
+    # CRITICAL: no pending state is set - this is a flat fail, not a deferral.
     assert "pending_reservation_confirmation" not in ctx
     assert "pending_collision" not in ctx
 

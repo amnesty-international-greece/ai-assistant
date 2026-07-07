@@ -572,7 +572,7 @@ async def test_rollback_does_not_crash(workflow):
 @pytest.mark.asyncio
 async def test_workflow_pauses_at_approval(workflow, tmp_path):
     """Full run should pause at the approval_and_share step (step index 3)."""
-    # Step 1: select_sources (using direct doc ID — the preferred path)
+    # Step 1: select_sources (using direct doc ID - the preferred path)
     workflow._google.read_doc_content.return_value = "SecGen notes"
     workflow._zoom.list_recordings.return_value = []
 

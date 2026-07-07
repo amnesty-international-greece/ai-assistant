@@ -388,19 +388,28 @@ def _role(name: str) -> MagicMock:
 
 
 def _make_president_interaction() -> MagicMock:
-    """Interaction whose user has BOTH Συντονιστής AND Διοικητικό Συμβούλιο."""
+    """Interaction whose user has BOTH Συντονιστής AND Διοικητικό Συμβούλιο
+    but is NOT a guild admin - so the role path is what grants access."""
     i = _make_interaction()
     i.user.roles = [_role("Συντονιστής"), _role("Διοικητικό Συμβούλιο"), _role("Μέλος")]
+    i.user.guild_permissions = MagicMock(administrator=False)
+    return i
+
+
+def _make_admin_interaction() -> MagicMock:
+    """Interaction whose user is a guild administrator with no special roles."""
+    i = _make_interaction()
+    i.user.roles = [_role("Μέλος")]
+    i.user.guild_permissions = MagicMock(administrator=True)
     return i
 
 
 def _make_non_president_interaction() -> MagicMock:
-    """Interaction whose user is missing one (or both) required roles."""
+    """Interaction whose user is neither admin nor holds both required roles."""
     i = _make_interaction()
-    # Missing Διοικητικό Συμβούλιο
+    # Missing Διοικητικό Συμβούλιο, and not an administrator
     i.user.roles = [_role("Συντονιστής"), _role("Μέλος")]
-    # send_message must be awaitable for the role-gate early-return
-    i.response.send_message = AsyncMock()
+    i.user.guild_permissions = MagicMock(administrator=False)
     return i
 
 
@@ -417,12 +426,43 @@ async def test_invite_blocks_users_without_both_roles():
     with patch("src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow") as WF:
         await cmd.cmd_invite.callback(cmd, interaction, poll_url="https://x", test=True)
 
-    # The workflow was NEVER instantiated — gate blocked it before
+    # The workflow was NEVER instantiated - gate blocked it before
     WF.assert_not_called()
-    # Caller got an ephemeral refusal
-    interaction.response.send_message.assert_awaited_once()
-    sent = interaction.response.send_message.call_args
+    # We defer first (3s ack window), then refuse via an ephemeral followup
+    interaction.response.defer.assert_awaited_once()
+    interaction.followup.send.assert_awaited_once()
+    sent = interaction.followup.send.call_args
     assert sent.kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_invite_allows_guild_admins_without_roles():
+    """A guild administrator may run /board invite even without the role-pair."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_admin_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.workflow_id = "wf_admin_001"
+    mock_wf.context = {}
+    mock_wf.run = AsyncMock(
+        return_value={"status": "awaiting_approval", "step": "await_approval"}
+    )
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ) as WF:
+        await cmd.cmd_invite.callback(
+            cmd, interaction, poll_url="https://x", test=True,
+        )
+
+    # Gate let the admin through - workflow ran.
+    WF.assert_called_once()
+    mock_wf.run.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -498,3 +538,280 @@ async def test_invite_only_passes_provided_args_to_workflow():
     assert "poll_url" not in initial_data
     assert "response_deadline" not in initial_data
     assert initial_data["test_mode"] is False
+
+
+# ── /board invite: candidate-date input (dates / start_date / end_date) ───────
+
+
+@pytest.mark.asyncio
+async def test_invite_dates_sets_crabfit_dates_in_workflow():
+    """Passing dates='2026-06-17,2026-06-18' feeds crabfit_dates to the workflow."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.workflow_id = "wf_dates_001"
+    mock_wf.context = {}
+    mock_wf.run = AsyncMock(return_value={"status": "awaiting_approval", "step": "await_approval"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            dates="2026-06-17,2026-06-18",
+        )
+
+    mock_wf.run.assert_awaited_once()
+    initial_data = mock_wf.run.call_args.args[0]
+    assert "crabfit_dates" in initial_data
+    assert initial_data["crabfit_dates"] == ["2026-06-17", "2026-06-18"]
+    # Workflow was started - followup embed sent
+    interaction.followup.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_invite_invalid_date_sends_ephemeral_error_without_running_workflow():
+    """An invalid date in the dates param sends an ephemeral error; workflow is NOT run."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.run = AsyncMock(return_value={"status": "completed"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            dates="2026-06-17,not-a-date",
+        )
+
+    # Workflow must NOT have been run
+    mock_wf.run.assert_not_awaited()
+    # An ephemeral error must have been sent via followup
+    interaction.followup.send.assert_awaited_once()
+    call_kwargs = interaction.followup.send.call_args
+    assert call_kwargs.kwargs.get("ephemeral") is True
+
+
+@pytest.mark.asyncio
+async def test_invite_date_range_expands_correctly():
+    """start_date + end_date range (2026-06-17 to 2026-06-19) expands to 3 dates."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.workflow_id = "wf_range_001"
+    mock_wf.context = {}
+    mock_wf.run = AsyncMock(return_value={"status": "awaiting_approval", "step": "await_approval"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            start_date="2026-06-17",
+            end_date="2026-06-19",
+        )
+
+    mock_wf.run.assert_awaited_once()
+    initial_data = mock_wf.run.call_args.args[0]
+    assert "crabfit_dates" in initial_data
+    assert len(initial_data["crabfit_dates"]) == 3
+    assert initial_data["crabfit_dates"] == ["2026-06-17", "2026-06-18", "2026-06-19"]
+
+
+@pytest.mark.asyncio
+async def test_invite_dates_not_passed_when_poll_url_given():
+    """When poll_url is also provided, crabfit_dates must NOT be in initial_data."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.workflow_id = "wf_pollurl_priority"
+    mock_wf.context = {}
+    mock_wf.run = AsyncMock(return_value={"status": "awaiting_approval", "step": "await_approval"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            poll_url="https://doodle.com/some-poll",
+            dates="2026-06-17,2026-06-18",
+        )
+
+    initial_data = mock_wf.run.call_args.args[0]
+    # poll_url present
+    assert initial_data["poll_url"] == "https://doodle.com/some-poll"
+    # crabfit_dates must be absent (poll_url wins)
+    assert "crabfit_dates" not in initial_data
+
+
+@pytest.mark.asyncio
+async def test_invite_crabfit_url_surfaced_in_embed():
+    """If the workflow sets crabfit_url in context, the embed gets a 'Crab.fit poll' field."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.workflow_id = "wf_crabfit_url"
+    mock_wf.context = {"crabfit_url": "https://crab.fit/abc123"}
+    mock_wf.run = AsyncMock(return_value={"status": "awaiting_approval", "step": "await_approval"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            dates="2026-06-17",
+        )
+
+    interaction.followup.send.assert_awaited_once()
+    embed = interaction.followup.send.call_args.kwargs["embed"]
+    field_names = [f.name for f in embed.fields]
+    assert "Crab.fit poll" in field_names
+    # Verify the URL value is correct
+    crabfit_field = next(f for f in embed.fields if f.name == "Crab.fit poll")
+    assert crabfit_field.value == "https://crab.fit/abc123"
+
+
+@pytest.mark.asyncio
+async def test_invite_range_only_one_date_boundary():
+    """start_date == end_date expands to exactly 1 date."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.workflow_id = "wf_single_range"
+    mock_wf.context = {}
+    mock_wf.run = AsyncMock(return_value={"status": "completed"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            start_date="2026-06-17",
+            end_date="2026-06-17",
+        )
+
+    initial_data = mock_wf.run.call_args.args[0]
+    assert initial_data["crabfit_dates"] == ["2026-06-17"]
+
+
+@pytest.mark.asyncio
+async def test_invite_range_inverted_sends_error():
+    """end_date before start_date must send an ephemeral error without running workflow."""
+    from src.integrations.discord.cogs.board import BoardCog
+
+    bot = _make_bot()
+    cog = BoardCog(bot)
+    cmd = cog._commands
+    interaction = _make_president_interaction()
+
+    mock_wf = MagicMock()
+    mock_wf.run = AsyncMock(return_value={"status": "completed"})
+
+    with patch(
+        "src.workflows.board_meeting_invitation.BoardMeetingInvitationWorkflow",
+        return_value=mock_wf,
+    ):
+        await cmd.cmd_invite.callback(
+            cmd,
+            interaction,
+            start_date="2026-06-19",
+            end_date="2026-06-17",
+        )
+
+    mock_wf.run.assert_not_awaited()
+    interaction.followup.send.assert_awaited_once()
+    call_kwargs = interaction.followup.send.call_args
+    assert call_kwargs.kwargs.get("ephemeral") is True
+
+
+# ── Date autocomplete ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_autocomplete_start_date_returns_future_weekday_choices():
+    """start_date autocomplete offers up to 25 valid future weekday ISO dates."""
+    import datetime
+    from src.integrations.discord.cogs import board
+
+    interaction = MagicMock()
+    choices = await board._ac_start_date(interaction, "")
+
+    assert 0 < len(choices) <= 25
+    today = datetime.date.today()
+    for ch in choices:
+        d = datetime.date.fromisoformat(ch.value)   # value is valid ISO
+        assert d > today                              # strictly future
+        assert d.weekday() < 5                         # Mon-Fri only
+
+
+@pytest.mark.asyncio
+async def test_autocomplete_end_date_not_before_start_date():
+    """end_date autocomplete only offers dates on/after the chosen start_date."""
+    import datetime
+    from src.integrations.discord.cogs import board
+
+    start = datetime.date.today() + datetime.timedelta(days=21)
+    interaction = MagicMock()
+    interaction.namespace.start_date = start.isoformat()
+
+    choices = await board._ac_end_date(interaction, "")
+    assert choices, "expected at least one end-date suggestion"
+    for ch in choices:
+        assert datetime.date.fromisoformat(ch.value) >= start
+
+
+@pytest.mark.asyncio
+async def test_autocomplete_filters_by_current_text():
+    """Typed text narrows the suggestions (matches label or ISO substring)."""
+    from src.integrations.discord.cogs import board
+
+    interaction = MagicMock()
+    all_choices = await board._ac_start_date(interaction, "")
+    assert all_choices
+    needle = all_choices[0].value          # an exact ISO date already offered
+    filtered = await board._ac_start_date(interaction, needle)
+    assert any(ch.value == needle for ch in filtered)
+    assert len(filtered) <= len(all_choices)
