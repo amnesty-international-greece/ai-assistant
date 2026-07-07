@@ -140,6 +140,7 @@ minutes_pipeline:
   whisper_device: "cpu"           # "cpu" | "cuda"
   whisper_compute_type: "int8"    # "int8" (CPU-friendly) | "float16" (GPU)
   language: "el"                  # ASR + drafting language
+  coalesce_max_gap_seconds: 30.0  # merge consecutive same-speaker fragments (<= gap) into one turn; -1 disables
   recordings_dir: "data/recordings"
   transcripts_dir: "data/transcripts"
   articles_path: "assets/governance/articles.json"

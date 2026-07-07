@@ -42,6 +42,48 @@ def test_remap_speakers_applies_aliases():
     ]
 
 
+def _seg(speaker, text, start_s, end_s, off_topic=False):
+    """Build a segment dict (as build_minutes_skeleton emits) at offsets from _BASE."""
+    from datetime import timedelta
+    return {
+        "speaker": speaker,
+        "text": text,
+        "start": (_BASE + timedelta(seconds=start_s)).isoformat(),
+        "end": (_BASE + timedelta(seconds=end_s)).isoformat(),
+        "off_topic": off_topic,
+    }
+
+
+def test_coalesce_merges_consecutive_same_speaker():
+    """Consecutive same-speaker fragments merge into one turn; text is joined,
+    start=first, end=last."""
+    from src.workflows.minutes_pipeline import _coalesce_speaker_turns
+    segs = [
+        _seg("Ελένη", "Ξεκινάμε", 0, 3),
+        _seg("Ελένη", "με τον προϋπολογισμό.", 4, 8),   # 1s gap → merge
+        _seg("Δημήτρης", "Συμφωνώ.", 9, 12),            # different speaker
+    ]
+    out = _coalesce_speaker_turns(segs, max_gap_seconds=30.0)
+    assert len(out) == 2
+    assert out[0]["text"] == "Ξεκινάμε με τον προϋπολογισμό."
+    assert out[0]["start"] == segs[0]["start"] and out[0]["end"] == segs[1]["end"]
+    assert out[1]["speaker"] == "Δημήτρης"
+
+
+def test_coalesce_respects_gap_and_flags():
+    """A gap over the threshold and an off_topic boundary both block merging."""
+    from src.workflows.minutes_pipeline import _coalesce_speaker_turns
+    # Same speaker but a 40s gap > 30s threshold → NOT merged.
+    big_gap = [_seg("Ελένη", "a", 0, 3), _seg("Ελένη", "b", 43, 46)]
+    assert len(_coalesce_speaker_turns(big_gap, max_gap_seconds=30.0)) == 2
+    # Same speaker, small gap, but different off_topic flag → NOT merged.
+    flagged = [_seg("Ελένη", "a", 0, 3), _seg("Ελένη", "b", 4, 7, off_topic=True)]
+    assert len(_coalesce_speaker_turns(flagged, max_gap_seconds=30.0)) == 2
+    # Negative threshold disables coalescing entirely.
+    same = [_seg("Ελένη", "a", 0, 3), _seg("Ελένη", "b", 4, 7)]
+    assert len(_coalesce_speaker_turns(same, max_gap_seconds=-1)) == 2
+
+
 def test_parse_llm_json_strips_fences_and_recovers():
     from src.workflows.minutes_pipeline import _parse_llm_json
     # fenced json
@@ -534,9 +576,11 @@ def test_draft_minutes_chunked_one_call_per_item(monkeypatch):
     from src.workflows import minutes_pipeline as mp
 
     calls = []
+    prompts_loaded = []
 
     class FakeClient:
         def load_prompt(self, name):
+            prompts_loaded.append(name)
             return "SYS"
 
         def generate(self, *, user_prompt, system_prompt, workflow, max_tokens):
@@ -562,6 +606,10 @@ def test_draft_minutes_chunked_one_call_per_item(monkeypatch):
     out = mp.draft_minutes_chunked(skeleton, ["NEC"], settings=None)
 
     assert out is not None
+    # Per-section drafting uses the dedicated body-only prompt, NOT the monolithic
+    # full-document "board_minutes" prompt (which leaks JSON/example metadata).
+    assert "board_minutes_section" in prompts_loaded
+    assert "board_minutes" not in prompts_loaded
     # 2 items + 1 opening bucket = 3 bounded calls
     assert len(calls) == 3
     assert all(c["max_tokens"] <= 4000 for c in calls)  # bounded, not single-shot

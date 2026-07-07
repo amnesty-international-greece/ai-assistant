@@ -252,6 +252,14 @@ class MinutesPipelineConfig(BaseModel):
     # mis-hear. Appended to the auto-built name/org glossary. e.g.
     # ["NEC", "campaign", "fundraising", "newsletter", "Urgent Action"].
     glossary_extra: list[str] = []
+    # Coalesce consecutive same-speaker transcript segments (Whisper's VAD splits
+    # one utterance into many) into single turns within each agenda item, so the
+    # first-degree drafting LLM sees clean speaker turns instead of fragments.
+    # Two adjacent same-speaker segments merge only when the gap between them is
+    # <= this many seconds. 0 merges only zero/negative-gap (pure VAD splits); a
+    # large value merges a speaker's whole held-floor run; a negative value
+    # disables coalescing entirely.
+    coalesce_max_gap_seconds: float = 30.0
 
 
 class UrlsConfig(BaseModel):

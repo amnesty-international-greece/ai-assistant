@@ -619,7 +619,10 @@ def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict
         from src.core.claude import ClaudeClient
 
         client = ClaudeClient()
-        system_prompt = client.load_prompt("board_minutes")
+        # Per-section prompt: returns ONLY the prose body for one agenda item.
+        # (The monolithic "board_minutes" prompt asks for a full JSON document and
+        # leaks its example metadata into section bodies - see board_minutes_section.md.)
+        system_prompt = client.load_prompt("board_minutes_section")
     except Exception as exc:  # noqa: BLE001 - drafting must never crash assemble
         logger.warning("Chunked drafting unavailable; continuing without draft: %s", exc)
         return None
@@ -687,6 +690,55 @@ def _parse_iso_utc(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _coalesce_speaker_turns(
+    segments: list[dict], *, max_gap_seconds: float
+) -> list[dict]:
+    """Merge consecutive same-speaker segment dicts into single turns.
+
+    Whisper's VAD splits one continuous utterance into many short segments;
+    within an already-windowed agenda item a run of consecutive same-speaker
+    segments is one held-floor turn. Coalescing them gives the first-degree
+    drafting LLM clean turns instead of ``speaker: fragment`` noise.
+
+    Two adjacent dicts merge when they share the same ``speaker`` and the same
+    ``off_topic`` flag AND the gap between the previous ``end`` and the current
+    ``start`` is ``<= max_gap_seconds`` (overlaps / negative gaps always
+    qualify). Merged ``text`` is joined with a single space; ``start`` is the
+    first segment's start and ``end`` the last's. Order is preserved. A segment
+    with an unparseable timestamp starts a fresh run (never merged). A negative
+    ``max_gap_seconds`` disables coalescing (input returned unchanged).
+    """
+
+    if max_gap_seconds < 0 or len(segments) < 2:
+        return segments
+
+    merged: list[dict] = []
+    for seg in segments:
+        if not merged:
+            merged.append(dict(seg))
+            continue
+        prev = merged[-1]
+        same_speaker = (seg.get("speaker") or "") == (prev.get("speaker") or "")
+        same_flag = bool(seg.get("off_topic")) == bool(prev.get("off_topic"))
+        prev_end = _parse_iso_utc(prev.get("end") or "")
+        cur_start = _parse_iso_utc(seg.get("start") or "")
+        gap_ok = (
+            prev_end is not None
+            and cur_start is not None
+            and (cur_start - prev_end).total_seconds() <= max_gap_seconds
+        )
+        if same_speaker and same_flag and gap_ok:
+            prev_text = (prev.get("text") or "").strip()
+            cur_text = (seg.get("text") or "").strip()
+            prev["text"] = (
+                (prev_text + " " + cur_text).strip() if cur_text else prev_text
+            )
+            prev["end"] = seg.get("end") or prev.get("end")
+        else:
+            merged.append(dict(seg))
+    return merged
 
 
 def _agenda_items_from_events(events: list[dict]) -> list[str]:
@@ -1044,6 +1096,23 @@ def assemble_minutes(
         cache.write_text(json.dumps(_segments_to_json(segments), ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         raise ValueError("provide manifest_path, transcript_path, or reuse_transcript")
+
+    # Coalesce consecutive same-speaker fragments into whole turns, per agenda
+    # item (and the unassigned bucket), so the first-degree drafting LLM sees
+    # clean speaker turns instead of Whisper's VAD-split fragments. Done
+    # post-windowing so a merge can never cross an agenda boundary; recomputes
+    # segment_count to reflect the coalesced turns.
+    gap = float(getattr(settings.minutes_pipeline, "coalesce_max_gap_seconds", 30.0))
+    for item in skeleton.get("items", []):
+        item["segments"] = _coalesce_speaker_turns(
+            item.get("segments") or [], max_gap_seconds=gap
+        )
+    skeleton["unassigned_segments"] = _coalesce_speaker_turns(
+        skeleton.get("unassigned_segments") or [], max_gap_seconds=gap
+    )
+    segment_count = sum(
+        len(it.get("segments") or []) for it in skeleton.get("items", [])
+    ) + len(skeleton.get("unassigned_segments") or [])
 
     # Surface formal decisions captured in-meeting (Zoom sidebar) onto the
     # skeleton. ``build_minutes_skeleton`` doesn't model ``decision`` events, so
