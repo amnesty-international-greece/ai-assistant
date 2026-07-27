@@ -84,6 +84,33 @@ def test_coalesce_respects_gap_and_flags():
     assert len(_coalesce_speaker_turns(same, max_gap_seconds=-1)) == 2
 
 
+def test_clean_turn_text_collapses_asr_noise():
+    """Whitespace, 3+ word stutter, and repeated sentences are cleaned; a pair kept."""
+    from src.workflows.minutes_pipeline import _clean_turn_text
+    assert _clean_turn_text("ναι ναι ναι συμφωνώ") == "ναι συμφωνώ"     # 3+ run collapses
+    assert _clean_turn_text("πολύ πολύ καλό") == "πολύ πολύ καλό"       # a pair is kept
+    assert (
+        _clean_turn_text("Το θέμα είναι σημαντικό. Το θέμα είναι σημαντικό.")
+        == "Το θέμα είναι σημαντικό."                                    # loop collapses
+    )
+    assert _clean_turn_text("  a\n\n  b  ") == "a b"                     # whitespace
+    assert _clean_turn_text("   ") == ""                                 # empty
+
+
+def test_coalesce_drops_pure_noise_pieces():
+    """A pure-punctuation fragment between same-speaker turns is dropped, not glued."""
+    from src.workflows.minutes_pipeline import _coalesce_speaker_turns
+    segs = [
+        _seg("Ελένη", "Ξεκινάμε.", 0, 3),
+        _seg("Ελένη", ".", 4, 5),            # pure noise → absorbed, text skipped
+        _seg("Ελένη", "Συνεχίζουμε.", 6, 9),
+    ]
+    out = _coalesce_speaker_turns(segs, max_gap_seconds=30.0)
+    assert len(out) == 1
+    assert out[0]["text"] == "Ξεκινάμε. Συνεχίζουμε."
+    assert out[0]["start"] == segs[0]["start"] and out[0]["end"] == segs[2]["end"]
+
+
 def test_parse_llm_json_strips_fences_and_recovers():
     from src.workflows.minutes_pipeline import _parse_llm_json
     # fenced json

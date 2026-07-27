@@ -692,10 +692,76 @@ def _parse_iso_utc(value: str) -> datetime | None:
     return parsed
 
 
+# --- Transcript-text cleaning (ASR noise, applied when coalescing turns) ------
+
+# Any Unicode letter (Greek/Latin) — used to spot pure-noise ASR fragments.
+_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+_WS_RE = re.compile(r"\s+")
+# Sentence boundary: end punctuation incl. Greek «;» (question mark) and «·».
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?;·…])\s+")
+
+
+def _has_letters(text: str) -> bool:
+    """True if the text has at least one letter (not just punctuation/digits)."""
+    return bool(_LETTER_RE.search(text or ""))
+
+
+def _collapse_word_runs(text: str) -> str:
+    """Collapse a run of 3+ identical consecutive words to one (ASR stutter).
+
+    Conservative: a pair ("πολύ πολύ") is kept — it may be genuine emphasis;
+    only three or more of the same word in a row collapse. Case-insensitive
+    match, first spelling kept.
+    """
+    words = text.split()
+    if len(words) < 3:
+        return text
+    out: list[str] = []
+    i, n = 0, len(words)
+    while i < n:
+        j = i
+        while j < n and words[j].lower() == words[i].lower():
+            j += 1
+        if j - i >= 3:
+            out.append(words[i])
+        else:
+            out.extend(words[i:j])
+        i = j
+    return " ".join(out)
+
+
+def _dedupe_sentences(text: str) -> str:
+    """Drop an immediately-repeated identical sentence (Whisper loop artifact).
+
+    Only collapses when the repeated sentence has >=4 words, so short genuine
+    repeats ("Ναι. Ναι.") are left untouched.
+    """
+    parts = _SENT_SPLIT_RE.split(text)
+    out: list[str] = []
+    for p in parts:
+        ps = p.strip()
+        prev = out[-1].strip() if out else ""
+        if ps and ps == prev and len(ps.split()) >= 4:
+            continue
+        out.append(p)
+    return " ".join(out)
+
+
+def _clean_turn_text(text: str) -> str:
+    """Normalise a coalesced turn: collapse whitespace, 3+ word stutter, and
+    immediately-repeated sentences. Returns "" for empty/pure-noise input."""
+    text = _WS_RE.sub(" ", text or "").strip()
+    if not text:
+        return ""
+    text = _collapse_word_runs(text)
+    text = _dedupe_sentences(text)
+    return text.strip()
+
+
 def _coalesce_speaker_turns(
     segments: list[dict], *, max_gap_seconds: float
 ) -> list[dict]:
-    """Merge consecutive same-speaker segment dicts into single turns.
+    """Merge consecutive same-speaker segment dicts into single clean turns.
 
     Whisper's VAD splits one continuous utterance into many short segments;
     within an already-windowed agenda item a run of consecutive same-speaker
@@ -705,39 +771,44 @@ def _coalesce_speaker_turns(
     Two adjacent dicts merge when they share the same ``speaker`` and the same
     ``off_topic`` flag AND the gap between the previous ``end`` and the current
     ``start`` is ``<= max_gap_seconds`` (overlaps / negative gaps always
-    qualify). Merged ``text`` is joined with a single space; ``start`` is the
-    first segment's start and ``end`` the last's. Order is preserved. A segment
-    with an unparseable timestamp starts a fresh run (never merged). A negative
-    ``max_gap_seconds`` disables coalescing (input returned unchanged).
+    qualify). When merging, pure-noise pieces (no letters, e.g. a stray ".")
+    are dropped from the joined text. Every resulting turn's text is then
+    cleaned (whitespace, 3+ word stutter, immediately-repeated sentences), so
+    empty/pure-noise turns end up with ``text == ""`` (skipped downstream by
+    :func:`_compact_transcript`).
+
+    ``start`` is the first segment's start and ``end`` the last's. Order is
+    preserved. A segment with an unparseable timestamp starts a fresh run. A
+    negative ``max_gap_seconds`` disables *merging* (cleaning still applies).
     """
 
-    if max_gap_seconds < 0 or len(segments) < 2:
-        return segments
-
+    do_merge = max_gap_seconds >= 0
     merged: list[dict] = []
     for seg in segments:
-        if not merged:
-            merged.append(dict(seg))
-            continue
-        prev = merged[-1]
-        same_speaker = (seg.get("speaker") or "") == (prev.get("speaker") or "")
-        same_flag = bool(seg.get("off_topic")) == bool(prev.get("off_topic"))
-        prev_end = _parse_iso_utc(prev.get("end") or "")
-        cur_start = _parse_iso_utc(seg.get("start") or "")
-        gap_ok = (
-            prev_end is not None
-            and cur_start is not None
-            and (cur_start - prev_end).total_seconds() <= max_gap_seconds
-        )
-        if same_speaker and same_flag and gap_ok:
-            prev_text = (prev.get("text") or "").strip()
-            cur_text = (seg.get("text") or "").strip()
-            prev["text"] = (
-                (prev_text + " " + cur_text).strip() if cur_text else prev_text
+        if merged and do_merge:
+            prev = merged[-1]
+            same_speaker = (seg.get("speaker") or "") == (prev.get("speaker") or "")
+            same_flag = bool(seg.get("off_topic")) == bool(prev.get("off_topic"))
+            prev_end = _parse_iso_utc(prev.get("end") or "")
+            cur_start = _parse_iso_utc(seg.get("start") or "")
+            gap_ok = (
+                prev_end is not None
+                and cur_start is not None
+                and (cur_start - prev_end).total_seconds() <= max_gap_seconds
             )
-            prev["end"] = seg.get("end") or prev.get("end")
-        else:
-            merged.append(dict(seg))
+            if same_speaker and same_flag and gap_ok:
+                cur_text = (seg.get("text") or "").strip()
+                if _has_letters(cur_text):  # drop pure-noise fragments (".", "…")
+                    prev_text = (prev.get("text") or "").strip()
+                    prev["text"] = (
+                        (prev_text + " " + cur_text).strip() if prev_text else cur_text
+                    )
+                prev["end"] = seg.get("end") or prev.get("end")
+                continue
+        merged.append(dict(seg))
+
+    for turn in merged:
+        turn["text"] = _clean_turn_text(turn.get("text") or "")
     return merged
 
 
