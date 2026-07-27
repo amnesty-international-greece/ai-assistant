@@ -29,8 +29,12 @@ Windowing rules (the heart of the logic)
   window contains the segment's ``start`` (half-open ``[start, end)``). Segments
   that fall before the first item's start, inside a break
   (``phase:break`` .. next ``phase:resume``), or after ``phase:end`` go to
-  ``unassigned_segments``. Off-topic segments are NOT unassigned merely for being
-  off-topic -- they stay in their time window and carry ``"off_topic": True``.
+  ``unassigned_segments``. A segment that falls in a *gap between item windows*
+  (e.g. an item was re-advanced, or the next advance came late) is attributed to
+  the last item that started before it and tagged ``"assigned_by":
+  "gap_fallback"`` rather than left unassigned. Off-topic segments are NOT
+  unassigned merely for being off-topic -- they stay in their time window and
+  carry ``"off_topic": True``.
 
 * **Off-topic flagging.** ``off_topic`` events arrive as ``begin``/``end`` pairs
   (matched in timestamp order). A segment whose ``start`` falls inside an
@@ -478,7 +482,18 @@ def build_minutes_skeleton(
 
         item_idx = _find_item_for_moment(items, moment)
         if item_idx is None:
-            unassigned.append(seg_dict)
+            # In a gap between item windows (e.g. an agenda item was re-advanced,
+            # closing its window before the next item opened, or the next advance
+            # came late). Attribute to the last item that STARTED before this
+            # moment - on-topic gap talk almost always belongs to the item that
+            # was active - rather than dumping it in the opening bucket. Tagged
+            # ``assigned_by="gap_fallback"`` so the inference stays auditable.
+            fallback_idx = _last_item_started_before(items, moment)
+            if fallback_idx is not None:
+                seg_dict["assigned_by"] = "gap_fallback"
+                items[fallback_idx]["segments"].append(seg_dict)
+            else:
+                unassigned.append(seg_dict)
         else:
             items[item_idx]["segments"].append(seg_dict)
 

@@ -78,6 +78,26 @@ def test_segment_before_first_advance_is_unassigned():
     assert sum(len(it["segments"]) for it in sk["items"]) == 0
 
 
+def test_gap_between_items_falls_back_to_last_started_item():
+    """A segment in a gap (item 2 re-advanced, closing its window before item 3
+    opens) is attributed to the last item that started before it, not unassigned."""
+    events = [
+        _advance(1, _AGENDA[0], 0),
+        _advance(2, _AGENDA[1], 10),
+        _advance(2, _AGENDA[1], 15),   # re-advance to item 2 → closes its window at 15
+        _advance(3, _AGENDA[2], 20),
+    ]
+    segments = [_seg("Ελένη Κοντού", "Στο κενό μεταξύ θεμάτων.", 17, 18)]  # in [15,20) gap
+    sk = build_minutes_skeleton(
+        meeting_ref="ΔΣ05-2026", agenda_items=_AGENDA,
+        events=events, segments=segments, roster=_ROSTER,
+    )
+    assert sk["unassigned_segments"] == []
+    assert len(sk["items"][1]["segments"]) == 1  # item 2 = last started before t=17
+    assert sk["items"][1]["segments"][0]["assigned_by"] == "gap_fallback"
+    assert [len(sk["items"][i]["segments"]) for i in (0, 2)] == [0, 0]
+
+
 def test_agenda_item_without_advance_still_appears_empty():
     events = [_advance(1, _AGENDA[0], 0)]  # only item 1 advanced
     sk = build_minutes_skeleton(
