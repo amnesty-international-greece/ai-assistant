@@ -78,6 +78,9 @@ def cmd_invite(args: argparse.Namespace) -> None:
     if invite_command == "resume":
         asyncio.run(_run_invite_resume(args))
         return
+    if invite_command == "send-newsletter":
+        asyncio.run(_run_invite_send_newsletter(args))
+        return
     # Default: run the main workflow
     if getattr(args, "cancel", False) or getattr(args, "rollback", False):
         asyncio.run(_run_invite_cancel(args))
@@ -363,6 +366,95 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
         print(f"  Newsletter: {'Sent' if ctx.get('newsletter_sent') else 'Draft/Skipped'}")
     else:
         print(f"\n  Status: {result.get('status')} - {result.get('error', '')}")
+
+
+async def _run_invite_send_newsletter(args: argparse.Namespace) -> None:
+    """Send ONLY the member newsletter for an already-completed invitation.
+
+    Replays just the ``send_newsletter`` step against the saved context of a
+    prior invitation workflow, so the campaign reuses that run's exact Zoom
+    link, agenda, and date. No new Zoom meeting is created, no board email is
+    re-sent. Use this to recover from a newsletter that was skipped (e.g. a
+    Brevo IP/auth error) without re-running the whole invitation.
+    """
+    from src.workflows.board_meeting_invitation import BoardMeetingInvitationWorkflow
+    import json as _json
+    from src.core.audit import get_workflow_state, _get_connection
+
+    test_mode = getattr(args, "test", False)
+    _print_header(
+        "Invitation - Send Newsletter Only" + ("  [TEST MODE]" if test_mode else "")
+    )
+
+    # Load the saved context: explicit --workflow-id, else the most recent
+    # invitation workflow that actually reached a scheduled Zoom meeting.
+    wf_id = getattr(args, "workflow_id", None)
+    ctx: dict | None = None
+    if wf_id:
+        state = get_workflow_state(wf_id)
+        if state and state.get("data"):
+            try:
+                ctx = (_json.loads(state["data"]) or {}).get("context")
+            except (ValueError, TypeError):
+                ctx = None
+    else:
+        conn = _get_connection()
+        rows = conn.execute(
+            "SELECT workflow_id, data FROM workflow_state "
+            "WHERE workflow_name = 'board_meeting_invitation' "
+            "ORDER BY updated_at DESC"
+        ).fetchall()
+        for row in rows:
+            try:
+                candidate = (_json.loads(row["data"] or "{}")).get("context", {})
+            except (ValueError, TypeError):
+                continue
+            if candidate.get("zoom_join_url") and candidate.get("raw_meeting_id"):
+                ctx = candidate
+                wf_id = row["workflow_id"]
+                break
+
+    if not ctx:
+        print(
+            "  ERROR: no completed invitation workflow found in workflow_state.\n"
+            "  Pass --workflow-id <ID> explicitly (see `ai-assistant audit`)."
+        )
+        return
+
+    recipient = (
+        f"TEST → {settings.testing.test_email or '(testing.test_email unset)'}"
+        if test_mode
+        else "LIVE → member newsletter list"
+    )
+    print(f"  Workflow:    {wf_id}")
+    print(f"  Meeting:     {ctx.get('raw_meeting_id', '?')}")
+    print(f"  Date/time:   {ctx.get('meeting_date', '?')}  {ctx.get('meeting_time', '')}")
+    print(f"  Zoom link:   {ctx.get('zoom_join_url', '(none)')}")
+    print(f"  Recipients:  {recipient}")
+    print()
+
+    if not test_mode and not _confirm(
+        "  Send the newsletter LIVE to the member list now? [y/n]: "
+    ):
+        print("  Cancelled - nothing sent.")
+        return
+
+    # Replay only the newsletter step with the saved ctx (mode via test_mode).
+    ctx = dict(ctx)
+    ctx["test_mode"] = test_mode
+    wf = BoardMeetingInvitationWorkflow(actor=getattr(args, "actor", "secgen"))
+    wf.context = ctx
+    result = await wf._step_send_newsletter(ctx)
+
+    print()
+    print(f"  {result.message}")
+    data = result.data or {}
+    if data.get("newsletter_sent"):
+        print(f"  Newsletter sent live (campaign {data.get('newsletter_campaign_id')}).")
+    elif data.get("newsletter_test_sent"):
+        print(f"  Test email sent to {data.get('newsletter_test_addr')}.")
+    else:
+        print("  Newsletter NOT sent - see message above (fix, then retry).")
 
 
 async def _run_invite(args: argparse.Namespace) -> None:
@@ -2843,6 +2935,16 @@ def main() -> None:
     resume_parser.add_argument("--protocol", help="Manual protocol number override (e.g. 2026_029)")
     resume_parser.add_argument("--test", action="store_true", help="Test mode")
     resume_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+
+    send_nl_parser = invite_sub.add_parser(
+        "send-newsletter",
+        help="Send ONLY the member newsletter for an already-completed invitation "
+             "(reuses its saved Zoom link + agenda; no new Zoom, no board email). "
+             "Use to recover a newsletter that was skipped, e.g. a Brevo IP error.",
+    )
+    send_nl_parser.add_argument("--workflow-id", help="Invitation workflow ID (default: most recent completed invitation)")
+    send_nl_parser.add_argument("--test", action="store_true", help="Send one test email to testing.test_email instead of the live member list")
+    send_nl_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
 
     reset_sheet_parser = invite_sub.add_parser(
         "reset-sheet",
