@@ -111,6 +111,16 @@ def test_coalesce_drops_pure_noise_pieces():
     assert out[0]["start"] == segs[0]["start"] and out[0]["end"] == segs[2]["end"]
 
 
+def test_compact_transcript_budget():
+    """A generous budget keeps a long item whole; a small budget truncates + marks."""
+    from src.workflows.minutes_pipeline import _compact_transcript
+    segs = [{"speaker": "Α", "text": "λέξη " * 12000}]  # ~60k chars
+    whole = _compact_transcript(segs, limit_chars=120000)
+    assert "συντομεύτηκε" not in whole and whole.count("λέξη") == 12000
+    cut = _compact_transcript(segs, limit_chars=100)
+    assert "συντομεύτηκε" in cut and len(cut) < 200
+
+
 def test_parse_llm_json_strips_fences_and_recovers():
     from src.workflows.minutes_pipeline import _parse_llm_json
     # fenced json

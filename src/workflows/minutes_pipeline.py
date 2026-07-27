@@ -473,12 +473,14 @@ def draft_from_skeleton(skeleton: dict, glossary: list[str], settings) -> dict |
 # Per-agenda-item drafting (bounded output; no single-shot truncation)
 # ---------------------------------------------------------------------------
 
-def _compact_transcript(segments: list[dict], *, limit_chars: int = 28000) -> str:
+def _compact_transcript(segments: list[dict], *, limit_chars: int = 120000) -> str:
     """Render skeleton segments as compact ``speaker: text`` lines for the LLM.
 
-    Far cheaper in tokens than the raw segment JSON. Truncated with a marker if a
-    single agenda item somehow exceeds *limit_chars* (rare; keeps one item's call
-    within budget no matter how long the discussion ran)."""
+    Far cheaper in tokens than the raw segment JSON. If a single agenda item's
+    rendered transcript exceeds *limit_chars* it is truncated with a marker AND
+    a warning is logged (no silent cap): the budget is meant to be generous
+    enough that realistic items never hit it — raise
+    ``minutes_pipeline.draft_item_char_budget`` if they do."""
     lines: list[str] = []
     for s in segments or []:
         text = (s.get("text") or "").strip()
@@ -488,6 +490,11 @@ def _compact_transcript(segments: list[dict], *, limit_chars: int = 28000) -> st
         lines.append(f"{speaker}: {text}" if speaker else text)
     out = "\n".join(lines)
     if len(out) > limit_chars:
+        logger.warning(
+            "Section transcript is %d chars (> budget %d) - truncating for the "
+            "draft LLM; raise minutes_pipeline.draft_item_char_budget to keep it all.",
+            len(out), limit_chars,
+        )
         out = out[:limit_chars] + "\n[... απόσπασμα συντομεύτηκε ...]"
     return out
 
@@ -627,6 +634,10 @@ def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict
         logger.warning("Chunked drafting unavailable; continuing without draft: %s", exc)
         return None
 
+    # Per-item transcript budget (generous by default so long items aren't cut).
+    mp_cfg = getattr(settings, "minutes_pipeline", None)
+    char_budget = getattr(mp_cfg, "draft_item_char_budget", 120000) or 120000
+
     sections: list[dict] = []
 
     unassigned = skeleton.get("unassigned_segments") or []
@@ -634,7 +645,8 @@ def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict
         try:
             body = _draft_section(
                 client, system_prompt, title="Έναρξη / Διαδικαστικά",
-                transcript=_compact_transcript(unassigned), votes=None, glossary=glossary,
+                transcript=_compact_transcript(unassigned, limit_chars=char_budget),
+                votes=None, glossary=glossary,
             )
             if body:
                 sections.append({"index": -1, "title": "Έναρξη / Διαδικαστικά", "body": body})
@@ -649,7 +661,8 @@ def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict
         try:
             body = _draft_section(
                 client, system_prompt, title=item.get("title", ""),
-                transcript=_compact_transcript(segs), votes=votes, glossary=glossary,
+                transcript=_compact_transcript(segs, limit_chars=char_budget),
+                votes=votes, glossary=glossary,
             )
         except Exception as exc:  # noqa: BLE001 - isolate one bad item
             logger.warning("Item draft failed for %r: %s", item.get("title"), exc)

@@ -260,6 +260,12 @@ class MinutesPipelineConfig(BaseModel):
     # large value merges a speaker's whole held-floor run; a negative value
     # disables coalescing entirely.
     coalesce_max_gap_seconds: float = 30.0
+    # Max characters of ONE agenda item's transcript fed to the first-degree
+    # drafting LLM. A long board item easily exceeds the old 28k cap, and the
+    # model's context is far larger, so keep this generous to avoid silently
+    # dropping the second half of a long discussion. Truncation beyond this is
+    # a logged backstop, not the norm.
+    draft_item_char_budget: int = 120000
 
 
 class UrlsConfig(BaseModel):
