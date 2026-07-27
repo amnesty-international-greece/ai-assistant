@@ -112,6 +112,44 @@ The webhook (`POST /webhooks/zoom/recording`) does the fetch automatically on
 `recording.completed` once the Zoom app's webhook URL + `ZOOM_WEBHOOK_SECRET_TOKEN`
 are configured.
 
+## Draft-input quality (2026-07)
+
+Improvements to what the first-degree LLM receives, so drafts are faithful and
+clean, without touching the deterministic core:
+
+- **Speaker-turn coalescing + ASR cleanup** (`_coalesce_speaker_turns`): Whisper's
+  VAD fragments are merged into whole per-speaker turns; pure-noise fragments (a
+  stray ".") are dropped, 3+ word stutter and immediately-repeated sentences
+  collapsed. On ΔΣ05: 3976 fragments → 1343 clean turns, only ~0.3% of chars
+  removed (all genuine ASR stutter — no member statement lost). Tunable via
+  `minutes_pipeline.coalesce_max_gap_seconds`.
+- **No silent truncation** (`draft_item_char_budget`, default 120000): a long
+  agenda item's transcript is no longer cut at 28k chars (which dropped ~half of
+  ΔΣ05's biggest items); it now fits the model's context, with a *logged* backstop.
+- **Per-section prompt** (`board_minutes_section.md`): the per-item drafter returns
+  prose only, ending the JSON-leak where the monolithic prompt's example metadata
+  bled into section bodies.
+
+## Agenda anchoring - the open problem
+
+The skeleton time-binds segments to agenda items from the sidebar's
+`agenda_advance` events, so quality depends on those being tapped promptly:
+
+- **Inter-item gaps → fixed** (`gap_fallback`): a segment in a gap between windows
+  (an item re-advanced, or the next advance came late) now attaches to the last
+  active item, tagged `assigned_by="gap_fallback"`. ΔΣ05: rescued 139 segments.
+- **Pre-first-advance content → still open**: on ΔΣ05 the first advance came ~38
+  min in, so 715 segments (items 1-2 discussion held before any marking) landed in
+  the generic opening bucket. This is deterministically unattributable. Two paths,
+  needs a decision:
+  1. **Process/UX** - tap advances promptly (a Discord/sidebar nudge, or
+     auto-advance into item 1 at meeting start).
+  2. **LLM agenda router (proposed, opt-in, default OFF)** - an optional step that
+     asks the LLM to assign each opening-bucket turn/block to one of the *known*
+     agenda titles or "opening/procedural", tagged `assigned_by="llm"`.
+     Ethics-aligned (narrow, local, auditable). Awaiting sign-off on design before
+     building.
+
 ## Build order remaining
 
 1. **Spike** (above) - confirm manifest reality. *Unblocked; needs one test recording.*
