@@ -41,6 +41,27 @@ def _is_video_asset(rec: dict[str, Any]) -> bool:
     return file_type in _VIDEO_MARKERS or recording_type in _VIDEO_MARKERS
 
 
+def _participant_from_file_name(file_name: str) -> str:
+    """Extract a participant name from a per-participant audio file's ``file_name``.
+
+    Zoom's ``participant_audio_files`` entries carry NO ``participant_name`` /
+    ``user_name`` field; the speaker's name lives in ``file_name`` formatted as
+    ``"Audio only - <Name>"`` (e.g. ``"Audio only - ELENI KONTOU"``,
+    ``"Audio only - Διευθυντής Τμήματος"``). Strip an optional extension and the
+    ``"Audio only - "`` prefix. Returns ``""`` if the prefix is absent (so it is
+    safe to call on the mixed-audio file, which carries no per-speaker name).
+    """
+    name = (file_name or "").strip()
+    for ext in (".m4a", ".mp3", ".wav", ".m4p"):
+        if name.lower().endswith(ext):
+            name = name[: -len(ext)].strip()
+            break
+    prefix = "audio only - "
+    if name.lower().startswith(prefix):
+        return name[len(prefix):].strip()
+    return ""
+
+
 def _encode_uuid(uuid: str) -> str:
     """URL-encode a Zoom meeting UUID for use in an API path.
 
@@ -377,8 +398,21 @@ class ZoomClient:
                 "source":          source,  # which Zoom array this came from
                 "file_type":       rec.get("file_type", ""),
                 "recording_type":  rec.get("recording_type", ""),
-                # per-participant audio carries the speaker's name/email here
-                "participant":     rec.get("participant_name") or rec.get("user_name") or "",
+                # Per-participant audio carries the speaker's name. Zoom does NOT
+                # send participant_name/user_name for these - the name is in
+                # file_name as "Audio only - <Name>" - so parse it from there
+                # (only for the participant_audio_files array). speaker_aliases
+                # in config then map e.g. "ELENI KONTOU" -> "Ελένη Κοντού".
+                "participant": (
+                    rec.get("participant_name")
+                    or rec.get("user_name")
+                    or (
+                        _participant_from_file_name(rec.get("file_name", ""))
+                        if source == "participant_audio_files"
+                        else ""
+                    )
+                ),
+                "file_name":       rec.get("file_name", ""),  # kept for traceability
                 "recording_start": rec.get("recording_start", ""),
                 "recording_end":   rec.get("recording_end", ""),
                 "file_extension":  rec.get("file_extension", ""),

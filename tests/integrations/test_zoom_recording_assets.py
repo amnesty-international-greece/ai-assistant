@@ -198,6 +198,54 @@ async def test_download_captures_participant_audio_files_key(zoom_client, tmp_pa
     assert by_source["participant_audio_files"]["participant"] == "Γρηγόρης Μουζακίτης"
 
 
+def test_participant_from_file_name():
+    """Zoom puts the per-participant speaker name in file_name, not a name field."""
+    from src.integrations.zoom import _participant_from_file_name
+    assert _participant_from_file_name("Audio only - ELENI KONTOU") == "ELENI KONTOU"
+    assert _participant_from_file_name("Audio only - Διευθυντής Τμήματος") == "Διευθυντής Τμήματος"
+    assert _participant_from_file_name("Audio only - Members AI Greece.M4A") == "Members AI Greece"
+    assert _participant_from_file_name("shared_screen") == ""   # no prefix → empty
+    assert _participant_from_file_name("") == ""
+
+
+@pytest.mark.asyncio
+async def test_download_extracts_participant_from_file_name(zoom_client, tmp_path):
+    """Real Zoom shape: participant_audio_files carry the name in file_name
+    ('Audio only - <Name>'), with NO participant_name/user_name field."""
+    recording = {
+        "uuid": "fn-uuid", "topic": "T", "start_time": "2026-06-09T17:00:00Z",
+        "participant_audio_files": [
+            {
+                "id": "p1", "file_type": "M4A", "file_extension": "M4A",
+                "file_name": "Audio only - ELENI KONTOU",   # no participant_name field
+                "recording_start": "2026-06-09T17:00:13Z",
+                "recording_end": "2026-06-09T21:19:29Z",
+                "download_url": "https://zoom.us/rec/download/p1",
+            },
+        ],
+    }
+    zoom_client.get_recording = AsyncMock(return_value=recording)
+
+    async def fake_get(url, **kwargs):
+        resp = MagicMock()
+        resp.content = b"PART1"
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("httpx.AsyncClient") as mock_http:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=fake_get)
+        mock_http.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_http.return_value.__aexit__ = AsyncMock(return_value=False)
+        manifest = await zoom_client.download_recording_assets(
+            "fn-uuid", dest_dir=str(tmp_path)
+        )
+
+    entry = manifest["files"][0]
+    assert entry["participant"] == "ELENI KONTOU"
+    assert entry["file_name"] == "Audio only - ELENI KONTOU"
+
+
 @pytest.mark.asyncio
 async def test_download_skips_file_without_url_and_continues(zoom_client, tmp_path):
     recording = {
