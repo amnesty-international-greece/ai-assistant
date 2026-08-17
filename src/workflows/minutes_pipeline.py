@@ -44,6 +44,7 @@ from src.workflows.minutes_transcription import (
     build_minutes_from_recording,
     manifest_to_segments,
 )
+from src.workflows.minutes_documents import document_context_for_skeleton
 from src.workflows.timeline_speakers import (
     UNKNOWN_SPEAKER,
     attribute_segments,
@@ -67,6 +68,17 @@ def _remap_speakers(segments, aliases: dict) -> list:
 logger = logging.getLogger(__name__)
 
 _ORG_NAMES = ["Διεθνής Αμνηστία", "Αμνηστία"]
+
+# Drafting defaults (overridable from settings.minutes_pipeline).
+# Output ceiling: deliberately generous. Greek costs ~2-3 tokens/word, so a low
+# cap physically prevents the near-verbatim minutes we want; the model should be
+# limited by the discussion, never by the budget.
+_DEFAULT_MAX_OUTPUT_TOKENS = 32000
+# Transcript characters per drafting call. Small blocks are what stop a model
+# compressing a long item into a summary.
+_DEFAULT_BLOCK_CHARS = 12000
+# Lenient floor for the post-draft speaker-coverage check (retry once below it).
+_DEFAULT_MIN_SPEAKER_COVERAGE = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +173,13 @@ def get_transcriber(settings) -> Transcriber:
             model_size=cfg.whisper_model,
             device=cfg.whisper_device,
             compute_type=cfg.whisper_compute_type,
+            vad_filter=getattr(cfg, "whisper_vad_filter", True),
+            beam_size=getattr(cfg, "whisper_beam_size", 5),
+            condition_on_previous_text=getattr(
+                cfg, "whisper_condition_on_previous_text", False
+            ),
+            vad_min_silence_ms=getattr(cfg, "whisper_vad_min_silence_ms", 1000),
+            cpu_threads=getattr(cfg, "whisper_cpu_threads", 0),
         )
     if choice == "fake":
         return FakeTranscriber()
@@ -585,21 +604,126 @@ def _render_minutes_markdown(
     return "\n".join(out).strip() + "\n"
 
 
+def _norm_title(title: str) -> str:
+    """Normalise an agenda title for keying.
+
+    Delegates to the document module's normaliser so document- and decision-
+    lookups share one key space (case, whitespace AND accents).
+    """
+    from src.workflows.minutes_documents import _norm
+
+    return _norm(title)
+
+
+def _decisions_by_item_title(skeleton: dict) -> dict[str, list[dict]]:
+    """Group the skeleton's decisions by their agenda item title.
+
+    Lets each item's drafting call see the decisions taken under it, so the prose
+    leads into them naturally instead of reading disjointed from the verbatim
+    decision blocks the system appends.
+    """
+    grouped: dict[str, list[dict]] = {}
+    for decision in skeleton.get("decisions") or []:
+        title = (decision.get("agenda_item") or "").strip()
+        if title:
+            grouped.setdefault(_norm_title(title), []).append(decision)
+    return grouped
+
+
+def _split_turns_into_blocks(
+    segments: list[dict], *, max_chars: int
+) -> list[list[dict]]:
+    """Split one agenda item's turns into consecutive blocks of <= *max_chars*.
+
+    A single turn is never split, and a block always holds at least one turn
+    (even an over-long one). Keeping each drafting call small is the single most
+    effective defence against the model compressing a long discussion into a
+    short summary: it cannot "summarise to be safe" when the call only covers a
+    few minutes of talk.
+    """
+    blocks: list[list[dict]] = []
+    current: list[dict] = []
+    size = 0
+    for seg in segments or []:
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        cost = len(text) + len((seg.get("speaker") or "")) + 2
+        if current and size + cost > max_chars:
+            blocks.append(current)
+            current, size = [], 0
+        current.append(seg)
+        size += cost
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def _speaker_coverage(segments: list[dict], body: str) -> float:
+    """Fraction of a block's distinct speakers that appear in the drafted body.
+
+    Deliberately LENIENT: the drafter is expected to drop trivial, procedural and
+    off-topic turns, so full coverage is never required - this only catches a
+    draft that silently ignored most of the discussion. Matching on any
+    sufficiently long name part is enough, because the draft writes
+    "Ο κ. Μαρουλίδης" where the transcript says "Δημήτρης Μαρουλίδης".
+    """
+    speakers = {(s.get("speaker") or "").strip() for s in segments or []}
+    speakers = {s for s in speakers if s}
+    if not speakers:
+        return 1.0
+    hits = 0
+    for speaker in speakers:
+        parts = [p for p in speaker.split() if len(p) > 3]
+        if speaker in body or any(p in body for p in parts):
+            hits += 1
+    return hits / len(speakers)
+
+
 def _draft_section(
     client, system_prompt: str, *, title: str, transcript: str,
     votes: list | None, glossary: list[str],
+    decisions: list[dict] | None = None,
+    documents: str = "",
+    max_output_tokens: int = _DEFAULT_MAX_OUTPUT_TOKENS,
+    block_index: int = 0,
+    block_total: int = 1,
 ) -> str:
-    """One bounded LLM call drafting the πρακτικά body for a single agenda item."""
-    parts = [
+    """One LLM call drafting the πρακτικά body for one block of an agenda item."""
+    lead = (
         "Σύνταξε ΜΟΝΟ το σώμα των πρακτικών για το παρακάτω θέμα ημερήσιας διάταξης, "
-        "σε επίσημο, τρίτο-πρόσωπο ύφος. Απόδωσε πιστά τη συζήτηση και τις θέσεις των "
-        "ομιλητών, χωρίς να παραλείπεις ουσιώδη σημεία και χωρίς να προσθέτεις στοιχεία "
-        "που δεν προκύπτουν από το κείμενο. Μην επαναλάβεις τον τίτλο ως επικεφαλίδα.",
+        "σε επίσημο, τρίτο-πρόσωπο ύφος. Κατάγραψε ΑΝΑΛΥΤΙΚΑ τη θέση και τα επιχειρήματα "
+        "ΚΑΘΕ ομιλητή, με ονομαστική απόδοση - όχι σύνοψη. Παράλειψε μόνο τις πολύ σύντομες "
+        "ερωταπαντήσεις, τα διαδικαστικά/τεχνικά και όσα είναι εκτός θέματος. Μην προσθέτεις "
+        "στοιχεία που δεν προκύπτουν από το κείμενο. Μην επαναλάβεις τον τίτλο ως επικεφαλίδα."
+    )
+    if block_total > 1:
+        lead += (
+            f"\n\nΑΥΤΟ ΕΙΝΑΙ ΤΟ ΤΜΗΜΑ {block_index + 1} ΑΠΟ {block_total} της ίδιας "
+            "συζήτησης. Συνέχισε τη ροή: χωρίς εισαγωγή, χωρίς ανακεφαλαίωση, χωρίς "
+            "καταληκτική σύνοψη - μόνο η συνέχεια της αφήγησης."
+        )
+    parts = [
+        lead,
         "",
         f"Ονόματα/όροι: {', '.join(glossary) if glossary else ''}",
         "",
         f"## Θέμα\n{title}",
     ]
+    if documents:
+        parts.append(
+            "\n## Σχετικά έγγραφα (ΑΝΑΦΟΡΑ για ακρίβεια ονομάτων/αριθμών - "
+            f"ΜΗΝ τα περιληφθείς)\n{documents}"
+        )
+    if decisions:
+        parts.append(
+            "\n## Αποφάσεις που ελήφθησαν σε αυτό το θέμα (για συνοχή - "
+            "ΜΗΝ τις αναπαράγεις, προστίθενται αυτόματα)\n"
+            + "\n".join(
+                f"- {(d.get('ref') or '').strip()}: {(d.get('decision_text') or '').strip()}"
+                for d in decisions
+            )
+        )
     if votes:
         parts.append(f"\n## Ψηφοφορίες (JSON)\n{json.dumps(votes, ensure_ascii=False)}")
     parts.append(f"\n## Απομαγνητοφώνηση (ομιλητής: κείμενο)\n{transcript}")
@@ -607,9 +731,73 @@ def _draft_section(
         user_prompt="\n".join(parts),
         system_prompt=system_prompt,
         workflow="minutes_pipeline",
-        max_tokens=4000,
+        max_tokens=max_output_tokens,
     )
     return (raw or "").strip()
+
+
+def _draft_item_body(
+    client, system_prompt: str, *, title: str, segments: list[dict],
+    votes: list | None, glossary: list[str],
+    decisions: list[dict] | None = None,
+    documents: str = "",
+    max_output_tokens: int = _DEFAULT_MAX_OUTPUT_TOKENS,
+    block_chars: int = _DEFAULT_BLOCK_CHARS,
+    min_speaker_coverage: float = _DEFAULT_MIN_SPEAKER_COVERAGE,
+) -> str:
+    """Draft one agenda item's whole body, splitting long items into blocks.
+
+    Each block is drafted by its own call (so the model never feels pressure to
+    compress a long discussion), then the bodies are concatenated in order. After
+    each block a lenient speaker-coverage check runs; if the body ignored most of
+    the block's speakers it is retried ONCE with a firmer instruction, and the
+    better of the two attempts is kept. Failures degrade to an empty block rather
+    than losing the whole item.
+    """
+    blocks = _split_turns_into_blocks(segments, max_chars=block_chars)
+    if not blocks:
+        return ""
+    bodies: list[str] = []
+    for i, block in enumerate(blocks):
+        transcript = _compact_transcript(block, limit_chars=block_chars * 4)
+        try:
+            body = _draft_section(
+                client, system_prompt, title=title, transcript=transcript,
+                votes=votes if i == 0 else None,  # votes/decisions once, on block 1
+                glossary=glossary,
+                decisions=decisions if i == 0 else None,
+                documents=documents if i == 0 else "",
+                max_output_tokens=max_output_tokens,
+                block_index=i, block_total=len(blocks),
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate one bad block
+            logger.warning("Block %d/%d failed for %r: %s", i + 1, len(blocks), title, exc)
+            continue
+
+        coverage = _speaker_coverage(block, body)
+        if body and coverage < min_speaker_coverage:
+            logger.warning(
+                "Block %d/%d of %r covered only %.0f%% of its speakers - retrying once",
+                i + 1, len(blocks), title, coverage * 100,
+            )
+            try:
+                retry = _draft_section(
+                    client,
+                    system_prompt
+                    + "\n\nΠΡΟΣΟΧΗ: η προηγούμενη προσπάθεια παρέλειψε ομιλητές. "
+                      "Κατάγραψε ΡΗΤΑ τη θέση κάθε ομιλητή που εμφανίζεται στην "
+                      "απομαγνητοφώνηση, ονομαστικά, χωρίς συμπύκνωση.",
+                    title=title, transcript=transcript, votes=None, glossary=glossary,
+                    max_output_tokens=max_output_tokens,
+                    block_index=i, block_total=len(blocks),
+                )
+                if _speaker_coverage(block, retry) > coverage:
+                    body = retry
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Retry failed for block %d of %r: %s", i + 1, title, exc)
+        if body:
+            bodies.append(body)
+    return "\n\n".join(bodies).strip()
 
 
 def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict | None:
@@ -634,19 +822,26 @@ def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict
         logger.warning("Chunked drafting unavailable; continuing without draft: %s", exc)
         return None
 
-    # Per-item transcript budget (generous by default so long items aren't cut).
+    # Drafting knobs (generous defaults so long items are neither cut nor summarised).
     mp_cfg = getattr(settings, "minutes_pipeline", None)
-    char_budget = getattr(mp_cfg, "draft_item_char_budget", 120000) or 120000
+    max_out = getattr(mp_cfg, "draft_max_output_tokens", _DEFAULT_MAX_OUTPUT_TOKENS)
+    block_chars = getattr(mp_cfg, "draft_block_chars", _DEFAULT_BLOCK_CHARS)
+    min_cov = getattr(mp_cfg, "draft_min_speaker_coverage", _DEFAULT_MIN_SPEAKER_COVERAGE)
+
+    # Documents relevant to each agenda item (deterministic retrieval; may be {}).
+    docs_by_title = document_context_for_skeleton(skeleton, settings)
+    decisions_by_title = _decisions_by_item_title(skeleton)
 
     sections: list[dict] = []
 
     unassigned = skeleton.get("unassigned_segments") or []
     if unassigned:
         try:
-            body = _draft_section(
+            body = _draft_item_body(
                 client, system_prompt, title="Έναρξη / Διαδικαστικά",
-                transcript=_compact_transcript(unassigned, limit_chars=char_budget),
-                votes=None, glossary=glossary,
+                segments=unassigned, votes=None, glossary=glossary,
+                max_output_tokens=max_out, block_chars=block_chars,
+                min_speaker_coverage=min_cov,
             )
             if body:
                 sections.append({"index": -1, "title": "Έναρξη / Διαδικαστικά", "body": body})
@@ -658,17 +853,21 @@ def draft_minutes_chunked(skeleton: dict, glossary: list[str], settings) -> dict
         votes = item.get("votes") or []
         if not segs and not votes:
             continue
+        title = item.get("title", "")
         try:
-            body = _draft_section(
-                client, system_prompt, title=item.get("title", ""),
-                transcript=_compact_transcript(segs, limit_chars=char_budget),
-                votes=votes, glossary=glossary,
+            body = _draft_item_body(
+                client, system_prompt, title=title,
+                segments=segs, votes=votes, glossary=glossary,
+                decisions=decisions_by_title.get(_norm_title(title)),
+                documents=docs_by_title.get(_norm_title(title), ""),
+                max_output_tokens=max_out, block_chars=block_chars,
+                min_speaker_coverage=min_cov,
             )
         except Exception as exc:  # noqa: BLE001 - isolate one bad item
-            logger.warning("Item draft failed for %r: %s", item.get("title"), exc)
+            logger.warning("Item draft failed for %r: %s", title, exc)
             body = ""
         sections.append(
-            {"index": item.get("index"), "title": item.get("title"), "body": body}
+            {"index": item.get("index"), "title": title, "body": body}
         )
 
     if not sections:

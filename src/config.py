@@ -239,6 +239,17 @@ class MinutesPipelineConfig(BaseModel):
     whisper_model: str = "large-v3"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    # Voice-activity detection: per-participant tracks run the whole meeting but
+    # each speaker is silent most of it. VAD skips that silence (large speedup)
+    # and stops Whisper hallucinating text over it. Keep ON.
+    whisper_vad_filter: bool = True
+    whisper_vad_min_silence_ms: int = 1000
+    whisper_beam_size: int = 5
+    # 0 = library default; set to your core count to speed up CPU transcription.
+    whisper_cpu_threads: int = 0
+    # Conditioning each window on the previous window's text is the main cause of
+    # Whisper repetition loops on long recordings. Keep OFF.
+    whisper_condition_on_previous_text: bool = False
     language: str = "el"
     recordings_dir: str = "data/recordings"
     transcripts_dir: str = "data/transcripts"
@@ -266,6 +277,21 @@ class MinutesPipelineConfig(BaseModel):
     # dropping the second half of a long discussion. Truncation beyond this is
     # a logged backstop, not the norm.
     draft_item_char_budget: int = 120000
+    # Output ceiling per drafting call. Greek costs ~2-3 tokens/word, so a low cap
+    # physically prevents near-verbatim minutes: the model must be limited by the
+    # discussion, never by the budget.
+    draft_max_output_tokens: int = 32000
+    # Transcript characters per drafting call. Long agenda items are split into
+    # blocks of this size and drafted one block at a time - the most effective
+    # defence against a model compressing a long debate into a short summary.
+    draft_block_chars: int = 12000
+    # Lenient floor for the post-draft speaker-coverage check; below it the block
+    # is retried once with a firmer instruction. NOT a strict contract - the
+    # drafter is expected to drop trivial, procedural and off-topic turns.
+    draft_min_speaker_coverage: float = 0.5
+    # Where the director-briefing workflow stores εισηγητικά/ενημερωτικά, which
+    # are attached to the office-update agenda item when drafting.
+    director_briefings_dir: str = "data/director_briefings"
 
 
 class UrlsConfig(BaseModel):

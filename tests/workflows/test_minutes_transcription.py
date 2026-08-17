@@ -264,3 +264,27 @@ def test_build_minutes_from_recording_end_to_end():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_faster_whisper_passes_quality_kwargs():
+    """VAD + no previous-text conditioning must reach model.transcribe: they are
+    the two settings that stop silence hallucination and repetition loops."""
+    from src.workflows.minutes_transcription import FasterWhisperTranscriber
+
+    captured = {}
+
+    class FakeModel:
+        def transcribe(self, path, **kwargs):
+            captured.update(kwargs)
+            captured["path"] = path
+            return ([], None)
+
+    tr = FasterWhisperTranscriber()
+    tr._model = FakeModel()  # bypass the lazy heavy import
+    tr.transcribe("a.m4a", language="el", initial_prompt="Ονόματα: Χ")
+
+    assert captured["vad_filter"] is True
+    assert captured["condition_on_previous_text"] is False
+    assert captured["language"] == "el"
+    assert captured["beam_size"] == 5
+    assert captured["vad_parameters"]["min_silence_duration_ms"] == 1000

@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.workflows.minutes_pipeline import (
@@ -640,7 +641,9 @@ def test_draft_minutes_chunked_one_call_per_item(monkeypatch):
         ],
     }
 
-    out = mp.draft_minutes_chunked(skeleton, ["NEC"], settings=None)
+    # Coverage retry off: this test measures one call per item, not retries.
+    cfg = SimpleNamespace(minutes_pipeline=SimpleNamespace(draft_min_speaker_coverage=0.0))
+    out = mp.draft_minutes_chunked(skeleton, ["NEC"], settings=cfg)
 
     assert out is not None
     # Per-section drafting uses the dedicated body-only prompt, NOT the monolithic
@@ -649,7 +652,7 @@ def test_draft_minutes_chunked_one_call_per_item(monkeypatch):
     assert "board_minutes" not in prompts_loaded
     # 2 items + 1 opening bucket = 3 bounded calls
     assert len(calls) == 3
-    assert all(c["max_tokens"] <= 4000 for c in calls)  # bounded, not single-shot
+    assert all(c["max_tokens"] >= 32000 for c in calls)  # generous ceiling, not a 4k cap
     assert len(out["sections"]) == 3
     assert all(s.get("body") for s in out["sections"])
     assert len(out["decisions"]) == 1
@@ -693,3 +696,73 @@ def test_assign_decisions_to_items_by_timestamp():
     assert decisions[2].get("agenda_index") is None          # unresolved stays None
     assert decisions[3]["agenda_index"] == 0                  # not overwritten
     assert "agenda_assigned_by" not in decisions[3]
+
+
+def test_split_turns_into_blocks_never_splits_a_turn():
+    from src.workflows.minutes_pipeline import _split_turns_into_blocks
+    segs = [{"speaker": "Α", "text": "x" * 5000} for _ in range(5)]
+    blocks = _split_turns_into_blocks(segs, max_chars=12000)
+    assert [len(b) for b in blocks] == [2, 2, 1]          # 2 turns ~10k fits, 3rd overflows
+    assert sum(len(b) for b in blocks) == 5               # nothing lost
+    # An over-long single turn still yields its own block rather than vanishing.
+    assert len(_split_turns_into_blocks([{"speaker": "Α", "text": "y" * 50000}],
+                                        max_chars=1000)) == 1
+
+
+def test_speaker_coverage_is_lenient_on_surnames():
+    from src.workflows.minutes_pipeline import _speaker_coverage
+    segs = [{"speaker": "Dimitris Maroulidis", "text": "a"},
+            {"speaker": "Eleni Kontou", "text": "b"}]
+    # Draft mentions only one speaker, by surname -> 50%.
+    assert _speaker_coverage(segs, "Mr Maroulidis stated that...") == 0.5
+    assert _speaker_coverage(segs, "Maroulidis and Kontou agreed.") == 1.0
+    assert _speaker_coverage([], "anything") == 1.0
+
+
+def test_draft_item_body_splits_long_item_into_multiple_calls(monkeypatch):
+    """A long agenda item is drafted block-by-block, so the model is never asked
+    to render a whole multi-hour discussion in one bounded answer."""
+    from src.workflows import minutes_pipeline as mp
+
+    calls = []
+
+    class FakeClient:
+        def generate(self, *, user_prompt, system_prompt, workflow, max_tokens):
+            calls.append({"prompt": user_prompt, "max_tokens": max_tokens})
+            return "SPEAKER A stated the position in detail."
+
+    segs = [{"speaker": "A", "text": "x" * 4000} for _ in range(9)]  # ~36k chars
+    body = mp._draft_item_body(
+        FakeClient(), "SYS", title="Θέμα", segments=segs, votes=None,
+        glossary=["A"], max_output_tokens=32000, block_chars=12000,
+        min_speaker_coverage=0.0,
+    )
+    assert len(calls) == 5                        # 2 turns fit per block; 9 turns → 3 blocks
+    assert all(c["max_tokens"] == 32000 for c in calls)   # generous ceiling used
+    assert "2" in calls[1]["prompt"] and "5" in calls[1]["prompt"]   # "block 2 of 5"
+    assert body.count("stated") == 5                     # bodies concatenated
+
+
+def test_draft_item_body_retries_once_on_poor_speaker_coverage(monkeypatch):
+    """If a draft ignores most speakers, it is retried once with a firmer
+    instruction and the better attempt is kept."""
+    from src.workflows import minutes_pipeline as mp
+
+    outputs = ["A discussion took place.",              # names nobody -> coverage 0
+               "Maroulidis and Kontou both spoke."]    # names both -> coverage 1
+    calls = []
+
+    class FakeClient:
+        def generate(self, *, user_prompt, system_prompt, workflow, max_tokens):
+            calls.append(system_prompt)
+            return outputs[min(len(calls) - 1, len(outputs) - 1)]
+
+    segs = [{"speaker": "Dimitris Maroulidis", "text": "a"},
+            {"speaker": "Eleni Kontou", "text": "b"}]
+    body = mp._draft_item_body(
+        FakeClient(), "SYS", title="Θέμα", segments=segs, votes=None, glossary=[],
+        block_chars=12000, min_speaker_coverage=0.5,
+    )
+    assert len(calls) == 2                       # one retry happened
+    assert calls[1] != calls[0]                  # firmer instruction on retry
+    assert "Maroulidis" in body                 # better attempt kept

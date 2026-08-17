@@ -319,10 +319,29 @@ class FasterWhisperTranscriber:
         model_size: str = "large-v3",
         device: str = "cpu",
         compute_type: str = "int8",
+        *,
+        vad_filter: bool = True,
+        beam_size: int = 5,
+        condition_on_previous_text: bool = False,
+        vad_min_silence_ms: int = 1000,
+        cpu_threads: int = 0,
     ) -> None:
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        # 0 = let CTranslate2 choose. Set explicitly to use all cores on a
+        # multi-core box (transcribing a board meeting is CPU-bound).
+        self.cpu_threads = cpu_threads
+        # Voice-activity detection: per-participant tracks are mostly silence
+        # (one speaker, whole-meeting duration), so VAD both skips that silence
+        # -- a large speedup -- and prevents Whisper hallucinating text over it.
+        self.vad_filter = vad_filter
+        self.beam_size = beam_size
+        # Whisper's repetition loops come mainly from conditioning each window on
+        # the previous window's text; disabling it is the standard mitigation and
+        # matters most on long, silence-heavy recordings.
+        self.condition_on_previous_text = condition_on_previous_text
+        self.vad_min_silence_ms = vad_min_silence_ms
         self._model = None  # lazily constructed on first transcribe()
 
     def _ensure_model(self):
@@ -334,11 +353,10 @@ class FasterWhisperTranscriber:
             raise RuntimeError(
                 "faster-whisper not installed; pip install faster-whisper"
             ) from exc
-        self._model = WhisperModel(
-            self.model_size,
-            device=self.device,
-            compute_type=self.compute_type,
-        )
+        kwargs: dict = {"device": self.device, "compute_type": self.compute_type}
+        if self.cpu_threads:
+            kwargs["cpu_threads"] = self.cpu_threads
+        self._model = WhisperModel(self.model_size, **kwargs)
         return self._model
 
     def transcribe(
@@ -349,9 +367,16 @@ class FasterWhisperTranscriber:
         initial_prompt: str = "",
     ) -> list[tuple[str, float, float]]:
         model = self._ensure_model()
-        segments, _info = model.transcribe(
-            audio_path,
-            language=language,
-            initial_prompt=initial_prompt or None,
-        )
+        kwargs: dict = {
+            "language": language,
+            "initial_prompt": initial_prompt or None,
+            "beam_size": self.beam_size,
+            "condition_on_previous_text": self.condition_on_previous_text,
+            "vad_filter": self.vad_filter,
+        }
+        if self.vad_filter:
+            kwargs["vad_parameters"] = {
+                "min_silence_duration_ms": self.vad_min_silence_ms
+            }
+        segments, _info = model.transcribe(audio_path, **kwargs)
         return [(seg.text.strip(), seg.start, seg.end) for seg in segments]
