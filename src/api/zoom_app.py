@@ -183,89 +183,6 @@ async def zoom_app_record_decision(body: DecisionIn):
     return JSONResponse({"ok": True, "ref": ref, "decision": payload})
 
 
-def _lookup_zoom_meeting_id(meeting_ref: str) -> str:
-    """Numeric Zoom meeting ID for a meeting_ref, from the invitation workflow.
-
-    Polls are configured per meeting ID (not per meeting_ref), and the
-    invitation workflow already stored it when it scheduled the Zoom meeting.
-    """
-    target = (meeting_ref or "").strip()
-    try:
-        from src.core.audit import _get_connection
-        conn = _get_connection()
-        rows = conn.execute(
-            "SELECT data FROM workflow_state "
-            "WHERE workflow_name = 'board_meeting_invitation' "
-            "ORDER BY updated_at DESC"
-        ).fetchall()
-        for row in rows:
-            try:
-                ctx = (json.loads(row["data"] or "{}")).get("context", {})
-            except (json.JSONDecodeError, TypeError):
-                continue
-            ref_row = (ctx.get("raw_meeting_id") or ctx.get("meeting_ref") or "").strip()
-            if target and ref_row != target:
-                continue
-            zid = str(ctx.get("zoom_meeting_id") or "").strip()
-            if zid:
-                return zid
-    except Exception as e:  # noqa: BLE001
-        logger.warning("zoom-app meeting-id lookup failed: %s", e)
-    return ""
-
-
-class PollIn(BaseModel):
-    meeting_ref: str
-    question: str                    # usually the decision text
-    answers: list[str] = []          # defaults to Υπέρ / Κατά / Αποχή
-    anonymous: bool = False
-    meeting_id: str = ""             # LIVE meeting id from the Zoom SDK
-
-
-@router.post("/zoom-app/poll")
-async def zoom_app_create_poll(body: PollIn):
-    """Create a native Zoom poll so every participant can vote in Zoom's own UI.
-
-    The host still presses LAUNCH in the Zoom client - the REST API can create a
-    poll but cannot start one. Results are collected after the meeting from
-    ``GET /past_meetings/{uuid}/polls`` and become ``vote`` events in the minutes.
-    """
-    meeting_ref = body.meeting_ref.strip()
-    question = body.question.strip()
-    if not meeting_ref or not question:
-        return JSONResponse(
-            {"ok": False, "error": "meeting_ref and question required"}, status_code=400
-        )
-
-    # Prefer the meeting the sidebar is actually running in. Falling back to the
-    # scheduled meeting stored by the invitation workflow would put the poll on
-    # a DIFFERENT (often past) meeting, where nobody in this call can see it.
-    zoom_meeting_id = (body.meeting_id or "").strip() or _lookup_zoom_meeting_id(meeting_ref)
-    if not zoom_meeting_id:
-        return JSONResponse(
-            {"ok": False,
-             "error": "no Zoom meeting id: the sidebar did not report one and none "
-                      f"is stored for {meeting_ref}"},
-            status_code=404,
-        )
-
-    from src.integrations.zoom import ZoomClient
-    poll = await ZoomClient().create_poll(
-        zoom_meeting_id,
-        question=question,
-        answers=[a for a in body.answers if a.strip()] or None,
-        anonymous=body.anonymous,
-    )
-    if poll is None:
-        return JSONResponse(
-            {"ok": False,
-             "error": "Zoom rejected the poll. If this says polls are disabled, "
-                      "enable 'Meeting Polls/Quizzes' in the Zoom web portal settings."},
-            status_code=502,
-        )
-    return JSONResponse({"ok": True, "poll_id": poll.get("id"), "question": question})
-
-
 @router.api_route("/zoom-app", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def zoom_app_home():
     """Home URL - loaded inside the Zoom desktop client sidebar."""
@@ -402,7 +319,6 @@ _HOME_HTML = """<!DOCTYPE html>
       <button class="oc" data-oc="Έγκριση">ΕΓΚΡΙΣΗ</button>
       <button class="oc" data-oc="Απόρριψη">ΑΠΟΡΡΙΨΗ</button>
     </div>
-    <button class="ghost" id="dec-poll">🗳 ΨΗΦΟΦΟΡΙΑ ΣΤΟ ZOOM</button>
     <button id="dec-save">✓ ΚΑΤΑΓΡΑΦΗ &amp; ΑΝΑΚΟΙΝΩΣΗ</button>
 
     <p class="sec-title" id="declist-label" style="margin-top:16px;">Καταγραφές</p>
@@ -415,7 +331,6 @@ _HOME_HTML = """<!DOCTYPE html>
     let idx = -1;
     let screenName = "";
     let MEETING_REF = "";
-    let LIVE_MEETING_ID = "";   // the meeting this sidebar is actually in
     let selectedOutcome = "";
     let recState = "before";   // before | live | ended
     let baseStatus = "";
@@ -575,32 +490,6 @@ _HOME_HTML = """<!DOCTYPE html>
     }
 
     // ── Decision capture + canonical chat broadcast ───────────────────────
-    // Native Zoom poll: puts the vote in front of every participant in Zoom's
-    // own dialog (no app install needed). The host still presses Launch in the
-    // Zoom client - the REST API cannot start a poll, only create it.
-    $("dec-poll").onclick = async () => {
-      const text = ($("dec-text").value || "").trim();
-      if (!text) { toast("Γράψε πρώτα το κείμενο της απόφασης."); return; }
-      $("dec-poll").disabled = true;
-      try {
-        const res = await fetch("/zoom-app/poll", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            meeting_ref: MEETING_REF, question: text, meeting_id: LIVE_MEETING_ID,
-          }),
-        });
-        const data = await res.json();
-        toast(data.ok
-          ? "Η ψηφοφορία δημιουργήθηκε - πάτησε Polls > Launch στο Zoom."
-          : ("Αποτυχία: " + (data.error || "άγνωστο σφάλμα")));
-      } catch (e) {
-        toast("Αποτυχία δημιουργίας ψηφοφορίας.");
-      } finally {
-        $("dec-poll").disabled = false;
-      }
-    };
-
     document.querySelectorAll(".outcome .oc").forEach((b) => {
       b.onclick = () => {
         selectedOutcome = b.getAttribute("data-oc");
@@ -711,12 +600,6 @@ _HOME_HTML = """<!DOCTYPE html>
         setStatus(baseStatus, true);
         ensureRecListener();
         try { const u = await zoomSdk.getUserContext(); screenName = u.screenName || ""; } catch (_) {}
-        // The meeting we are ACTUALLY in. Polls must be created here, not on
-        // whatever meeting the last invitation workflow happened to schedule.
-        try {
-          const mc = await zoomSdk.getMeetingContext();
-          LIVE_MEETING_ID = String((mc && (mc.meetingID || mc.meetingId)) || "");
-        } catch (_) {}
         // Reflect the actual (auto-started) recording state.
         try {
           const rc = await zoomSdk.getRecordingContext();

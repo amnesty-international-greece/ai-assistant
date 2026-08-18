@@ -45,7 +45,6 @@ from src.workflows.minutes_transcription import (
     manifest_to_segments,
 )
 from src.workflows.minutes_documents import document_context_for_skeleton
-from src.workflows.minutes_votes import votes_from_past_meeting_polls
 from src.workflows.timeline_speakers import (
     UNKNOWN_SPEAKER,
     attribute_segments,
@@ -603,33 +602,6 @@ def _render_minutes_markdown(
             out.extend(_render_decision_block(d))
 
     return "\n".join(out).strip() + "\n"
-
-
-def vote_events_from_manifest(manifest: dict) -> list[dict]:
-    """Synthesise ``vote`` events from the poll results stored in the manifest.
-
-    The Board votes in Zoom's native poll dialog; those results are captured at
-    fetch time. Converting them here means a vote reaches the minutes exactly
-    like a sidebar-captured event, and lands under the agenda item that was
-    active when it was cast (the skeleton attaches votes by timestamp).
-
-    Votes with no timestamp are skipped with a warning rather than guessed at -
-    an unplaceable vote would silently attach to the wrong agenda item.
-    """
-    events: list[dict] = []
-    for vote in votes_from_past_meeting_polls(manifest.get("polls") or {}):
-        ts = vote.pop("ts", "") or (manifest.get("start_time") or "")
-        if not ts:
-            logger.warning(
-                "Poll %r has no timestamp and the manifest has no start_time - "
-                "skipping (cannot place it on the agenda)", vote.get("label"),
-            )
-            continue
-        events.append({
-            "event_type": "vote", "ts": ts,
-            "payload": vote, "confidence": "confirmed",
-        })
-    return events
 
 
 def attendees_from_manifest(manifest: dict, aliases: dict | None = None) -> list[str]:
@@ -1429,15 +1401,10 @@ def assemble_minutes(
         # Attendance from the manifest is authoritative for presence: a member
         # who joined but never spoke must not be reported absent.
         attendees = attendees_from_manifest(manifest, aliases)
-        # Board votes cast in Zoom's native poll dialog arrive via the manifest,
-        # not the sidebar; treat them as first-class vote events.
-        poll_events = vote_events_from_manifest(manifest)
-        if poll_events:
-            logger.info("Adding %d vote(s) from Zoom polls", len(poll_events))
         skeleton = build_minutes_skeleton(
             meeting_ref=meeting_ref,
             agenda_items=agenda_items,
-            events=events + poll_events,
+            events=events,
             segments=segments,
             roster=roster,
             ignore_speakers={UNKNOWN_SPEAKER},
