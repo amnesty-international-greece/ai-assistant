@@ -219,6 +219,7 @@ class PollIn(BaseModel):
     question: str                    # usually the decision text
     answers: list[str] = []          # defaults to Υπέρ / Κατά / Αποχή
     anonymous: bool = False
+    meeting_id: str = ""             # LIVE meeting id from the Zoom SDK
 
 
 @router.post("/zoom-app/poll")
@@ -236,10 +237,15 @@ async def zoom_app_create_poll(body: PollIn):
             {"ok": False, "error": "meeting_ref and question required"}, status_code=400
         )
 
-    zoom_meeting_id = _lookup_zoom_meeting_id(meeting_ref)
+    # Prefer the meeting the sidebar is actually running in. Falling back to the
+    # scheduled meeting stored by the invitation workflow would put the poll on
+    # a DIFFERENT (often past) meeting, where nobody in this call can see it.
+    zoom_meeting_id = (body.meeting_id or "").strip() or _lookup_zoom_meeting_id(meeting_ref)
     if not zoom_meeting_id:
         return JSONResponse(
-            {"ok": False, "error": f"no Zoom meeting id stored for {meeting_ref}"},
+            {"ok": False,
+             "error": "no Zoom meeting id: the sidebar did not report one and none "
+                      f"is stored for {meeting_ref}"},
             status_code=404,
         )
 
@@ -409,6 +415,7 @@ _HOME_HTML = """<!DOCTYPE html>
     let idx = -1;
     let screenName = "";
     let MEETING_REF = "";
+    let LIVE_MEETING_ID = "";   // the meeting this sidebar is actually in
     let selectedOutcome = "";
     let recState = "before";   // before | live | ended
     let baseStatus = "";
@@ -579,7 +586,9 @@ _HOME_HTML = """<!DOCTYPE html>
         const res = await fetch("/zoom-app/poll", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ meeting_ref: MEETING_REF, question: text }),
+          body: JSON.stringify({
+            meeting_ref: MEETING_REF, question: text, meeting_id: LIVE_MEETING_ID,
+          }),
         });
         const data = await res.json();
         toast(data.ok
@@ -702,6 +711,12 @@ _HOME_HTML = """<!DOCTYPE html>
         setStatus(baseStatus, true);
         ensureRecListener();
         try { const u = await zoomSdk.getUserContext(); screenName = u.screenName || ""; } catch (_) {}
+        // The meeting we are ACTUALLY in. Polls must be created here, not on
+        // whatever meeting the last invitation workflow happened to schedule.
+        try {
+          const mc = await zoomSdk.getMeetingContext();
+          LIVE_MEETING_ID = String((mc && (mc.meetingID || mc.meetingId)) || "");
+        } catch (_) {}
         // Reflect the actual (auto-started) recording state.
         try {
           const rc = await zoomSdk.getRecordingContext();
