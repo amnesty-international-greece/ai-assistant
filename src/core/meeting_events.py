@@ -21,13 +21,6 @@ Canonical payload shape PER event_type
 - ``phase``: ``{"phase": "start"|"break"|"resume"|"end"}`` (the sidebar also
   attaches ``source`` / ``zoom_ts``, which are ignored downstream)
 - ``presence``: ``{"member": str, "status": "present"|"absent"|"left"|"joined"}``
-- ``off_topic``: ``{"state": "begin"|"end"}`` -- NOTE: the Zoom sidebar
-  currently sends ``{"after_index": int}`` instead, which
-  ``build_minutes_skeleton`` does NOT understand (it pairs begin/end on
-  ``state``), so sidebar-captured off-topic spans are inert. This event type
-  is being retired in favour of pausing the recording plus an LLM cleanup
-  pass; both shapes are accepted here so nothing fails at capture time.
-- ``note``: ``{"text": str}``
 - ``decision``: ``{"ref": str, "seq": int, "decision_text": str,
   "outcome": str, "considerations": [str], "agenda_index": int,
   "agenda_item": str}`` -- written live by the Zoom sidebar
@@ -49,8 +42,6 @@ VALID_EVENT_TYPES = {
     "vote",
     "phase",
     "presence",
-    "off_topic",
-    "note",
     "decision",   # captured live from the Zoom sidebar: ref + text + outcome
 }
 
@@ -65,8 +56,6 @@ _REQUIRED_PAYLOAD_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
     "vote":           (("label",), ("result",)),
     "phase":          (("phase",),),
     "presence":       (("member",), ("status",)),
-    "off_topic":      (("state", "after_index"),),
-    "note":           (("text",),),
     "decision":       (("decision_text",),),
 }
 

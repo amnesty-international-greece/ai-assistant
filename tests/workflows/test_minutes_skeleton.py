@@ -110,25 +110,22 @@ def test_agenda_item_without_advance_still_appears_empty():
     assert sk["items"][2]["segments"] == []
 
 
-def test_offtopic_span_flags_but_does_not_drop():
-    events = [
-        _advance(1, _AGENDA[0], 0),
-        {"event_type": "off_topic", "ts": _ts(5), "payload": {"state": "begin"}, "confidence": "confirmed"},
-        {"event_type": "off_topic", "ts": _ts(8), "payload": {"state": "end"}, "confidence": "confirmed"},
-    ]
+def test_offtopic_field_present_and_false_by_default():
+    """The off_topic EVENT was retired (the sidebar never emitted the shape this
+    module read). Every segment still carries the field, always False - the
+    planned LLM organiser sets it per turn. Nothing is ever dropped."""
+    events = [_advance(1, _AGENDA[0], 0)]
     segments = [
-        _seg("Σπύρος Απέργης", "Εντός θέματος.", 2, 3),
-        _seg("Σπύρος Απέργης", "Εκτός θέματος κουβέντα.", 6, 7),  # inside off-topic span
+        _seg("Spyros Apergis", "On topic.", 2, 3),
+        _seg("Spyros Apergis", "Some tangent.", 6, 7),
     ]
     sk = build_minutes_skeleton(
-        meeting_ref="ΔΣ05-2026", agenda_items=_AGENDA,
+        meeting_ref="DS05-2026", agenda_items=_AGENDA,
         events=events, segments=segments, roster=_ROSTER,
     )
     item_segs = sk["items"][0]["segments"]
-    assert len(item_segs) == 2  # nothing dropped
-    flags = {s["text"]: s["off_topic"] for s in item_segs}
-    assert flags["Εντός θέματος."] is False
-    assert flags["Εκτός θέματος κουβέντα."] is True
+    assert len(item_segs) == 2                              # nothing dropped
+    assert all(s["off_topic"] is False for s in item_segs)  # field kept, default False
 
 
 def test_break_window_sends_segments_to_unassigned():

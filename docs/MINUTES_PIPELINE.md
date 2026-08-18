@@ -46,7 +46,7 @@ streaming cost. (Full rationale: ROADMAP §6.7.)
 | Component | File | Status | Notes |
 |-----------|------|--------|-------|
 | Mid-meeting event store | `src/core/meeting_events.py` (+ `meeting_events` table) | ✅ built | votes / agenda marks / presence / breaks / notes |
-| Event capture CLI | `minutes events record/list` in `src/cli/commands.py` | ✅ built | interim capture surface |
+| Event capture | Zoom sidebar (`src/api/zoom_app.py`) | ✅ built | the ONLY writer; `minutes events list` is read-only inspection |
 | Recording webhook + fetch | `POST /webhooks/zoom/recording`, `ZoomClient.download_recording_assets`, `get_past_participants` | ✅ built | CRC handshake + signature verify; dumps assets + `manifest.json` |
 | On-demand fetch CLI | `minutes fetch-recording <uuid>` in `src/cli/commands.py` | ✅ built | pull a recording without waiting on the webhook |
 | Skeleton builder | `src/workflows/minutes_skeleton.py` | ✅ built | pure: agenda windowing, presence, votes, off-topic flagging |
@@ -87,7 +87,7 @@ Greek), captured by the webhook, then inspect `data/recordings/{uuid}/manifest.j
 ## Running the pieces today
 
 ```bash
-# Record events during a meeting (interim, before the Discord panel exists):
+# Inspect what the sidebar captured during a meeting:
 python -m src.cli minutes events record --meeting-ref ΔΣ05-2026 --type vote \
   --payload '{"label":"Έγκριση προϋπολογισμού","result":"passed","tally":{"υπέρ":4,"κατά":1,"αποχή":0},"method":"majority"}'
 python -m src.cli minutes events list --meeting-ref ΔΣ05-2026

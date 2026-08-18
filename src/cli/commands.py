@@ -1509,41 +1509,12 @@ def cmd_minutes_events(args: argparse.Namespace) -> None:
             pass
 
     events_command = getattr(args, "events_command", None)
-    if events_command == "record":
-        cmd_minutes_events_record(args)
-    elif events_command == "list":
+    if events_command == "list":
         cmd_minutes_events_list(args)
     else:
-        print("  Usage: minutes events {record|list} ...")
+        # Events are captured live by the Zoom sidebar; the CLI is read-only.
+        print("  Usage: minutes events list --meeting-ref <ref>")
 
-
-def cmd_minutes_events_record(args: argparse.Namespace) -> None:
-    """Record a single meeting event into the meeting_events table."""
-    from src.core.meeting_events import MeetingEventsStore, VALID_EVENT_TYPES
-
-    try:
-        payload = json.loads(args.payload)
-    except json.JSONDecodeError as e:
-        print(f"  Error: --payload is not valid JSON: {e}")
-        return
-    if not isinstance(payload, dict):
-        print("  Error: --payload must be a JSON object (dict).")
-        return
-
-    init_db()
-    try:
-        event_id = MeetingEventsStore().record_event(
-            meeting_ref=args.meeting_ref,
-            event_type=args.type,
-            payload=payload,
-            confidence=args.confidence,
-        )
-    except ValueError:
-        valid = ", ".join(sorted(VALID_EVENT_TYPES))
-        print(f"  Error: invalid event type '{args.type}'. Valid types: {valid}")
-        return
-
-    print(f"  Recorded event #{event_id}: {args.type} for {args.meeting_ref} ({args.confidence})")
 
 
 def cmd_minutes_events_list(args: argparse.Namespace) -> None:
@@ -3032,17 +3003,6 @@ def main() -> None:
     events_parser = minutes_sub.add_parser("events", help="Record/list captured meeting events")
     events_sub = events_parser.add_subparsers(dest="events_command")
 
-    events_record_parser = events_sub.add_parser("record", help="Record a meeting event")
-    events_record_parser.add_argument("--meeting-ref", required=True, help="Meeting ref (e.g., ΔΣ05-2026)")
-    events_record_parser.add_argument(
-        "--type", required=True,
-        help="Event type: agenda_advance | vote | phase | presence | off_topic | note",
-    )
-    events_record_parser.add_argument("--payload", required=True, help="Event payload as a JSON object")
-    events_record_parser.add_argument(
-        "--confidence", default="confirmed", choices=["confirmed", "low"],
-        help="Capture confidence (default: confirmed)",
-    )
 
     events_list_parser = events_sub.add_parser("list", help="List captured meeting events")
     events_list_parser.add_argument("--meeting-ref", required=True, help="Meeting ref (e.g., ΔΣ05-2026)")

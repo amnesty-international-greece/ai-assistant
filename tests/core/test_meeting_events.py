@@ -109,16 +109,16 @@ def test_list_ordered_by_ts_and_type_filter(temp_db):
         base = datetime(2026, 5, 31, 18, 0, tzinfo=timezone.utc)
         # Insert out of chronological order to prove sorting is by ts, not id.
         store.record_event(
-            meeting_ref="ΔΣ05-2026", event_type="note",
-            payload={"text": "third"}, ts=base + timedelta(minutes=30),
+            meeting_ref="ΔΣ05-2026", event_type="phase",
+            payload={"phase": "end"}, ts=base + timedelta(minutes=30),
         )
         store.record_event(
             meeting_ref="ΔΣ05-2026", event_type="phase",
             payload={"phase": "start"}, ts=base,
         )
         store.record_event(
-            meeting_ref="ΔΣ05-2026", event_type="note",
-            payload={"text": "second"}, ts=base + timedelta(minutes=15),
+            meeting_ref="ΔΣ05-2026", event_type="phase",
+            payload={"phase": "break"}, ts=base + timedelta(minutes=15),
         )
 
         all_events = store.list_events("ΔΣ05-2026")
@@ -126,9 +126,9 @@ def test_list_ordered_by_ts_and_type_filter(temp_db):
         assert ts_order == sorted(ts_order)
         assert all_events[0]["payload"].get("phase") == "start"
 
-        notes = store.list_events("ΔΣ05-2026", event_type="note")
-        assert len(notes) == 2
-        assert [n["payload"]["text"] for n in notes] == ["second", "third"]
+        phases = store.list_events("ΔΣ05-2026", event_type="phase")
+        assert len(phases) == 3
+        assert [p["payload"]["phase"] for p in phases] == ["start", "break", "end"]
 
 
 def test_delete_event_returns_true_then_false(temp_db):
@@ -141,8 +141,8 @@ def test_delete_event_returns_true_then_false(temp_db):
         store = MeetingEventsStore()
 
         event_id = store.record_event(
-            meeting_ref="ΔΣ05-2026", event_type="off_topic",
-            payload={"state": "begin"},
+            meeting_ref="ΔΣ05-2026", event_type="phase",
+            payload={"phase": "start"},
         )
         assert store.delete_event(event_id) is True
         assert store.list_events("ΔΣ05-2026") == []
@@ -164,15 +164,12 @@ from src.core.meeting_events import _validate_payload
     ("agenda_advance", {"index": 0, "item": "Item"}),
     ("phase",          {"phase": "start", "source": "app"}),
     ("phase",          {"phase": "end", "source": "zoom", "zoom_ts": None}),
-    ("off_topic",      {"after_index": 3}),
     ("decision",       {"ref": "R", "seq": 1, "decision_text": "T", "outcome": "",
                         "considerations": [], "agenda_index": 0, "agenda_item": "A"}),
     # Canonical shapes from the module docstring.
     ("agenda_advance", {"to_index": 1, "title": "Item"}),
-    ("off_topic",      {"state": "begin"}),
     ("vote",           {"label": "L", "result": "passed"}),
     ("presence",       {"member": "M", "status": "present"}),
-    ("note",           {"text": "t"}),
 ])
 def test_validate_payload_accepts_real_and_canonical_shapes(event_type, payload):
     _validate_payload(event_type, payload)   # must not raise
@@ -194,5 +191,12 @@ def test_validate_payload_catches_wiring_bugs(event_type, payload, missing):
 
 
 def test_validate_payload_allows_extra_keys_and_unlisted_types():
-    _validate_payload("note", {"text": "t", "anything_else": 1})
+    _validate_payload("phase", {"phase": "start", "anything_else": 1})
     _validate_payload("some_future_type", {})   # unlisted -> not payload-checked
+
+
+def test_every_valid_event_type_has_payload_rules():
+    """Guard against drift: adding an event type without payload rules would
+    silently give it NO validation (the checker fails open by design)."""
+    from src.core.meeting_events import VALID_EVENT_TYPES, _REQUIRED_PAYLOAD_KEYS
+    assert VALID_EVENT_TYPES == set(_REQUIRED_PAYLOAD_KEYS)

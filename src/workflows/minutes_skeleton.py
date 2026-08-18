@@ -32,14 +32,14 @@ Windowing rules (the heart of the logic)
   ``unassigned_segments``. A segment that falls in a *gap between item windows*
   (e.g. an item was re-advanced, or the next advance came late) is attributed to
   the last item that started before it and tagged ``"assigned_by":
-  "gap_fallback"`` rather than left unassigned. Off-topic segments are NOT
-  unassigned merely for being off-topic -- they stay in their time window and
-  carry ``"off_topic": True``.
+  "gap_fallback"`` rather than left unassigned.
 
-* **Off-topic flagging.** ``off_topic`` events arrive as ``begin``/``end`` pairs
-  (matched in timestamp order). A segment whose ``start`` falls inside an
-  off-topic span is flagged ``off_topic=True``; everything else is ``False``. An
-  unpaired ``begin`` (no following ``end``) extends to meeting end.
+* **Off-topic flagging.** Every segment carries ``"off_topic": False``. The
+  ``off_topic`` EVENT type was retired (the sidebar never emitted the shape this
+  module read, so the spans were always inert; off-record stretches are handled
+  by pausing the recording instead). The field is kept because the planned LLM
+  organiser pass sets it per turn - nothing a member said is ever dropped, only
+  flagged.
 
 * **Votes.** A ``vote`` event attaches to the item whose window contains the
   vote's ``ts``. If the vote falls in no item's window (e.g. cast during a break,
@@ -172,27 +172,6 @@ def _build_break_windows(events: list[dict]) -> list[tuple[datetime, datetime]]:
     return windows
 
 
-def _build_offtopic_windows(events: list[dict]) -> list[tuple[datetime, datetime]]:
-    """Half-open ``[begin, end)`` off-topic spans.
-
-    ``begin``/``end`` are matched in timestamp order. An unmatched ``begin``
-    extends to ``+infinity`` (clamped to meeting end by the caller's data, but we
-    keep ``+inf`` so trailing off-topic chatter is still flagged).
-    """
-
-    windows: list[tuple[datetime, datetime]] = []
-    open_begin: datetime | None = None
-    for event in _events_of(events, "off_topic"):
-        state = (event.get("payload") or {}).get("state")
-        ts = _parse_ts(event["ts"])
-        if state == "begin" and open_begin is None:
-            open_begin = ts
-        elif state == "end" and open_begin is not None:
-            windows.append((open_begin, ts))
-            open_begin = None
-    if open_begin is not None:
-        windows.append((open_begin, _POS_INF))
-    return windows
 
 
 def _in_any_window(moment: datetime, windows: list[tuple[datetime, datetime]]) -> bool:
@@ -452,7 +431,6 @@ def build_minutes_skeleton(
     items = _build_items(agenda_items, events)
 
     break_windows = _build_break_windows(events)
-    offtopic_windows = _build_offtopic_windows(events)
     end_ts = _meeting_end_ts(events)
 
     # Earliest agenda start (first moment any item is "active").
@@ -467,7 +445,7 @@ def build_minutes_skeleton(
     # Assign segments by the time of their start.
     for segment in sorted(segments, key=lambda s: _as_aware(s.start)):
         moment = _as_aware(segment.start)
-        off_topic = _in_any_window(moment, offtopic_windows)
+        off_topic = False   # reserved for the LLM organiser pass
         seg_dict = _segment_to_dict(segment, off_topic=off_topic)
 
         # Unassigned if: before the meeting/first item, during a break, or after

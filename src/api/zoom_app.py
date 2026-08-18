@@ -81,7 +81,7 @@ async def zoom_app_agenda(ref: str = ""):
 
 class EventIn(BaseModel):
     meeting_ref: str
-    event_type: str            # "agenda_advance" | "phase" | "off_topic" | ...
+    event_type: str            # "agenda_advance" | "phase" | "presence" | "vote"
     payload: dict = {}
 
 
@@ -307,7 +307,6 @@ _HOME_HTML = """<!DOCTYPE html>
         <button id="next">ΕΠΟΜΕΝΟ<span class="arw">›</span></button>
       </div>
       <div class="controls">
-        <button class="ghost" id="offagenda">ΕΚΤΟΣ ΗΜΕΡΗΣΙΑΣ</button>
         <button class="ghost" id="end">ΛΗΞΗ ΣΥΝΕΔΡΙΑΣΗΣ</button>
       </div>
     </div>
@@ -330,7 +329,6 @@ _HOME_HTML = """<!DOCTYPE html>
     const KEY = "agenda-marker";
     let AGENDA = [];
     let idx = -1;
-    let offAgenda = false;
     let screenName = "";
     let MEETING_REF = "";
     let selectedOutcome = "";
@@ -379,7 +377,7 @@ _HOME_HTML = """<!DOCTYPE html>
       }
       AGENDA.forEach((item, i) => {
         const li = document.createElement("li");
-        if (i === idx && !offAgenda && recState === "live") li.className = "current";
+        if (i === idx && recState === "live") li.className = "current";
         li.innerHTML = '<span class="n">' + (i + 1) + '</span><span>' + item + '</span>';
         li.onclick = () => { if (recState === "live") goTo(i); };
         ol.appendChild(li);
@@ -418,7 +416,7 @@ _HOME_HTML = """<!DOCTYPE html>
     // ── Navigation (instant; marker + event fire async) ───────────────────
     function goTo(i) {
       if (recState !== "live" || i < 0 || i >= AGENDA.length) return;
-      idx = i; offAgenda = false;
+      idx = i;
       renderAgenda(); updateControls();
       recordEvent("agenda_advance", { index: i, item: AGENDA[i] });
       showMarker(i);
@@ -439,7 +437,7 @@ _HOME_HTML = """<!DOCTYPE html>
     function updateDecLabel() {
       if (recState === "before") {
         $("dec-label").textContent = "Αποφάσεις δια email (πριν τη συνεδρίαση)";
-      } else if (offAgenda || idx < 0) {
+      } else if (idx < 0) {
         $("dec-label").textContent = "Καταγραφή Απόφασης";
       } else {
         $("dec-label").textContent = "Καταγραφή Απόφασης - Θέμα " + (idx + 1);
@@ -454,14 +452,6 @@ _HOME_HTML = """<!DOCTYPE html>
     };
     $("prev").onclick = () => goTo(idx - 1);
     $("next").onclick = () => goTo(idx + 1);
-
-    $("offagenda").onclick = () => {
-      offAgenda = true;
-      try { zoomSdk.removeDynamicIndicator({ key: KEY }); } catch (_) {}
-      recordEvent("off_topic", { after_index: idx });
-      renderAgenda(); updateDecLabel();   // clears the highlight
-      toast("Εκτός ημερήσιας διάταξης - η εγγραφή συνεχίζεται.");
-    };
 
     // ΛΗΞΗ - requires a second confirming click within 4s.
     let endArmed = false, endTimer = null;
@@ -556,8 +546,8 @@ _HOME_HTML = """<!DOCTYPE html>
             decision_text: text,
             outcome: selectedOutcome,
             considerations: considerations,
-            agenda_index: (!offAgenda && idx >= 0) ? idx : null,
-            agenda_item: (!offAgenda && idx >= 0) ? AGENDA[idx] : "",
+            agenda_index: (idx >= 0) ? idx : null,
+            agenda_item: (idx >= 0) ? AGENDA[idx] : "",
             pre_meeting: recState === "before",
           }),
         });
@@ -588,7 +578,7 @@ _HOME_HTML = """<!DOCTYPE html>
         MEETING_REF = data.meeting_ref || ref;
         if (data.meeting_ref) $("agenda-label").textContent = "Ημερήσια Διάταξη - " + data.meeting_ref;
       } catch (_) { AGENDA = []; }
-      idx = -1; offAgenda = false; recState = "before";
+      idx = -1; recState = "before";
       renderAgenda(); updateControls();
       $("panel").style.display = "block";
       await loadDecisions();
