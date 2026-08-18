@@ -147,6 +147,12 @@ minutes_pipeline:
   language: "el"                  # ASR + drafting language
   coalesce_max_gap_seconds: 30.0  # merge consecutive same-speaker fragments (<= gap) into one turn; -1 disables
   draft_item_char_budget: 120000  # max chars of one agenda item's transcript sent to the drafting LLM (avoids truncating long items)
+  draft_max_output_tokens: 32000      # output ceiling per drafting call (Greek is token-expensive)
+  draft_block_chars: 12000           # transcript chars per drafting call; long items are split
+  draft_min_speaker_coverage: 0.5    # lenient floor; below it a block is retried once
+  organizer_enabled: true            # LLM re-files ambiguous turns under the right agenda item + tags them
+  organizer_batch_turns: 40          # turns per organiser call
+  organizer_text_limit: 600          # chars of each turn shown to the organiser
   recordings_dir: "data/recordings"
   transcripts_dir: "data/transcripts"
   articles_path: "assets/governance/articles.json"
