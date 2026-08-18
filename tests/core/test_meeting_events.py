@@ -149,3 +149,50 @@ def test_delete_event_returns_true_then_false(temp_db):
         # second delete of the same id finds nothing
         assert store.delete_event(event_id) is False
         assert store.delete_event(999999) is False
+
+
+# --- payload validation -----------------------------------------------------
+
+import pytest as _pytest
+
+from src.core.meeting_events import _validate_payload
+
+
+@_pytest.mark.parametrize("event_type,payload", [
+    # REAL shapes the live Zoom sidebar sends - these must never be rejected,
+    # or in-meeting capture would fail and the event would be lost for good.
+    ("agenda_advance", {"index": 0, "item": "Item"}),
+    ("phase",          {"phase": "start", "source": "app"}),
+    ("phase",          {"phase": "end", "source": "zoom", "zoom_ts": None}),
+    ("off_topic",      {"after_index": 3}),
+    ("decision",       {"ref": "R", "seq": 1, "decision_text": "T", "outcome": "",
+                        "considerations": [], "agenda_index": 0, "agenda_item": "A"}),
+    # Canonical shapes from the module docstring.
+    ("agenda_advance", {"to_index": 1, "title": "Item"}),
+    ("off_topic",      {"state": "begin"}),
+    ("vote",           {"label": "L", "result": "passed"}),
+    ("presence",       {"member": "M", "status": "present"}),
+    ("note",           {"text": "t"}),
+])
+def test_validate_payload_accepts_real_and_canonical_shapes(event_type, payload):
+    _validate_payload(event_type, payload)   # must not raise
+
+
+@_pytest.mark.parametrize("event_type,payload,missing", [
+    ("agenda_advance", {"idx": 1, "ttl": "x"}, "to_index/index"),
+    ("agenda_advance", {}, "to_index/index"),
+    ("vote", {"label": "L"}, "result"),
+    ("presence", {"member": "M"}, "status"),
+    ("decision", {"ref": "R"}, "decision_text"),
+])
+def test_validate_payload_catches_wiring_bugs(event_type, payload, missing):
+    """A renamed/typo'd key would otherwise be stored silently and only surface
+    later as minutes with content under the wrong agenda item."""
+    with _pytest.raises(ValueError) as exc:
+        _validate_payload(event_type, payload)
+    assert missing in str(exc.value)
+
+
+def test_validate_payload_allows_extra_keys_and_unlisted_types():
+    _validate_payload("note", {"text": "t", "anything_else": 1})
+    _validate_payload("some_future_type", {})   # unlisted -> not payload-checked

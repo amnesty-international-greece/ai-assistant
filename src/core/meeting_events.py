@@ -13,13 +13,20 @@ exactly like the audit module, so the whole platform shares one SQLite handle.
 Canonical payload shape PER event_type
 ---------------------------------------
 - ``agenda_advance``: ``{"to_index": int, "title": str}`` -- the item just
-  moved INTO
+  moved INTO. The Zoom sidebar sends the equivalent ``{"index": int (0-based),
+  "item": str}``; BOTH are accepted and understood downstream.
 - ``vote``: ``{"label": str, "result": "passed"|"failed"|"tied",
   "tally": {"υπέρ": int, "κατά": int, "αποχή": int},
   "method": "unanimous"|"majority"}``
-- ``phase``: ``{"phase": "start"|"break"|"resume"|"end"}``
+- ``phase``: ``{"phase": "start"|"break"|"resume"|"end"}`` (the sidebar also
+  attaches ``source`` / ``zoom_ts``, which are ignored downstream)
 - ``presence``: ``{"member": str, "status": "present"|"absent"|"left"|"joined"}``
-- ``off_topic``: ``{"state": "begin"|"end"}``
+- ``off_topic``: ``{"state": "begin"|"end"}`` -- NOTE: the Zoom sidebar
+  currently sends ``{"after_index": int}`` instead, which
+  ``build_minutes_skeleton`` does NOT understand (it pairs begin/end on
+  ``state``), so sidebar-captured off-topic spans are inert. This event type
+  is being retired in favour of pausing the recording plus an LLM cleanup
+  pass; both shapes are accepted here so nothing fails at capture time.
 - ``note``: ``{"text": str}``
 - ``decision``: ``{"ref": str, "seq": int, "decision_text": str,
   "outcome": str, "considerations": [str], "agenda_index": int,
@@ -46,6 +53,47 @@ VALID_EVENT_TYPES = {
     "note",
     "decision",   # captured live from the Zoom sidebar: ref + text + outcome
 }
+
+
+# Required payload fields per event_type. Each entry is a tuple of ALTERNATIVE
+# key groups: the payload must carry at least one key from every group. Aliases
+# are listed because the original spec and the live Zoom sidebar drifted apart;
+# accepting both means validation can never reject a real in-meeting capture.
+# Extra keys are always allowed. Unlisted event types are not payload-checked.
+_REQUIRED_PAYLOAD_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "agenda_advance": (("to_index", "index"), ("title", "item")),
+    "vote":           (("label",), ("result",)),
+    "phase":          (("phase",),),
+    "presence":       (("member",), ("status",)),
+    "off_topic":      (("state", "after_index"),),
+    "note":           (("text",),),
+    "decision":       (("decision_text",),),
+}
+
+
+def _validate_payload(event_type: str, payload: dict) -> None:
+    """Raise ValueError if *payload* lacks a field its event_type needs.
+
+    The payload column is free-form JSON, so without this a wiring bug (a
+    renamed key, a typo) is stored happily and only shows up much later as
+    minutes with content under the wrong agenda item. Checking at capture time
+    turns that silent corruption into an immediate, obvious error.
+
+    Deliberately shallow: presence of required keys only - no type or
+    enum checking, and extra keys are fine. The goal is to catch wiring
+    mistakes, not to police callers.
+    """
+    groups = _REQUIRED_PAYLOAD_KEYS.get(event_type)
+    if not groups:
+        return
+    missing = ["/".join(g) for g in groups if not any(k in payload for k in g)]
+    if missing:
+        raise ValueError(
+            f"payload for event_type {event_type!r} is missing required "
+            f"field(s): {', '.join(missing)}. Got keys: "
+            f"{sorted(payload) or '(empty)'}. See the module docstring for the "
+            f"canonical payload shape of each event type."
+        )
 
 
 class MeetingEventsStore:
@@ -79,6 +127,7 @@ class MeetingEventsStore:
             raise ValueError(
                 f"Invalid event_type {event_type!r}; valid types are: {valid}"
             )
+        _validate_payload(event_type, payload or {})
         if ts is None:
             ts = datetime.now(timezone.utc)
         created_at = datetime.now(timezone.utc).isoformat()
