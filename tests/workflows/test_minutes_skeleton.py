@@ -213,3 +213,62 @@ def test_empty_inputs_return_valid_skeleton():
     # No events, nobody spoke -> everyone on the roster is absent.
     assert {a["name"] for a in sk["presence"]["absent"]} == {e["name"] for e in _ROSTER}
     assert sk["presence"]["present"] == []
+
+
+def test_attendee_who_never_spoke_is_present_not_absent():
+    """The real ΔΣ05 bug: a member joined but never spoke and was reported
+    absent. Zoom attendance is authoritative, so joining is enough."""
+    events = [_advance(1, _AGENDA[0], 0)]
+    segments = [_seg("Eleni Kontou", "Only this member speaks.", 2, 3)]
+    roster = [{"name": "Eleni Kontou", "role": ""},
+              {"name": "Georgia Aslani", "role": ""}]
+    sk = build_minutes_skeleton(
+        meeting_ref="DS05-2026", agenda_items=_AGENDA, events=events,
+        segments=segments, roster=roster,
+        attendees=["Eleni Kontou", "Georgia Aslani"],   # both joined
+    )
+    present = {p["name"] for p in sk["presence"]["present"]}
+    absent = {p["name"] for p in sk["presence"]["absent"]}
+    assert present == {"Eleni Kontou", "Georgia Aslani"}   # silent member counted
+    assert absent == set()
+
+
+def test_without_attendees_falls_back_to_who_spoke():
+    """No attendance data (e.g. a transcript-only run) keeps the old behaviour."""
+    events = [_advance(1, _AGENDA[0], 0)]
+    segments = [_seg("Eleni Kontou", "Speaking.", 2, 3)]
+    roster = [{"name": "Eleni Kontou", "role": ""},
+              {"name": "Georgia Aslani", "role": ""}]
+    sk = build_minutes_skeleton(
+        meeting_ref="DS05-2026", agenda_items=_AGENDA, events=events,
+        segments=segments, roster=roster,
+    )
+    assert {p["name"] for p in sk["presence"]["absent"]} == {"Georgia Aslani"}
+
+
+def test_explicit_absent_event_overrides_attendance():
+    """A manual presence event still wins over the Zoom list (e.g. joined by
+    mistake, or left immediately)."""
+    events = [
+        _advance(1, _AGENDA[0], 0),
+        {"event_type": "presence", "ts": _ts(1),
+         "payload": {"member": "Georgia Aslani", "status": "left"},
+         "confidence": "confirmed"},
+    ]
+    roster = [{"name": "Georgia Aslani", "role": ""}]
+    sk = build_minutes_skeleton(
+        meeting_ref="DS05-2026", agenda_items=_AGENDA, events=events,
+        segments=[], roster=roster, attendees=["Georgia Aslani"],
+    )
+    assert {p["name"] for p in sk["presence"]["absent"]} == {"Georgia Aslani"}
+
+
+def test_non_roster_attendee_is_recorded_as_present():
+    """An observer who joined but is not on the board roster is not lost."""
+    sk = build_minutes_skeleton(
+        meeting_ref="DS05-2026", agenda_items=_AGENDA,
+        events=[_advance(1, _AGENDA[0], 0)], segments=[],
+        roster=[{"name": "Eleni Kontou", "role": ""}],
+        attendees=["Eleni Kontou", "Fani Dimoni"],
+    )
+    assert {p["name"] for p in sk["presence"]["present"]} == {"Eleni Kontou", "Fani Dimoni"}

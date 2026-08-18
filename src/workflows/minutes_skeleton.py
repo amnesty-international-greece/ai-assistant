@@ -47,7 +47,10 @@ Windowing rules (the heart of the logic)
   before the vote ts; if no item started before it, the vote is skipped. The
   vote's ``ts`` is preserved on the attached record.
 
-* **Presence.** ``present`` is the union of (a) roster members whose *latest*
+* **Presence.** When ``attendees`` is supplied (Zoom's participant report or the
+  per-participant audio tracks) it is authoritative: being in the meeting counts
+  as present, so a member who joined but never spoke is not mis-reported absent.
+  Otherwise, ``present`` is the union of (a) roster members whose *latest*
   ``presence`` event status is ``present`` or ``joined``, and (b) roster members
   who appear as the ``speaker`` of at least one segment (speaking implies
   attendance). A member with a *latest* ``presence`` status of ``absent`` or
@@ -309,14 +312,23 @@ def _resolve_presence(
     segments: list[TranscriptSegment],
     roster: list[dict],
     ignore_speakers: set[str] | None = None,
+    attendees: list[str] | None = None,
 ) -> dict:
     """Compute the ``present``/``absent`` partition.
 
     See the module docstring for the precedence rules. ``ignore_speakers`` is a
     set of non-person segment labels (e.g. the unknown-speaker fallback) that
     must never count as attendees.
+
+    ``attendees`` is the AUTHORITATIVE attendance list (Zoom's participant
+    report / the per-participant audio tracks). When given, simply being in the
+    meeting counts as present - which is what actually happened - so a member
+    who joined but never spoke is no longer mis-reported as absent. Speaking
+    remains a fallback signal, and an explicit ``presence`` event whose latest
+    status is ``absent``/``left`` still wins over both.
     """
     ignore = ignore_speakers or set()
+    attended = [a.strip() for a in (attendees or []) if a and a.strip()]
 
     # Roster lookup: exact name -> entry, plus a case-insensitive fallback map.
     roster_by_name: dict[str, dict] = {}
@@ -357,6 +369,18 @@ def _resolve_presence(
             latest_status_extra[member] = status
             extra_members.setdefault(member, member)
 
+    # Roster members Zoom reports as having joined (authoritative when present).
+    attended_roster: set[str] = set()
+    attended_extra: dict[str, str] = {}
+    for raw in attended:
+        if raw in ignore:
+            continue
+        matched = resolve_member(raw)
+        if matched is not None:
+            attended_roster.add(matched["name"])
+        else:
+            attended_extra.setdefault(raw, raw)
+
     # Roster members who spoke at least once (speaking implies attendance).
     spoke: set[str] = set()
     speaker_extra: dict[str, str] = {}
@@ -377,7 +401,7 @@ def _resolve_presence(
         if status in ("absent", "left"):
             absent.append({"name": name, "role": entry["role"]})
             continue
-        if status in ("present", "joined") or name in spoke:
+        if status in ("present", "joined") or name in attended_roster or name in spoke:
             present.append({"name": name, "role": entry["role"]})
         else:
             absent.append({"name": name, "role": entry["role"]})
@@ -387,6 +411,13 @@ def _resolve_presence(
     # speakers not otherwise seen, preserving first-seen order.
     seen_extra: set[str] = set()
     for raw in extra_members:
+        if latest_status_extra.get(raw) in ("absent", "left"):
+            continue
+        present.append({"name": raw, "role": ""})
+        seen_extra.add(raw)
+    for raw in attended_extra:
+        if raw in seen_extra or raw in extra_members:
+            continue
         if latest_status_extra.get(raw) in ("absent", "left"):
             continue
         present.append({"name": raw, "role": ""})
@@ -412,6 +443,7 @@ def build_minutes_skeleton(
     segments: list[TranscriptSegment],
     roster: list[dict],
     ignore_speakers: set[str] | None = None,
+    attendees: list[str] | None = None,
 ) -> dict:
     """Assemble a deterministic, pre-LLM minutes skeleton.
 
@@ -500,7 +532,9 @@ def build_minutes_skeleton(
         for e in _events_of(events, "phase")
     ]
 
-    presence = _resolve_presence(events, segments, roster, ignore_speakers)
+    presence = _resolve_presence(
+        events, segments, roster, ignore_speakers, attendees=attendees
+    )
 
     # Strip the private ``_window`` key before returning.
     public_items = []

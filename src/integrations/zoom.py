@@ -420,12 +420,18 @@ class ZoomClient:
                 "local_path":      str(local_path),
             })
 
+        # Attendance, captured here so later stages (presence in the minutes
+        # skeleton) work entirely offline from the manifest. Best-effort: an
+        # empty list simply means presence falls back to who spoke.
+        participants = await self.get_past_participants(meeting_uuid, workflow=workflow)
+
         manifest: dict[str, Any] = {
             "meeting_uuid": meeting_uuid,
             "topic":        recording.get("topic", ""),
             "start_time":   recording.get("start_time", ""),
             "dest_dir":     str(dest_path),
             "files":        files,
+            "participants": participants,
         }
 
         manifest_path = dest_path / "manifest.json"
@@ -456,8 +462,11 @@ class ZoomClient:
 
         Primary source is the report endpoint
         (``/report/meetings/{id}/participants``), which the account is scoped
-        for (``meeting:read:list_past_participants:admin``).  On a 4xx it falls
-        back to ``/past_meetings/{id}/participants``.
+        for (``meeting:read:list_past_participants:admin``; the report family
+        also accepts ``report:read:admin``).  On a 4xx - wrong scope, or a
+        meeting with too few participants to be reported - it falls back to
+        ``/past_meetings/{id}/participants``. Both are paginated via
+        ``next_page_token``; all pages are collected.
 
         UUIDs that begin with ``/`` or contain ``//`` must be double-URL-encoded
         in the path; :func:`_encode_uuid` handles that.
@@ -471,33 +480,46 @@ class ZoomClient:
         """
         encoded = _encode_uuid(str(meeting_id))
         headers = await self._headers()
-        params = {"page_size": 300}
 
+        # Report endpoint first; on a 4xx (e.g. the account lacks report scope,
+        # or the meeting had too few participants to be reported) fall back to
+        # the past-meetings endpoint. Both paginate via next_page_token.
+        endpoint = f"{_ZOOM_API_BASE}/report/meetings/{encoded}/participants"
+        fallback = f"{_ZOOM_API_BASE}/past_meetings/{encoded}/participants"
+        used_fallback = False
+
+        participants: list[dict[str, Any]] = []
+        token = ""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{_ZOOM_API_BASE}/report/meetings/{encoded}/participants",
-                    headers=headers,
-                    params=params,
-                )
-                if response.status_code >= 400 and response.status_code < 500:
-                    # Fall back to the non-report past-meetings endpoint.
-                    response = await client.get(
-                        f"{_ZOOM_API_BASE}/past_meetings/{encoded}/participants",
-                        headers=headers,
-                        params=params,
-                    )
-                response.raise_for_status()
-                data = response.json()
+                while True:
+                    params: dict[str, Any] = {"page_size": 300}
+                    if token:
+                        params["next_page_token"] = token
+                    response = await client.get(endpoint, headers=headers, params=params)
+                    if (
+                        400 <= response.status_code < 500
+                        and not used_fallback
+                        and not participants
+                    ):
+                        used_fallback = True
+                        endpoint = fallback
+                        continue
+                    response.raise_for_status()
+                    data = response.json()
+                    participants.extend(data.get("participants") or [])
+                    token = (data.get("next_page_token") or "").strip()
+                    if not token:
+                        break
         except Exception as e:  # noqa: BLE001 - best-effort
             logger.warning(
                 "Could not fetch participants for meeting %s: %s", meeting_id, e,
             )
-            return []
+            return participants  # partial pages are better than nothing
 
-        participants = data.get("participants", []) or []
         logger.info(
-            "Fetched %d participant(s) for meeting %s", len(participants), meeting_id,
+            "Fetched %d participant(s) for meeting %s%s",
+            len(participants), meeting_id, " (fallback endpoint)" if used_fallback else "",
         )
         return participants
 

@@ -604,6 +604,45 @@ def _render_minutes_markdown(
     return "\n".join(out).strip() + "\n"
 
 
+def attendees_from_manifest(manifest: dict, aliases: dict | None = None) -> list[str]:
+    """Who was actually in the meeting, from the recording manifest alone.
+
+    Two independent signals, both offline:
+
+    * ``manifest["participants"]`` - Zoom's participant report, captured at
+      fetch time by ``download_recording_assets``.
+    * the owner of each per-participant audio track - Zoom only creates a track
+      for someone who connected, so the tracks are themselves an attendance
+      record (this is how we know a member joined but never spoke).
+
+    Names are canonicalised through ``speaker_aliases`` so they match the roster
+    (e.g. "ELENI KONTOU" -> "Ελένη Κοντού"), then de-duplicated in first-seen
+    order.
+    """
+    alias_map = aliases or {}
+    lower = {str(k).lower(): v for k, v in alias_map.items()}
+
+    raw: list[str] = []
+    for person in manifest.get("participants") or []:
+        name = (person.get("name") or person.get("user_name") or "").strip()
+        if name:
+            raw.append(name)
+    for entry in manifest.get("files") or []:
+        if entry.get("source") == "participant_audio_files":
+            name = (entry.get("participant") or "").strip()
+            if name:
+                raw.append(name)
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in raw:
+        canonical = alias_map.get(name) or lower.get(name.lower()) or name
+        if canonical not in seen:
+            seen.add(canonical)
+            out.append(canonical)
+    return out
+
+
 def _norm_title(title: str) -> str:
     """Normalise an agenda title for keying.
 
@@ -1362,6 +1401,9 @@ def assemble_minutes(
             ),
             aliases,
         )
+        # Attendance from the manifest is authoritative for presence: a member
+        # who joined but never spoke must not be reported absent.
+        attendees = attendees_from_manifest(manifest, aliases)
         skeleton = build_minutes_skeleton(
             meeting_ref=meeting_ref,
             agenda_items=agenda_items,
@@ -1369,6 +1411,7 @@ def assemble_minutes(
             segments=segments,
             roster=roster,
             ignore_speakers={UNKNOWN_SPEAKER},
+            attendees=attendees,
         )
         segment_count = sum(len(item.get("segments", [])) for item in skeleton["items"])
         segment_count += len(skeleton.get("unassigned_segments", []))

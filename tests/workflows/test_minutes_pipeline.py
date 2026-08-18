@@ -766,3 +766,26 @@ def test_draft_item_body_retries_once_on_poor_speaker_coverage(monkeypatch):
     assert len(calls) == 2                       # one retry happened
     assert calls[1] != calls[0]                  # firmer instruction on retry
     assert "Maroulidis" in body                 # better attempt kept
+
+
+def test_attendees_from_manifest_merges_sources_and_aliases():
+    """Attendance comes from Zoom's participant report AND the per-participant
+    tracks (a track exists only if that person connected), canonicalised."""
+    from src.workflows.minutes_pipeline import attendees_from_manifest
+    manifest = {
+        "participants": [{"name": "ELENI KONTOU"}, {"name": "Members AI Greece"}],
+        "files": [
+            {"source": "participant_audio_files", "participant": "Dimitris Maroulidis"},
+            {"source": "participant_audio_files", "participant": "Dimitris Maroulidis"},
+            {"source": "participant_audio_files", "participant": "ELENI KONTOU"},
+            {"source": "recording_files", "participant": ""},   # mixed audio: ignored
+        ],
+    }
+    aliases = {"ELENI KONTOU": "Eleni Kontou", "Members AI Greece": "Giorgos A"}
+    out = attendees_from_manifest(manifest, aliases)
+    assert out == ["Eleni Kontou", "Giorgos A", "Dimitris Maroulidis"]   # deduped, ordered
+
+
+def test_attendees_from_manifest_empty_is_safe():
+    from src.workflows.minutes_pipeline import attendees_from_manifest
+    assert attendees_from_manifest({}, {}) == []
