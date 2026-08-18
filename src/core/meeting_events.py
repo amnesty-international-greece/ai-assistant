@@ -21,6 +21,13 @@ Canonical payload shape PER event_type
 - ``presence``: ``{"member": str, "status": "present"|"absent"|"left"|"joined"}``
 - ``off_topic``: ``{"state": "begin"|"end"}``
 - ``note``: ``{"text": str}``
+- ``decision``: ``{"ref": str, "seq": int, "decision_text": str,
+  "outcome": str, "considerations": [str], "agenda_index": int,
+  "agenda_item": str}`` -- written live by the Zoom sidebar
+  (``POST /zoom-app/decision``). ``ref`` is the canonical
+  ``ΔΣNN-MM-YYYY`` computed from ``seq``. NOTE: these are rendered
+  VERBATIM into the minutes and are never paraphrased by a model, so
+  this payload is the highest-stakes one to get right.
 """
 
 from __future__ import annotations
