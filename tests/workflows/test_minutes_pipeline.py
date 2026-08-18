@@ -382,7 +382,7 @@ def _seed_events(meeting_ref, base):
     store.record_event(
         meeting_ref=meeting_ref,
         event_type="agenda_advance",
-        payload={"to_index": 1, "title": "Έγκριση προϋπολογισμού"},
+        payload={"index": 0, "item": "Έγκριση προϋπολογισμού"},
         ts=base,
     )
     store.record_event(

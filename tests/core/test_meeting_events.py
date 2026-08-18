@@ -167,7 +167,6 @@ from src.core.meeting_events import _validate_payload
     ("decision",       {"ref": "R", "seq": 1, "decision_text": "T", "outcome": "",
                         "considerations": [], "agenda_index": 0, "agenda_item": "A"}),
     # Canonical shapes from the module docstring.
-    ("agenda_advance", {"to_index": 1, "title": "Item"}),
     ("vote",           {"label": "L", "result": "passed"}),
     ("presence",       {"member": "M", "status": "present"}),
 ])
@@ -176,8 +175,8 @@ def test_validate_payload_accepts_real_and_canonical_shapes(event_type, payload)
 
 
 @_pytest.mark.parametrize("event_type,payload,missing", [
-    ("agenda_advance", {"idx": 1, "ttl": "x"}, "to_index/index"),
-    ("agenda_advance", {}, "to_index/index"),
+    ("agenda_advance", {"idx": 1, "ttl": "x"}, "index"),
+    ("agenda_advance", {}, "index"),
     ("vote", {"label": "L"}, "result"),
     ("presence", {"member": "M"}, "status"),
     ("decision", {"ref": "R"}, "decision_text"),

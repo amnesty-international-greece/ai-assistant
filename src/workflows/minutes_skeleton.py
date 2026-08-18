@@ -17,8 +17,9 @@ transcript segments, roster) and returns a structured scaffold. It is:
 Windowing rules (the heart of the logic)
 -----------------------------------------
 * **Agenda windows.** ``agenda_advance`` events are sorted by timestamp. Each one
-  marks the meeting moving *into* the agenda item identified by its ``to_index``
-  (1-based) -- or, if that index is out of range, by a title match. The window of
+  marks the meeting moving *into* the agenda item identified by its ``index``
+  (0-based, as the Zoom sidebar sends it) -- or, if that index is out of range,
+  by an ``item`` title match. The window of
   an item is ``[its advance ts, next advance ts)``. The last advanced item's
   window ends at the ``phase:end`` timestamp if one exists, otherwise it extends
   to ``+infinity``. Every title in ``agenda_items`` appears in the output, in
@@ -197,8 +198,8 @@ def _build_items(
     advances = _events_of(events, "agenda_advance")
     end_ts = _meeting_end_ts(events)
 
-    # Map each advance to a 0-based agenda position. Prefer to_index (1-based);
-    # fall back to a title match when to_index is out of range.
+    # Map each advance to a 0-based agenda position, falling back to a title
+    # match when the index is out of range.
     n = len(agenda_items)
     title_to_pos: dict[str, int] = {}
     for pos, title in enumerate(agenda_items):
@@ -211,17 +212,13 @@ def _build_items(
     for adv in advances:
         payload = adv.get("payload") or {}
         ts = _parse_ts(adv["ts"])
-        # Canonical fields are to_index (1-based) / title; the Zoom sidebar emits
-        # index (0-based) / item. Accept both.
-        to_index = payload.get("to_index")
+        # The Zoom sidebar is the only writer: index (0-based) / item.
         index0 = payload.get("index")
         pos: int | None = None
-        if isinstance(to_index, int) and 1 <= to_index <= n:
-            pos = to_index - 1
-        elif isinstance(index0, int) and 0 <= index0 < n:
+        if isinstance(index0, int) and 0 <= index0 < n:
             pos = index0
         else:
-            title = payload.get("title") or payload.get("item")
+            title = payload.get("item")
             if title in title_to_pos:
                 pos = title_to_pos[title]
         if pos is None:

@@ -34,10 +34,15 @@ def _seg(speaker: str, text: str, start_min: float, end_min: float) -> Transcrip
 
 
 def _advance(to_index: int, title: str, at_min: float) -> dict:
+    """Build an agenda_advance in the sidebar's real shape.
+
+    Callers still pass a 1-based position for readability; it is converted to
+    the 0-based ``index`` the Zoom sidebar actually sends.
+    """
     return {
         "event_type": "agenda_advance",
         "ts": _ts(at_min),
-        "payload": {"to_index": to_index, "title": title},
+        "payload": {"index": to_index - 1, "item": title},
         "confidence": "confirmed",
     }
 

@@ -229,9 +229,9 @@ def test_build_minutes_from_recording_end_to_end():
 
     events = [
         {"event_type": "agenda_advance", "ts": "2026-05-20T18:00:00+00:00",
-         "payload": {"to_index": 1}},
+         "payload": {"index": 0, "item": "A"}},
         {"event_type": "agenda_advance", "ts": "2026-05-20T18:01:00+00:00",
-         "payload": {"to_index": 2}},
+         "payload": {"index": 1, "item": "B"}},
         {"event_type": "phase", "ts": "2026-05-20T18:30:00+00:00",
          "payload": {"phase": "end"}},
     ]

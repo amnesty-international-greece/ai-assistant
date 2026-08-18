@@ -12,9 +12,9 @@ exactly like the audit module, so the whole platform shares one SQLite handle.
 
 Canonical payload shape PER event_type
 ---------------------------------------
-- ``agenda_advance``: ``{"to_index": int, "title": str}`` -- the item just
-  moved INTO. The Zoom sidebar sends the equivalent ``{"index": int (0-based),
-  "item": str}``; BOTH are accepted and understood downstream.
+- ``agenda_advance``: ``{"index": int (0-based), "item": str}`` -- the item
+  just moved INTO. (A ``to_index``/``title`` spelling was specified early on
+  but nothing ever wrote it; the sidebar is the only writer.)
 - ``vote``: ``{"label": str, "result": "passed"|"failed"|"tied",
   "tally": {"υπέρ": int, "κατά": int, "αποχή": int},
   "method": "unanimous"|"majority"}``
@@ -52,7 +52,7 @@ VALID_EVENT_TYPES = {
 # accepting both means validation can never reject a real in-meeting capture.
 # Extra keys are always allowed. Unlisted event types are not payload-checked.
 _REQUIRED_PAYLOAD_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "agenda_advance": (("to_index", "index"), ("title", "item")),
+    "agenda_advance": (("index",), ("item",)),
     "vote":           (("label",), ("result",)),
     "phase":          (("phase",),),
     "presence":       (("member",), ("status",)),

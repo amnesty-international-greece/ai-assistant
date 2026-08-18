@@ -1064,7 +1064,7 @@ def _coalesce_speaker_turns(
 
 
 def _agenda_items_from_events(events: list[dict]) -> list[str]:
-    """Agenda titles from ``agenda_advance`` events, ordered by ``to_index``.
+    """Agenda titles from ``agenda_advance`` events, ordered by ``index``.
 
     Ties / missing indices keep first-seen order. Titles are de-duplicated.
     """
@@ -1073,13 +1073,10 @@ def _agenda_items_from_events(events: list[dict]) -> list[str]:
     entries: list[tuple[int, int, str]] = []  # (sort_index, seen_order, title)
     for order, ev in enumerate(advances):
         payload = ev.get("payload") or {}
-        # Canonical fields are title/to_index; the Zoom sidebar emits item/index.
-        title = (payload.get("title") or payload.get("item") or "").strip()
+        title = (payload.get("item") or "").strip()
         if not title:
             continue
-        sort_index = payload.get("to_index")
-        if not isinstance(sort_index, int):
-            sort_index = payload.get("index")  # sidebar's 0-based position
+        sort_index = payload.get("index")  # sidebar's 0-based position
         if not isinstance(sort_index, int):
             sort_index = 10 ** 6 + order  # push index-less items to the end, stable
         entries.append((sort_index, order, title))
