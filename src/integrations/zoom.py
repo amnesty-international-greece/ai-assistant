@@ -424,6 +424,9 @@ class ZoomClient:
         # skeleton) work entirely offline from the manifest. Best-effort: an
         # empty list simply means presence falls back to who spoke.
         participants = await self.get_past_participants(meeting_uuid, workflow=workflow)
+        # Poll results (board votes cast in Zoom's native dialog). Best-effort:
+        # an empty result simply means no poll was run.
+        polls = await self.list_past_meeting_polls(meeting_uuid, workflow=workflow)
 
         manifest: dict[str, Any] = {
             "meeting_uuid": meeting_uuid,
@@ -432,6 +435,7 @@ class ZoomClient:
             "dest_dir":     str(dest_path),
             "files":        files,
             "participants": participants,
+            "polls":        polls,
         }
 
         manifest_path = dest_path / "manifest.json"
@@ -507,8 +511,11 @@ class ZoomClient:
                         continue
                     response.raise_for_status()
                     data = response.json()
-                    participants.extend(data.get("participants") or [])
-                    token = (data.get("next_page_token") or "").strip()
+                    if not isinstance(data, dict):
+                        break
+                    page = data.get("participants")
+                    participants.extend(page if isinstance(page, list) else [])
+                    token = str(data.get("next_page_token") or "").strip()
                     if not token:
                         break
         except Exception as e:  # noqa: BLE001 - best-effort
@@ -522,6 +529,110 @@ class ZoomClient:
             len(participants), meeting_id, " (fallback endpoint)" if used_fallback else "",
         )
         return participants
+
+    async def create_poll(
+        self,
+        meeting_id: str,
+        *,
+        question: str,
+        answers: list[str] | None = None,
+        title: str = "",
+        anonymous: bool = False,
+        workflow: str = "minutes",
+    ) -> dict[str, Any] | None:
+        """Create a single-choice poll on a scheduled meeting.
+
+        Used to put a board vote in front of every participant using Zoom's own
+        native poll dialog - no app install required on their side. The host
+        still LAUNCHES the poll from the Zoom client: the REST API can create,
+        read, update and delete polls, but has no "start poll" endpoint.
+
+        Requires "Meeting Polls/Quizzes" to be enabled for the account in the
+        Zoom web portal (Settings -> In Meeting (Basic)); without it Zoom
+        returns 400 code 4400 and this returns ``None``.
+
+        Args:
+            meeting_id: Numeric meeting ID (polls are configured per meeting).
+            question:   The question shown to participants (the decision text).
+            answers:    Choices; defaults to the board's Υπέρ/Κατά/Αποχή.
+            title:      Poll title in the Zoom UI (defaults to *question*).
+            anonymous:  When True Zoom hides who voted how; the tally still
+                        comes back. Keep False to record individual votes.
+
+        Returns:
+            The created poll dict, or ``None`` on any failure (logged).
+        """
+        answers = answers or ["Υπέρ", "Κατά", "Αποχή"]
+        payload = {
+            "title": (title or question)[:64],   # Zoom caps the title length
+            "anonymous": anonymous,
+            "poll_type": 1,                      # 1 = poll (not quiz)
+            "questions": [
+                {
+                    "name": question,
+                    "type": "single",
+                    "answer_required": True,
+                    "answers": answers,
+                }
+            ],
+        }
+        headers = await self._headers()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{_ZOOM_API_BASE}/meetings/{meeting_id}/polls",
+                    headers=headers,
+                    json=payload,
+                )
+                if not response.is_success:
+                    logger.error(
+                        "Could not create poll on meeting %s (%s): %s",
+                        meeting_id, response.status_code, response.text,
+                    )
+                response.raise_for_status()
+                data = response.json()
+        except Exception as e:  # noqa: BLE001 - best-effort
+            logger.warning("Poll creation failed for meeting %s: %s", meeting_id, e)
+            return None
+
+        log_action(
+            workflow=workflow,
+            action="poll_created",
+            actor="system",
+            target=str(meeting_id),
+            details={"poll_id": data.get("id"), "question": question},
+        )
+        logger.info("Created poll %s on meeting %s", data.get("id"), meeting_id)
+        return data
+
+    async def list_past_meeting_polls(
+        self,
+        meeting_id: str,
+        workflow: str = "minutes",
+    ) -> dict[str, Any]:
+        """Return poll RESULTS for a finished meeting (``{}`` on failure).
+
+        Response shape: ``{"id", "uuid", "start_time", "questions": [...]}``
+        where each ``questions`` entry is a PARTICIPANT carrying their
+        ``question_details``. UUIDs containing "/" are double-encoded.
+        """
+        encoded = _encode_uuid(str(meeting_id))
+        headers = await self._headers()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{_ZOOM_API_BASE}/past_meetings/{encoded}/polls",
+                    headers=headers,
+                )
+                response.raise_for_status()
+                data = response.json()
+                # Guard the manifest: only a real JSON object is storable.
+                return data if isinstance(data, dict) else {}
+        except Exception as e:  # noqa: BLE001 - best-effort
+            logger.warning(
+                "Could not fetch poll results for meeting %s: %s", meeting_id, e,
+            )
+            return {}
 
     async def get_transcript(self, meeting_id: str) -> str | None:
         """Download the transcript for a meeting recording.
