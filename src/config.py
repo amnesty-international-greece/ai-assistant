@@ -292,6 +292,14 @@ class MinutesPipelineConfig(BaseModel):
     # Where the director-briefing workflow stores εισηγητικά/ενημερωτικά, which
     # are attached to the office-update agenda item when drafting.
     director_briefings_dir: str = "data/director_briefings"
+    # LLM organiser: re-files AMBIGUOUS turns (the opening bucket and turns the
+    # skeleton placed by inference) under the right agenda item and tags each as
+    # substantive / procedural / off_topic. Tagging only ever excludes turns from
+    # the drafted prose - they always stay in the record.
+    organizer_enabled: bool = True
+    organizer_batch_turns: int = 40
+    organizer_text_limit: int = 600
+    organizer_max_tokens: int = 8000
 
 
 class UrlsConfig(BaseModel):

@@ -45,6 +45,7 @@ from src.workflows.minutes_transcription import (
     manifest_to_segments,
 )
 from src.workflows.minutes_documents import document_context_for_skeleton
+from src.workflows.minutes_organizer import drafting_turns, organize_skeleton
 from src.workflows.timeline_speakers import (
     UNKNOWN_SPEAKER,
     attribute_segments,
@@ -793,6 +794,8 @@ def _draft_item_body(
     better of the two attempts is kept. Failures degrade to an empty block rather
     than losing the whole item.
     """
+    # Procedural / off-topic turns stay in the record but not in the prose.
+    segments = drafting_turns(segments)
     blocks = _split_turns_into_blocks(segments, max_chars=block_chars)
     if not blocks:
         return ""
@@ -1437,6 +1440,15 @@ def assemble_minutes(
         len(it.get("segments") or []) for it in skeleton.get("items", [])
     ) + len(skeleton.get("unassigned_segments") or [])
 
+    # Organiser: re-file the AMBIGUOUS turns (the opening bucket and anything the
+    # skeleton placed by inference) under the agenda item they actually belong
+    # to, and tag every one substantive / procedural / off_topic. Turns filed by
+    # a real agenda mark are untouched, tagging never removes anything from the
+    # record, and any failure leaves the deterministic result exactly as it was.
+    organizer_stats = None
+    if getattr(settings.minutes_pipeline, "organizer_enabled", True):
+        organizer_stats = organize_skeleton(skeleton, settings)
+
     # Surface formal decisions captured in-meeting (Zoom sidebar) onto the
     # skeleton. ``build_minutes_skeleton`` doesn't model ``decision`` events, so
     # we attach them as a top-level list - they then appear in skeleton.json and
@@ -1462,6 +1474,8 @@ def assemble_minutes(
         "source": source,
         "decision_count": len(decisions),
     }
+    if organizer_stats:
+        result["organizer"] = organizer_stats
 
     # Write outputs.
     out_dir = Path(settings.minutes_pipeline.transcripts_dir) / _safe_ref(meeting_ref)
