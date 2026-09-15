@@ -281,7 +281,7 @@ def test_faster_whisper_passes_quality_kwargs():
 
     tr = FasterWhisperTranscriber()
     tr._model = FakeModel()  # bypass the lazy heavy import
-    tr._load_audio = lambda path: __import__("numpy").zeros(16000, dtype="float32")
+    tr._audio_blocks = lambda path: iter([__import__("numpy").zeros(16000, dtype="float32")])
     tr.transcribe("a.m4a", language="el", initial_prompt="Ονόματα: Χ")
 
     assert captured["vad_filter"] is True
@@ -291,24 +291,51 @@ def test_faster_whisper_passes_quality_kwargs():
     assert captured["vad_parameters"]["min_silence_duration_ms"] == 1000
 
 
-def test_chunk_bounds_cuts_at_quietest_point_and_covers_everything():
+def test_stream_chunks_cut_in_silence_contiguous_and_complete():
     import numpy as np
-    from src.workflows.minutes_transcription import _chunk_bounds
+    from src.workflows.minutes_transcription import _stream_chunks
 
     audio = np.ones(3000, dtype=np.float32)
     audio[1080:1120] = 0.0  # a silent gap just after the nominal 1000 boundary
-    bounds = _chunk_bounds(audio, chunk_samples=1000, search_samples=200, window_samples=20)
+    blocks = [audio[i:i + 700] for i in range(0, len(audio), 700)]  # arbitrary block sizes
+    pieces = list(_stream_chunks(blocks, chunk_samples=1000, search_samples=200,
+                                 window_samples=20))
 
-    assert bounds[0][0] == 0 and bounds[-1][1] == len(audio)
-    assert all(a[1] == b[0] for a, b in zip(bounds, bounds[1:]))  # contiguous
-    assert 1080 <= bounds[0][1] <= 1120  # first cut lands in the silence
+    starts = [start for start, _ in pieces]
+    assert starts[0] == 0
+    assert all(s + len(p) == n for (s, p), (n, _) in zip(pieces, pieces[1:]))  # contiguous
+    assert sum(len(p) for _, p in pieces) == len(audio)  # nothing dropped
+    assert 1080 <= starts[1] <= 1120  # first cut lands in the silence
+    assert np.array_equal(np.concatenate([p for _, p in pieces]), audio)  # order kept
 
 
-def test_chunk_bounds_short_audio_is_one_piece():
-    from src.workflows.minutes_transcription import _chunk_bounds
+def test_stream_chunks_short_audio_is_one_piece():
+    import numpy as np
+    from src.workflows.minutes_transcription import _stream_chunks
 
-    assert _chunk_bounds([0.0] * 500, chunk_samples=1000, search_samples=100,
-                         window_samples=10) == [(0, 500)]
+    pieces = list(_stream_chunks([np.zeros(500, dtype=np.float32)], chunk_samples=1000,
+                                 search_samples=100, window_samples=10))
+    assert [(s, len(p)) for s, p in pieces] == [(0, 500)]
+
+
+def test_decode_blocks_streams_a_real_file(tmp_path):
+    pytest.importorskip("av")
+    import wave
+    import numpy as np
+    from src.workflows.minutes_transcription import _decode_blocks
+
+    path = tmp_path / "tone.wav"
+    samples = (np.sin(np.linspace(0, 2000, 16000 * 2)) * 10000).astype("<i2")
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(samples.tobytes())
+
+    blocks = list(_decode_blocks(str(path)))
+    assert abs(sum(len(b) for b in blocks) - 16000 * 2) <= 1600
+    assert all(b.dtype == np.float32 for b in blocks)
+    assert max(float(np.abs(b).max()) for b in blocks) <= 1.0
 
 
 def test_faster_whisper_chunked_timestamps_are_offset():
@@ -326,7 +353,7 @@ def test_faster_whisper_chunked_timestamps_are_offset():
 
     tr = FasterWhisperTranscriber(chunk_seconds=1)
     tr._model = FakeModel()
-    tr._load_audio = lambda path: np.ones(16000 * 3, dtype=np.float32)
+    tr._audio_blocks = lambda path: iter([np.ones(16000 * 3, dtype=np.float32)])
     out = tr.transcribe("long.m4a")
 
     assert len(lengths) >= 2  # split into several pieces

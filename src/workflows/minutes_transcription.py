@@ -181,44 +181,100 @@ def _build_roster_matcher(roster: list[dict] | None):
     return match
 
 
-_SAMPLE_RATE = 16000          # faster-whisper's native rate
-_CUT_SEARCH_SECONDS = 30.0    # look this far either side of a boundary for silence
-_CUT_WINDOW_SECONDS = 0.5     # energy window used to find the quietest cut point
+_SAMPLE_RATE = 16000            # faster-whisper's native rate
+_CUT_SEARCH_SECONDS = 30.0      # look this far either side of a boundary for silence
+_CUT_WINDOW_SECONDS = 0.5       # energy window used to find the quietest cut point
+_DECODE_BLOCK_SAMPLES = 500000  # PyAV frame grouping (same as faster-whisper)
 
 
-def _chunk_bounds(audio, *, chunk_samples: int, search_samples: int,
-                  window_samples: int) -> list[tuple[int, int]]:
-    """Split *audio* into contiguous ``(start, end)`` sample ranges.
+def _quiet_cut(audio, *, target: int, lo: int, hi: int, window: int) -> int:
+    """Index of the quietest point in ``audio[lo:hi]`` (window-energy minimum).
 
-    Each piece is about *chunk_samples* long. Rather than cutting blindly (which
-    could split a word), each cut moves to the lowest-energy window within
-    *search_samples* of the nominal boundary. The ranges are contiguous and
-    together cover the whole array.
+    Falls back to *target* when the range is narrower than one window.
     """
-    n = len(audio)
-    if chunk_samples <= 0 or n <= chunk_samples:
-        return [(0, n)]
+    import numpy as np
 
+    k = (hi - lo) // window if window > 0 else 0
+    if k < 1:
+        return target
+    frames = np.asarray(audio[lo:lo + k * window], dtype=np.float32).reshape(k, window)
+    return lo + int(np.argmin(np.square(frames).mean(axis=1))) * window + window // 2
+
+
+def _stream_chunks(blocks, *, chunk_samples: int, search_samples: int,
+                   window_samples: int):
+    """Re-cut a stream of audio blocks into roughly chunk-sized pieces.
+
+    Yields ``(start_sample, piece)``; the pieces are contiguous and together
+    cover the whole stream. Each cut moves to the quietest window within
+    *search_samples* of the nominal boundary so a word is not split. Only about
+    one piece plus the search margin is held in memory, however long the track.
+    """
     import numpy as np
 
     window = max(1, window_samples)
-    bounds: list[tuple[int, int]] = []
-    start = 0
-    while n - start > chunk_samples:
-        target = start + chunk_samples
-        lo = max(start + window, target - search_samples)
-        hi = min(n - window, target + search_samples)
-        k = (hi - lo) // window
-        if k >= 1:
-            frames = np.asarray(audio[lo:lo + k * window], dtype=np.float32).reshape(k, window)
-            quietest = int(np.argmin(np.square(frames).mean(axis=1)))
-            cut = lo + quietest * window + window // 2
-        else:
-            cut = target
-        bounds.append((start, cut))
-        start = cut
-    bounds.append((start, n))
-    return bounds
+    need = chunk_samples + search_samples + window
+    buf: list = []
+    buffered = 0
+    emitted = 0
+
+    for block in blocks:
+        if block is None or len(block) == 0:
+            continue
+        buf.append(np.asarray(block, dtype=np.float32))
+        buffered += len(block)
+        while chunk_samples > 0 and buffered >= need:
+            audio = np.concatenate(buf) if len(buf) > 1 else buf[0]
+            lo = max(window, chunk_samples - search_samples)
+            hi = min(len(audio) - window, chunk_samples + search_samples)
+            cut = _quiet_cut(audio, target=chunk_samples, lo=lo, hi=hi, window=window)
+            yield emitted, audio[:cut]
+            emitted += cut
+            rest = np.array(audio[cut:], dtype=np.float32)  # copy, so the piece can be freed
+            buf, buffered = [rest], len(rest)
+
+    if buffered:
+        yield emitted, (np.concatenate(buf) if len(buf) > 1 else buf[0])
+
+
+def _decode_blocks(audio_path: str):
+    """Yield 16 kHz mono float32 blocks from *audio_path* as they are decoded.
+
+    Same PyAV pipeline as ``faster_whisper.decode_audio``, which instead builds
+    the whole track in memory (~1.7 GB peak for a 5-hour track).
+    """
+    import gc
+
+    try:
+        import av
+        import numpy as np
+        from faster_whisper.audio import (
+            _group_frames,
+            _ignore_invalid_frames,
+            _resample_frames,
+        )
+    except ImportError:  # pragma: no cover - private helpers moved upstream
+        from faster_whisper import decode_audio
+
+        yield decode_audio(audio_path, sampling_rate=_SAMPLE_RATE)
+        return
+
+    resampler = av.audio.resampler.AudioResampler(
+        format="s16", layout="mono", rate=_SAMPLE_RATE
+    )
+    try:
+        with av.open(audio_path, mode="r", metadata_errors="ignore") as container:
+            frames = container.decode(audio=0)
+            frames = _ignore_invalid_frames(frames)
+            frames = _group_frames(frames, _DECODE_BLOCK_SAMPLES)
+            frames = _resample_frames(frames, resampler)
+            for frame in frames:
+                yield frame.to_ndarray().reshape(-1).astype(np.float32) / 32768.0
+    finally:
+        # PyAV resampler objects are not freed without an explicit collection
+        # (faster-whisper issue #390).
+        del resampler
+        gc.collect()
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +453,9 @@ class FasterWhisperTranscriber:
         # Zoom pads every per-participant track to the full meeting length, and
         # faster-whisper's Silero VAD runs its LSTM over the WHOLE array in one
         # pass. A 5-hour track exhausts memory ("bad allocation"), so long
-        # tracks are split into pieces of this many seconds, cut at the quietest
-        # moment near each boundary. 0 disables splitting.
+        # tracks are decoded as a stream and transcribed in pieces of this many
+        # seconds, cut at the quietest moment near each boundary; only about one
+        # piece is held in memory at a time. 0 disables splitting.
         self.chunk_seconds = chunk_seconds
         self._model = None  # lazily constructed on first transcribe()
 
@@ -440,16 +497,18 @@ class FasterWhisperTranscriber:
             segments, _info = model.transcribe(audio_path, **kwargs)
             return [(seg.text.strip(), seg.start, seg.end) for seg in segments]
 
-        audio = self._load_audio(audio_path)
+        # Decode and transcribe piece by piece: only about one piece of audio
+        # is in memory at a time, however long the (padded) track is.
+        chunk = int(self.chunk_seconds * _SAMPLE_RATE)
         pieces: list[tuple[str, float, float]] = []
-        for start, end in _chunk_bounds(
-            audio,
-            chunk_samples=int(self.chunk_seconds * _SAMPLE_RATE),
-            search_samples=int(_CUT_SEARCH_SECONDS * _SAMPLE_RATE),
+        for start, audio in _stream_chunks(
+            self._audio_blocks(audio_path),
+            chunk_samples=chunk,
+            search_samples=min(int(_CUT_SEARCH_SECONDS * _SAMPLE_RATE), chunk // 2),
             window_samples=int(_CUT_WINDOW_SECONDS * _SAMPLE_RATE),
         ):
             offset = start / _SAMPLE_RATE
-            segments, _info = model.transcribe(audio[start:end], **kwargs)
+            segments, _info = model.transcribe(audio, **kwargs)
             # consume the lazy generator while this piece is in scope
             pieces.extend(
                 (seg.text.strip(), seg.start + offset, seg.end + offset)
@@ -457,8 +516,6 @@ class FasterWhisperTranscriber:
             )
         return pieces
 
-    def _load_audio(self, audio_path: str):
-        """Decode *audio_path* to 16 kHz mono float32 (overridable in tests)."""
-        from faster_whisper import decode_audio
-
-        return decode_audio(audio_path, sampling_rate=_SAMPLE_RATE)
+    def _audio_blocks(self, audio_path: str):
+        """Stream decoded 16 kHz mono audio blocks (overridable in tests)."""
+        return _decode_blocks(audio_path)
