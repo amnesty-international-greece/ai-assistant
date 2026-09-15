@@ -17,6 +17,27 @@ from src.core.audit import log_action
 
 logger = logging.getLogger(__name__)
 
+# Provider errors worth retrying: overload, rate limits and transient faults.
+# Gemini raises errors with ``.code`` (e.g. 503) and status text such as
+# "UNAVAILABLE" / "RESOURCE_EXHAUSTED"; Anthropic uses ``.status_code``
+# (429, 529 "overloaded") plus timeout / connection errors.
+_TRANSIENT_STATUS = frozenset({408, 429, 500, 502, 503, 504, 529})
+_TRANSIENT_MARKERS = (
+    "unavailable", "resource_exhausted", "overloaded", "high demand",
+    "rate limit", "try again later", "timed out", "timeout",
+    "deadline exceeded", "connection error",
+)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True for LLM API errors that usually succeed if simply retried."""
+    for attr in ("code", "status_code"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int) and value in _TRANSIENT_STATUS:
+            return True
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _TRANSIENT_MARKERS)
+
 # Pricing per 1M tokens (USD) - used for cost tracking
 _PRICING = {
     "claude": {"input": 3.0, "output": 15.0},
@@ -95,14 +116,9 @@ class ClaudeClient:
 
         start = time.monotonic()
 
-        if self._provider == "gemini":
-            text, input_tokens, output_tokens = self._generate_gemini(
-                user_prompt, system_prompt, max_tokens, temperature
-            )
-        else:
-            text, input_tokens, output_tokens = self._generate_claude(
-                user_prompt, system_prompt, max_tokens, temperature
-            )
+        text, input_tokens, output_tokens = self._call_with_retry(
+            user_prompt, system_prompt, max_tokens, temperature, workflow
+        )
 
         elapsed = time.monotonic() - start
         self._total_input_tokens += input_tokens
@@ -121,6 +137,39 @@ class ClaudeClient:
         )
 
         return text
+
+    def _call_with_retry(
+        self,
+        user_prompt: str,
+        system_prompt: str | None,
+        max_tokens: int,
+        temperature: float,
+        workflow: str,
+    ) -> tuple[str, int, int]:
+        """Call the provider, retrying transient failures with exponential backoff.
+
+        A busy provider ("503 UNAVAILABLE", "529 overloaded", rate limits) used to
+        fail the call at once. Callers isolate failures, so that silently left an
+        organiser batch unfiled or a drafted block out of the minutes. Errors that
+        a retry cannot fix (bad request, auth, invalid model) still raise at once.
+        """
+        retries = max(0, int(getattr(settings.llm, "max_retries", 4)))
+        base = float(getattr(settings.llm, "retry_base_seconds", 5.0))
+        call = self._generate_gemini if self._provider == "gemini" else self._generate_claude
+        sleep = getattr(self, "_sleep", time.sleep)
+        for attempt in range(retries + 1):
+            try:
+                return call(user_prompt, system_prompt, max_tokens, temperature)
+            except Exception as exc:  # noqa: BLE001 - classified below
+                if attempt >= retries or not _is_transient(exc):
+                    raise
+                delay = base * (2 ** attempt)
+                logger.warning(
+                    "LLM call for %s failed (%s); retry %d/%d in %.0fs",
+                    workflow, str(exc)[:160], attempt + 1, retries, delay,
+                )
+                sleep(delay)
+        raise RuntimeError("unreachable")  # pragma: no cover
 
     def _generate_gemini(
         self,

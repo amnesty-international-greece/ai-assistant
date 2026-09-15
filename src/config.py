@@ -26,6 +26,10 @@ class LLMConfig(BaseModel):
     model: str = "gemini-2.0-flash"                 # model name for the chosen provider
     max_tokens: int = 4096
     temperature: float = 0.3
+    # Transient provider errors (busy/overloaded, rate limits, timeouts) are
+    # retried with exponential backoff: retry_base_seconds, then doubling.
+    max_retries: int = 4
+    retry_base_seconds: float = 5.0
 
 
 class StorageConfig(BaseModel):
