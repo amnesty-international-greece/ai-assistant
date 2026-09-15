@@ -155,6 +155,8 @@ minutes_pipeline:
   organizer_enabled: true            # LLM re-files ambiguous turns under the right agenda item + tags them
   organizer_batch_turns: 40          # turns per organiser call
   organizer_text_limit: 600          # chars of each turn shown to the organiser
+  organizer_context_turns: 8         # previous turns shown read-only to each organiser batch
+  organizer_island_review: true      # re-check short runs filed inside another item stretch
   recordings_dir: "data/recordings"
   transcripts_dir: "data/transcripts"
   articles_path: "assets/governance/articles.json"

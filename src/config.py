@@ -304,6 +304,10 @@ class MinutesPipelineConfig(BaseModel):
     organizer_batch_turns: int = 40
     organizer_text_limit: int = 600
     organizer_max_tokens: int = 8000
+    organizer_context_turns: int = 8            # previous turns shown read-only to each batch (0 = off)
+    organizer_island_review: bool = True        # re-check short runs filed inside another item stretch
+    organizer_island_max_turns: int = 8         # longer runs count as a genuine change of topic
+    organizer_island_gap_seconds: float = 180.0 # max silence between an island and its neighbours
 
 
 class UrlsConfig(BaseModel):

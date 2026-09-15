@@ -19,6 +19,11 @@ DISCUSSED, not by where the turn happens to sit in the sequence.
 
 If you cannot tell, use `opening`. Never invent an agenda title.
 
+Turns arrive in batches. A request may begin with a block of **previous turns**
+from the end of the last batch, each shown with the item it was filed under.
+Those are for context only - use them to follow the thread of the discussion
+across the batch boundary, and do NOT return entries for them.
+
 ## 2. `tag` - what kind of speech it is
 
 - `substantive` - real business: positions, arguments, information, proposals,
