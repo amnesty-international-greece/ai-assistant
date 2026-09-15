@@ -281,6 +281,7 @@ def test_faster_whisper_passes_quality_kwargs():
 
     tr = FasterWhisperTranscriber()
     tr._model = FakeModel()  # bypass the lazy heavy import
+    tr._load_audio = lambda path: __import__("numpy").zeros(16000, dtype="float32")
     tr.transcribe("a.m4a", language="el", initial_prompt="Ονόματα: Χ")
 
     assert captured["vad_filter"] is True
@@ -288,3 +289,60 @@ def test_faster_whisper_passes_quality_kwargs():
     assert captured["language"] == "el"
     assert captured["beam_size"] == 5
     assert captured["vad_parameters"]["min_silence_duration_ms"] == 1000
+
+
+def test_chunk_bounds_cuts_at_quietest_point_and_covers_everything():
+    import numpy as np
+    from src.workflows.minutes_transcription import _chunk_bounds
+
+    audio = np.ones(3000, dtype=np.float32)
+    audio[1080:1120] = 0.0  # a silent gap just after the nominal 1000 boundary
+    bounds = _chunk_bounds(audio, chunk_samples=1000, search_samples=200, window_samples=20)
+
+    assert bounds[0][0] == 0 and bounds[-1][1] == len(audio)
+    assert all(a[1] == b[0] for a, b in zip(bounds, bounds[1:]))  # contiguous
+    assert 1080 <= bounds[0][1] <= 1120  # first cut lands in the silence
+
+
+def test_chunk_bounds_short_audio_is_one_piece():
+    from src.workflows.minutes_transcription import _chunk_bounds
+
+    assert _chunk_bounds([0.0] * 500, chunk_samples=1000, search_samples=100,
+                         window_samples=10) == [(0, 500)]
+
+
+def test_faster_whisper_chunked_timestamps_are_offset():
+    """A long track is transcribed piecewise; later pieces keep true offsets."""
+    import numpy as np
+    from types import SimpleNamespace
+    from src.workflows.minutes_transcription import FasterWhisperTranscriber
+
+    lengths = []
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            lengths.append(len(audio))
+            return (iter([SimpleNamespace(text=" x ", start=1.0, end=2.0)]), None)
+
+    tr = FasterWhisperTranscriber(chunk_seconds=1)
+    tr._model = FakeModel()
+    tr._load_audio = lambda path: np.ones(16000 * 3, dtype=np.float32)
+    out = tr.transcribe("long.m4a")
+
+    assert len(lengths) >= 2  # split into several pieces
+    assert sum(lengths) == 16000 * 3  # no audio dropped
+    assert out[0] == ("x", 1.0, 2.0)
+    assert out[1][1] > 1.0  # shifted by its piece offset
+
+
+def test_all_tracks_failing_raises_instead_of_empty_transcript():
+    from src.workflows.minutes_transcription import manifest_to_segments
+
+    class Boom:
+        def transcribe(self, audio_path, *, language="el", initial_prompt=""):
+            raise RuntimeError("bad allocation")
+
+    manifest = {"files": [_audio_file(id="a", local_path="a.m4a"),
+                          _audio_file(id="b", local_path="b.m4a")]}
+    with pytest.raises(RuntimeError, match="all 2"):
+        manifest_to_segments(manifest, Boom())

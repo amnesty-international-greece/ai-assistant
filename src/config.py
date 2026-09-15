@@ -250,6 +250,7 @@ class MinutesPipelineConfig(BaseModel):
     # Conditioning each window on the previous window's text is the main cause of
     # Whisper repetition loops on long recordings. Keep OFF.
     whisper_condition_on_previous_text: bool = False
+    whisper_chunk_seconds: int = 1800  # split long tracks for VAD memory; 0 = off
     language: str = "el"
     recordings_dir: str = "data/recordings"
     transcripts_dir: str = "data/transcripts"

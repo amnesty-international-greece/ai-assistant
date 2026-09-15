@@ -181,6 +181,7 @@ def get_transcriber(settings) -> Transcriber:
             ),
             vad_min_silence_ms=getattr(cfg, "whisper_vad_min_silence_ms", 1000),
             cpu_threads=getattr(cfg, "whisper_cpu_threads", 0),
+            chunk_seconds=getattr(cfg, "whisper_chunk_seconds", 1800),
         )
     if choice == "fake":
         return FakeTranscriber()

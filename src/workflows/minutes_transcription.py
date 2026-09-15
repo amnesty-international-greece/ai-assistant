@@ -181,6 +181,46 @@ def _build_roster_matcher(roster: list[dict] | None):
     return match
 
 
+_SAMPLE_RATE = 16000          # faster-whisper's native rate
+_CUT_SEARCH_SECONDS = 30.0    # look this far either side of a boundary for silence
+_CUT_WINDOW_SECONDS = 0.5     # energy window used to find the quietest cut point
+
+
+def _chunk_bounds(audio, *, chunk_samples: int, search_samples: int,
+                  window_samples: int) -> list[tuple[int, int]]:
+    """Split *audio* into contiguous ``(start, end)`` sample ranges.
+
+    Each piece is about *chunk_samples* long. Rather than cutting blindly (which
+    could split a word), each cut moves to the lowest-energy window within
+    *search_samples* of the nominal boundary. The ranges are contiguous and
+    together cover the whole array.
+    """
+    n = len(audio)
+    if chunk_samples <= 0 or n <= chunk_samples:
+        return [(0, n)]
+
+    import numpy as np
+
+    window = max(1, window_samples)
+    bounds: list[tuple[int, int]] = []
+    start = 0
+    while n - start > chunk_samples:
+        target = start + chunk_samples
+        lo = max(start + window, target - search_samples)
+        hi = min(n - window, target + search_samples)
+        k = (hi - lo) // window
+        if k >= 1:
+            frames = np.asarray(audio[lo:lo + k * window], dtype=np.float32).reshape(k, window)
+            quietest = int(np.argmin(np.square(frames).mean(axis=1)))
+            cut = lo + quietest * window + window // 2
+        else:
+            cut = target
+        bounds.append((start, cut))
+        start = cut
+    bounds.append((start, n))
+    return bounds
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -223,6 +263,8 @@ def manifest_to_segments(
     selected = _select_audio_files(manifest)
     segments: list[TranscriptSegment] = []
     anon_counter = 0
+    attempted = 0
+    failures = 0
 
     for entry in selected:
         base = _parse_iso_utc(entry.get("recording_start") or "")
@@ -247,6 +289,7 @@ def manifest_to_segments(
             anon_counter += 1
             speaker = f"Ομιλητής {anon_counter}"
 
+        attempted += 1
         try:
             pieces = transcriber.transcribe(
                 local_path, language=language, initial_prompt=prompt
@@ -255,6 +298,7 @@ def manifest_to_segments(
             logger.warning(
                 "Transcriber failed on %r: %s", local_path, exc
             )
+            failures += 1
             continue
 
         for text, off_start, off_end in pieces or []:
@@ -267,6 +311,13 @@ def manifest_to_segments(
                 )
             )
 
+    if attempted and failures == attempted:
+        # Every track failed: returning [] would silently yield an empty
+        # transcript after a long run. Fail loudly instead.
+        raise RuntimeError(
+            f"Transcription failed on all {attempted} audio file(s); "
+            "see the warnings above for the cause."
+        )
     segments.sort(key=lambda s: s.start)
     return segments
 
@@ -325,6 +376,7 @@ class FasterWhisperTranscriber:
         condition_on_previous_text: bool = False,
         vad_min_silence_ms: int = 1000,
         cpu_threads: int = 0,
+        chunk_seconds: int = 1800,
     ) -> None:
         self.model_size = model_size
         self.device = device
@@ -342,6 +394,12 @@ class FasterWhisperTranscriber:
         # matters most on long, silence-heavy recordings.
         self.condition_on_previous_text = condition_on_previous_text
         self.vad_min_silence_ms = vad_min_silence_ms
+        # Zoom pads every per-participant track to the full meeting length, and
+        # faster-whisper's Silero VAD runs its LSTM over the WHOLE array in one
+        # pass. A 5-hour track exhausts memory ("bad allocation"), so long
+        # tracks are split into pieces of this many seconds, cut at the quietest
+        # moment near each boundary. 0 disables splitting.
+        self.chunk_seconds = chunk_seconds
         self._model = None  # lazily constructed on first transcribe()
 
     def _ensure_model(self):
@@ -378,5 +436,29 @@ class FasterWhisperTranscriber:
             kwargs["vad_parameters"] = {
                 "min_silence_duration_ms": self.vad_min_silence_ms
             }
-        segments, _info = model.transcribe(audio_path, **kwargs)
-        return [(seg.text.strip(), seg.start, seg.end) for seg in segments]
+        if not self.chunk_seconds:
+            segments, _info = model.transcribe(audio_path, **kwargs)
+            return [(seg.text.strip(), seg.start, seg.end) for seg in segments]
+
+        audio = self._load_audio(audio_path)
+        pieces: list[tuple[str, float, float]] = []
+        for start, end in _chunk_bounds(
+            audio,
+            chunk_samples=int(self.chunk_seconds * _SAMPLE_RATE),
+            search_samples=int(_CUT_SEARCH_SECONDS * _SAMPLE_RATE),
+            window_samples=int(_CUT_WINDOW_SECONDS * _SAMPLE_RATE),
+        ):
+            offset = start / _SAMPLE_RATE
+            segments, _info = model.transcribe(audio[start:end], **kwargs)
+            # consume the lazy generator while this piece is in scope
+            pieces.extend(
+                (seg.text.strip(), seg.start + offset, seg.end + offset)
+                for seg in segments
+            )
+        return pieces
+
+    def _load_audio(self, audio_path: str):
+        """Decode *audio_path* to 16 kHz mono float32 (overridable in tests)."""
+        from faster_whisper import decode_audio
+
+        return decode_audio(audio_path, sampling_rate=_SAMPLE_RATE)
