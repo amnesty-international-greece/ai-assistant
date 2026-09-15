@@ -182,6 +182,12 @@ def get_transcriber(settings) -> Transcriber:
             vad_min_silence_ms=getattr(cfg, "whisper_vad_min_silence_ms", 1000),
             cpu_threads=getattr(cfg, "whisper_cpu_threads", 0),
             chunk_seconds=getattr(cfg, "whisper_chunk_seconds", 1800),
+            # Finished pieces are saved here so a crashed or interrupted
+            # multi-hour run resumes instead of starting over.
+            cache_dir=(
+                str(Path(cfg.transcripts_dir) / "_asr_cache")
+                if getattr(cfg, "whisper_piece_cache", True) else None
+            ),
         )
     if choice == "fake":
         return FakeTranscriber()
@@ -735,8 +741,11 @@ def _draft_section(
         "Σύνταξε ΜΟΝΟ το σώμα των πρακτικών για το παρακάτω θέμα ημερήσιας διάταξης, "
         "σε επίσημο, τρίτο-πρόσωπο ύφος. Κατάγραψε ΑΝΑΛΥΤΙΚΑ τη θέση και τα επιχειρήματα "
         "ΚΑΘΕ ομιλητή, με ονομαστική απόδοση - όχι σύνοψη. Παράλειψε μόνο τις πολύ σύντομες "
-        "ερωταπαντήσεις, τα διαδικαστικά/τεχνικά και όσα είναι εκτός θέματος. Μην προσθέτεις "
-        "στοιχεία που δεν προκύπτουν από το κείμενο. Μην επαναλάβεις τον τίτλο ως επικεφαλίδα."
+        "ερωταπαντήσεις, τα διαδικαστικά/τεχνικά και όσα δεν αφορούν καθόλου τις εργασίες "
+        "του Διοικητικού Συμβουλίου. Ό,τι αφορά τις εργασίες του ΔΣ αλλά μοιάζει να ανήκει "
+        "σε άλλο θέμα της ημερήσιας διάταξης ΔΕΝ είναι εκτός θέματος: κατάγραψέ το εδώ. "
+        "Μην προσθέτεις στοιχεία που δεν προκύπτουν από το κείμενο. Μην επαναλάβεις τον "
+        "τίτλο ως επικεφαλίδα."
     )
     if block_total > 1:
         lead += (

@@ -251,6 +251,9 @@ class MinutesPipelineConfig(BaseModel):
     # Whisper repetition loops on long recordings. Keep OFF.
     whisper_condition_on_previous_text: bool = False
     whisper_chunk_seconds: int = 1800  # split long tracks for VAD memory; 0 = off
+    # Save each finished piece under transcripts_dir/_asr_cache so an interrupted
+    # or crashed multi-hour run resumes instead of starting over.
+    whisper_piece_cache: bool = True
     language: str = "el"
     recordings_dir: str = "data/recordings"
     transcripts_dir: str = "data/transcripts"

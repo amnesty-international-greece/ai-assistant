@@ -373,3 +373,94 @@ def test_all_tracks_failing_raises_instead_of_empty_transcript():
                           _audio_file(id="b", local_path="b.m4a")]}
     with pytest.raises(RuntimeError, match="all 2"):
         manifest_to_segments(manifest, Boom())
+
+
+# -- out-of-memory resilience and the per-piece cache ------------------------
+
+
+class _PieceModel:
+    """Fake faster-whisper model; fail(call_no, beam) may return an exception,
+    which is raised lazily while the segments are consumed (as real OOMs are)."""
+
+    def __init__(self, fail=None):
+        self.calls = []
+        self.fail = fail or (lambda n, beam: None)
+
+    def transcribe(self, audio, **kwargs):
+        from types import SimpleNamespace
+
+        n = len(self.calls)
+        beam = kwargs.get("beam_size")
+        self.calls.append((len(audio), beam))
+        err = self.fail(n, beam)
+        if err is not None:
+            def boom():
+                raise err
+                yield  # pragma: no cover
+            return (boom(), None)
+        return (iter([SimpleNamespace(text=f"t{n}", start=0.0, end=0.5)]), None)
+
+
+def _piece_transcriber(model, audio_path, cache_dir=None):
+    """3 s of audio with chunk_seconds=1 streams into 3 pieces (0, 0.75 s, 1.5 s)."""
+    import numpy as np
+    from src.workflows.minutes_transcription import FasterWhisperTranscriber
+
+    tr = FasterWhisperTranscriber(chunk_seconds=1, beam_size=2, cache_dir=cache_dir)
+    tr._model = model
+    tr._audio_blocks = lambda path: iter([np.ones(16000 * 3, dtype=np.float32)])
+    return tr
+
+
+def _oom():
+    return RuntimeError("mkl_malloc: failed to allocate memory")
+
+
+def test_out_of_memory_piece_is_retried_with_beam_1(tmp_path):
+    model = _PieceModel(fail=lambda n, beam: _oom() if n == 0 else None)
+    out = _piece_transcriber(model, "x").transcribe("x")
+
+    assert model.calls[0][1] == 2 and model.calls[1][1] == 1  # retried with beam 1
+    assert len(out) == 3  # every piece transcribed
+
+
+def test_piece_that_keeps_failing_is_skipped_not_the_whole_track(tmp_path):
+    model = _PieceModel(fail=lambda n, beam: _oom() if n in (0, 1) else None)
+    out = _piece_transcriber(model, "x").transcribe("x")
+
+    assert len(out) == 2  # only the first piece is missing
+    assert out[0][1] == 0.75  # the later pieces keep their true offsets
+
+
+def test_non_memory_errors_still_stop_the_track(tmp_path):
+    model = _PieceModel(fail=lambda n, beam: ValueError("corrupt audio") if n == 0 else None)
+    with pytest.raises(ValueError):
+        _piece_transcriber(model, "x").transcribe("x")
+
+
+def test_rerun_resumes_from_the_piece_cache(tmp_path):
+    audio = tmp_path / "track.m4a"
+    audio.write_bytes(b"x")
+    cache = str(tmp_path / "cache")
+
+    first = _piece_transcriber(_PieceModel(), str(audio), cache).transcribe(str(audio))
+
+    never = _PieceModel(fail=lambda n, beam: ValueError("model must not be called"))
+    second = _piece_transcriber(never, str(audio), cache).transcribe(str(audio))
+
+    assert second == first
+    assert never.calls == []  # every piece came from the cache
+
+
+def test_skipped_pieces_are_not_cached_so_a_rerun_retries_them(tmp_path):
+    audio = tmp_path / "track.m4a"
+    audio.write_bytes(b"x")
+    cache = str(tmp_path / "cache")
+
+    failing = _PieceModel(fail=lambda n, beam: _oom() if n in (0, 1) else None)
+    assert len(_piece_transcriber(failing, str(audio), cache).transcribe(str(audio))) == 2
+
+    healthy = _PieceModel()
+    out = _piece_transcriber(healthy, str(audio), cache).transcribe(str(audio))
+    assert len(healthy.calls) == 1  # only the previously skipped piece
+    assert len(out) == 3

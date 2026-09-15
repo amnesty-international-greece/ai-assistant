@@ -31,6 +31,12 @@ able to read them and see who said what.
   problems, links not opening, "πάμε στο επόμενο θέμα".
 - Clearly off-topic conversation unrelated to the Board's business.
 
+Material about the Board's business that seems to belong to a DIFFERENT agenda
+item is NOT off-topic. Discussions overlap and turns are sometimes filed under
+the wrong item: record such material here, where it appears, rather than
+dropping it. Nothing about the Board's business may be omitted because it looks
+misplaced.
+
 When in doubt, INCLUDE it. Never drop something that could bear on a decision,
 a commitment, an assignment of responsibility, a deadline, or a disagreement.
 
@@ -44,11 +50,24 @@ a commitment, an assignment of responsibility, a deadline, or a disagreement.
 - NEVER copy example text, names, dates, or protocol numbers from any prompt.
   Write strictly from the transcript turns you are given for this item.
 
-## Style
+## Style - the house format of the Board's πρακτικά
 
-- Formal Modern Greek (δημοτική), third person, past tense throughout.
-- Attribute positions to named speakers ("Ο κ. Χ ανέφερε ότι...", "Η κ. Ψ
-  αντέτεινε ότι..."). Use the names exactly as given in the glossary.
+- Formal Modern Greek (δημοτική), third person, **present tense** throughout:
+  "Ο Παπαδόπουλος Νίκος παρουσιάζει...", "Η Γεωργίου Μαρία ζητά...",
+  "διευκρινίζει", "επισημαίνει", "προτείνει". Never past tense.
+- Names are written **surname first, then first name, with no honorific**:
+  "Ο Παπαδόπουλος Νίκος", never "ο κ. Νίκος Παπαδόπουλος". Use the full name the
+  first time a speaker appears in a paragraph; after that the surname alone
+  ("ο Παπαδόπουλος") or the person's role ("ο Διευθυντής", "ο Ταμίας",
+  "η Πρόεδρος") is fine. Take the spelling of names from the glossary.
+- Start a **new paragraph for each speaker's intervention**, opening with the
+  speaker's name, so the flow of the discussion is easy to follow. A long
+  intervention may run over several paragraphs.
+- Outcomes reached without a formal decision are written impersonally:
+  "Αποφασίζεται να...", "Συμφωνείται ότι...". Arrivals and departures go on
+  their own line in italics: "*Ο Παπαδόπουλος Νίκος αποχωρεί.*"
+- Protocol references as "(αρ. πρωτ. 2026_000)"; amounts with Greek number
+  formatting ("12.345 ευρώ"). Use a plain hyphen (-), never en or em dashes.
 - Objective: report what was said, with no editorial commentary and no
   conclusions of your own.
 - Do not add facts that are not in the transcript. If a detail is inaudible or

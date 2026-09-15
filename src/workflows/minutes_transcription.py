@@ -411,6 +411,52 @@ def build_minutes_from_recording(
 # Concrete transcriber (lazy heavy dependency; not unit-tested for real ASR)
 # ---------------------------------------------------------------------------
 
+_OOM_MARKERS = ("malloc", "bad alloc", "failed to allocate", "out of memory")
+
+
+def _is_out_of_memory(exc: BaseException) -> bool:
+    """True for the allocation failures CTranslate2 / ONNX raise when RAM runs out."""
+    if isinstance(exc, MemoryError):
+        return True
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _OOM_MARKERS)
+
+
+def _read_piece_cache(path: str | None, n_samples: int):
+    """Cached result for one audio piece, or ``None`` if absent, stale or corrupt."""
+    import json
+    import os
+
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if data.get("samples") != n_samples:
+            return None
+        return [(str(t), float(s), float(e)) for t, s, e in data["pieces"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _write_piece_cache(path: str | None, n_samples: int, pieces) -> None:
+    """Atomically save one transcribed piece. Never fails the run."""
+    import json
+    import os
+
+    if not path:
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"samples": n_samples, "pieces": [list(p) for p in pieces]},
+                      fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError as exc:
+        logger.warning("Could not cache transcribed piece %s: %s", path, exc)
+
+
 class FasterWhisperTranscriber:
     """A :class:`Transcriber` backed by faster-whisper.
 
@@ -433,6 +479,7 @@ class FasterWhisperTranscriber:
         vad_min_silence_ms: int = 1000,
         cpu_threads: int = 0,
         chunk_seconds: int = 1800,
+        cache_dir: str | None = None,
     ) -> None:
         self.model_size = model_size
         self.device = device
@@ -457,6 +504,10 @@ class FasterWhisperTranscriber:
         # seconds, cut at the quietest moment near each boundary; only about one
         # piece is held in memory at a time. 0 disables splitting.
         self.chunk_seconds = chunk_seconds
+        # Each finished piece is saved here (text + absolute timestamps), keyed by
+        # the track and the settings that shape the text, so an interrupted or
+        # crashed multi-hour run resumes where it stopped. None disables it.
+        self.cache_dir = cache_dir
         self._model = None  # lazily constructed on first transcribe()
 
     def _ensure_model(self):
@@ -500,7 +551,9 @@ class FasterWhisperTranscriber:
         # Decode and transcribe piece by piece: only about one piece of audio
         # is in memory at a time, however long the (padded) track is.
         chunk = int(self.chunk_seconds * _SAMPLE_RATE)
+        cache_prefix = self._cache_prefix(audio_path, kwargs) if self.cache_dir else None
         pieces: list[tuple[str, float, float]] = []
+        skipped_seconds = 0.0
         for start, audio in _stream_chunks(
             self._audio_blocks(audio_path),
             chunk_samples=chunk,
@@ -508,13 +561,87 @@ class FasterWhisperTranscriber:
             window_samples=int(_CUT_WINDOW_SECONDS * _SAMPLE_RATE),
         ):
             offset = start / _SAMPLE_RATE
-            segments, _info = model.transcribe(audio, **kwargs)
-            # consume the lazy generator while this piece is in scope
-            pieces.extend(
-                (seg.text.strip(), seg.start + offset, seg.end + offset)
-                for seg in segments
+            cache_file = (
+                f"{self.cache_dir}/{cache_prefix}_{start}.json" if cache_prefix else None
+            )
+            cached = _read_piece_cache(cache_file, len(audio))
+            if cached is not None:
+                pieces.extend(cached)
+                continue
+            got = self._transcribe_piece(model, audio, kwargs, offset)
+            if got is None:
+                skipped_seconds += len(audio) / _SAMPLE_RATE
+                continue
+            pieces.extend(got)
+            _write_piece_cache(cache_file, len(audio), got)
+        if skipped_seconds:
+            logger.error(
+                "%s: %.1f min of audio could not be transcribed (out of memory) and "
+                "is MISSING from this track. Rerun the same command to retry only "
+                "the missing pieces.",
+                audio_path, skipped_seconds / 60,
             )
         return pieces
+
+    def _transcribe_piece(self, model, audio, kwargs: dict, offset: float):
+        """Transcribe one piece, retrying with beam 1 on an out-of-memory error.
+
+        Returns ``None`` when the piece still cannot be transcribed, so the
+        caller skips only this piece instead of losing the whole track. Any
+        other error propagates as before.
+        """
+        import gc
+
+        attempts = [kwargs]
+        if (kwargs.get("beam_size") or 1) > 1:
+            attempts.append({**kwargs, "beam_size": 1})
+        for n, attempt in enumerate(attempts):
+            try:
+                segments, _info = model.transcribe(audio, **attempt)
+                # consume the lazy generator while this piece is in scope
+                return [
+                    (seg.text.strip(), seg.start + offset, seg.end + offset)
+                    for seg in segments
+                ]
+            except Exception as exc:  # noqa: BLE001 - only memory errors are handled
+                if not _is_out_of_memory(exc):
+                    raise
+                gc.collect()
+                last = n + 1 == len(attempts)
+                logger.warning(
+                    "Out of memory at %.1f min (beam %s): %s - %s",
+                    offset / 60, attempt.get("beam_size"), exc,
+                    "skipping this piece" if last else "retrying with beam 1",
+                )
+        return None
+
+    def _cache_prefix(self, audio_path: str, kwargs: dict) -> str:
+        """Identify a track plus the settings that shape its text.
+
+        Beam size and thread count are deliberately excluded: a piece that
+        needed the beam-1 fallback is still a valid result.
+        """
+        import hashlib
+        import json
+        import os
+
+        st = os.stat(audio_path)
+        ident = json.dumps(
+            {
+                "file": os.path.basename(audio_path),
+                "size": st.st_size,
+                "mtime": st.st_mtime_ns,
+                "model": self.model_size,
+                "language": kwargs.get("language"),
+                "prompt": kwargs.get("initial_prompt"),
+                "vad": self.vad_filter,
+                "vad_silence_ms": self.vad_min_silence_ms,
+                "chunk_seconds": self.chunk_seconds,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        return hashlib.sha1(ident.encode("utf-8")).hexdigest()[:16]
 
     def _audio_blocks(self, audio_path: str):
         """Stream decoded 16 kHz mono audio blocks (overridable in tests)."""
