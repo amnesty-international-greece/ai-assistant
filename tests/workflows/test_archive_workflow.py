@@ -44,13 +44,22 @@ def _write_minimal_pdf(path: Path, text: str = "Hello world. " * 20) -> None:
 
 
 @pytest.mark.asyncio
-async def test_intake_rejects_non_pdf(workflow, tmp_path):
+async def test_intake_rejects_non_pdf_when_conversion_unavailable(workflow, tmp_path, monkeypatch):
+    """A convertible document is rejected if it cannot be converted to PDF.
+
+    LibreOffice discovery is stubbed out so the result does not depend on
+    whether soffice is installed on the machine running the tests. The other
+    intake paths (unsupported extension, successful conversion) are covered in
+    tests/utils/test_pdf_convert.py.
+    """
+    from src.utils import pdf_convert
+    monkeypatch.setattr(pdf_convert, "_find_soffice", lambda: None)
+
     not_pdf = tmp_path / "doc.docx"
     not_pdf.write_text("hello")
     result = await workflow._step_intake({"pdf_path": str(not_pdf)})
     assert not result.success
-    assert "PDF" in result.message
-    assert "PDF" in result.message  # mentions PDF
+    assert "Conversion to PDF failed" in result.message
 
 
 @pytest.mark.asyncio
