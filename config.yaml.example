@@ -64,7 +64,10 @@ brevo:
     candidate_members: 0          # Υποψήφια Μέλη - welcome email + onboarding only
     youth_members:     0          # Νέοι/Νέες - youth-specific newsletters
 
-  newsletter_list_ids: [0]        # Segment IDs to receive board meeting invitations
+  # Brevo keeps LISTS and SEGMENTS in separate ID spaces. Put each id under the
+  # right key; `python -m src.cli invite check` verifies them.
+  newsletter_list_ids: []         # Brevo LIST ids to receive board meeting invitations
+  newsletter_segment_ids: []      # Brevo SEGMENT ids to receive board meeting invitations
 
 discord:
   channels:

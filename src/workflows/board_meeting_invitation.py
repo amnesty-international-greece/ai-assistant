@@ -1357,16 +1357,22 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         return template_params, subject, campaign_name, list_ids, preview_text
 
     async def _step_send_newsletter(self, ctx: dict[str, Any]) -> StepResult:
-        """Create the Brevo campaign.
+        """Create the Brevo campaign for the member newsletter.
 
-        test_mode: save as draft + send ONE test email to test_email.  Draft
-                   stays in Brevo for review.  Halts at confirm_newsletter gate.
-        live:      save AND send immediately to newsletter_list_ids.  Skips the
-                   confirm_newsletter gate (handler short-circuits via
-                   ``newsletter_sent`` flag).  Publishes the bus event here.
+        test_mode: create the campaign and send ONE test email to
+                   ``testing.test_email``; nothing reaches the members. The
+                   draft stays in Brevo for review and the run halts at the
+                   confirm_newsletter gate.
+        live:      create the campaign, send the test copy (if configured),
+                   then send it to the configured audience and publish the bus
+                   event. The confirm gate is then a no-op.
+
+        The audience is ``brevo.newsletter_segment_ids`` and/or
+        ``brevo.newsletter_list_ids`` (Brevo keeps lists and segments in
+        separate ID spaces). If campaign creation fails the step stops and says
+        why; it never retries with a broader list.
         """
         template_id = ctx.get("brevo_template_id") or settings.brevo.newsletter_template_id
-
         if not template_id:
             return StepResult(
                 success=True,
@@ -1374,25 +1380,34 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 message="Newsletter skipped - set brevo.newsletter_template_id in config.yaml",
             )
 
-        test_addr = settings.testing.test_email
-        template_params, subject, campaign_name, list_ids, preview_text = self._build_newsletter_params(ctx)
-
-        fallback_list = settings.brevo.master_list_id
-        creation_list_ids = list_ids if list_ids else ([fallback_list] if fallback_list else [])
-
-        if not creation_list_ids:
-            return StepResult(
-                success=True,
-                data={"newsletter_skipped": True},
-                message="Newsletter skipped - no list IDs available (set brevo.master_list_id or brevo.newsletter_list_ids)",
-            )
-
         test_mode = bool(ctx.get("test_mode"))
+        test_addr = settings.testing.test_email
+        template_params, subject, campaign_name, _, preview_text = self._build_newsletter_params(ctx)
+        list_ids, segment_ids = _newsletter_audience(ctx)
+        audience = _describe_audience(list_ids, segment_ids)
 
-        async def _create_campaign(list_ids_attempt: list[int]) -> dict:
-            return await self.brevo.send_campaign(
+        if list_ids or segment_ids:
+            create_lists, create_segments = list_ids, segment_ids
+        else:
+            # Without an audience only a test draft makes sense. The master list
+            # just makes the draft creatable; it is never sent to.
+            fallback = settings.brevo.master_list_id
+            if not (test_mode and fallback):
+                return StepResult(
+                    success=True,
+                    data={"newsletter_skipped": True},
+                    message=(
+                        "Newsletter skipped - no audience configured "
+                        "(set brevo.newsletter_segment_ids or brevo.newsletter_list_ids)"
+                    ),
+                )
+            create_lists, create_segments = [fallback], []
+
+        try:
+            result = await self.brevo.send_campaign(
                 template_id=template_id,
-                list_ids=list_ids_attempt,
+                list_ids=create_lists,
+                segment_ids=create_segments,
                 subject=subject,
                 params=template_params,
                 campaign_name=campaign_name,
@@ -1400,107 +1415,68 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 test_emails=[test_addr] if test_addr else None,
                 workflow=self.name,
             )
-
-        try:
-            try:
-                result = await _create_campaign(creation_list_ids)
-            except Exception as primary_err:
-                if fallback_list and creation_list_ids != [fallback_list]:
-                    logger.warning(
-                        "Campaign creation failed with list %s (%s) - retrying with master list %d",
-                        creation_list_ids, primary_err, fallback_list,
-                    )
-                    result = await _create_campaign([fallback_list])
-                    result["used_fallback_list"] = True
-                else:
-                    raise
-            campaign_id = result.get("campaign_id")
-
-            if test_mode:
-                msg = (
-                    f"Test email sent to {test_addr} - draft will be deleted on cleanup"
-                    if test_addr
-                    else f"Campaign draft created (id={campaign_id}) - no test email configured"
-                )
-                return StepResult(
-                    success=True,
-                    data={
-                        "newsletter_campaign_id": campaign_id,
-                        "newsletter_test_sent": bool(test_addr),
-                        "newsletter_test_addr": test_addr or "",
-                        "newsletter_skipped": True,  # halt at confirm gate; no live send
-                    },
-                    message=msg,
-                )
-
-            # ── Live mode: send NOW, skip the confirm gate ───────────────────
-            if not list_ids:
-                # Live mode requires real list IDs; only draft was created.
-                return StepResult(
-                    success=True,
-                    data={
-                        "newsletter_campaign_id": campaign_id,
-                        "newsletter_test_addr": test_addr or "",
-                        "newsletter_list_ids": list_ids,
-                        "newsletter_sent": False,
-                        "newsletter_skipped": True,
-                    },
-                    message=f"Campaign draft created (id={campaign_id}) - newsletter_list_ids empty, not sent live",
-                )
-
-            try:
-                await self.brevo.send_campaign_now(campaign_id, workflow=self.name)
-            except Exception as send_err:
-                logger.warning("Live newsletter send failed (non-fatal): %s", send_err)
-                return StepResult(
-                    success=True,
-                    data={
-                        "newsletter_campaign_id": campaign_id,
-                        "newsletter_sent": False,
-                        "newsletter_skipped": True,
-                    },
-                    message=f"Live send failed (campaign kept as draft): {send_err}",
-                )
-
-            # Publish bus event AFTER successful live send
-            await _publish_board_meeting_scheduled(ctx)
-
-            return StepResult(
-                success=True,
-                data={
-                    "newsletter_campaign_id": campaign_id,
-                    "newsletter_test_addr": test_addr or "",
-                    "newsletter_list_ids": list_ids,
-                    "newsletter_sent": True,
-                    "bus_event_published": True,
-                },
-                message=f"Newsletter sent live (campaign {campaign_id}, lists {list_ids})",
-            )
         except Exception as e:
-            err_text = str(e).lower()
-            hint = ""
-            if "sender is invalid" in err_text or "sender is inactive" in err_text:
-                hint = (
-                    f" → Sender '{settings.brevo.sender_email}' is not verified in Brevo. "
-                    "Verify it at https://app.brevo.com/senders/list (Senders & IPs → Senders), "
-                    "or change brevo.sender_email in config.yaml to an already-verified address."
-                )
-            elif "list ids are not valid" in err_text or "list id" in err_text:
-                hint = (
-                    f" → List ID {creation_list_ids} does not exist in Brevo. "
-                    "Check brevo.master_list_id in config.yaml."
-                )
-            elif "unauthorized" in err_text or "401" in err_text:
-                hint = (
-                    " → Brevo API key invalid or IP not authorised. "
-                    "Whitelist your IP at https://app.brevo.com/security/authorised_ips."
-                )
+            hint = _brevo_error_hint(e, audience)
             logger.warning("Newsletter campaign creation/test failed (non-fatal): %s%s", e, hint)
             return StepResult(
                 success=True,
                 data={"newsletter_skipped": True},
                 message=f"Newsletter campaign failed (non-fatal): {e}{hint}",
             )
+        campaign_id = result.get("campaign_id")
+
+        if test_mode:
+            msg = (
+                f"Test email sent to {test_addr} - draft will be deleted on cleanup"
+                if test_addr
+                else f"Campaign draft created (id={campaign_id}) - no test email configured"
+            )
+            return StepResult(
+                success=True,
+                data={
+                    "newsletter_campaign_id": campaign_id,
+                    "newsletter_test_sent": bool(test_addr),
+                    "newsletter_test_addr": test_addr or "",
+                    "newsletter_audience": audience,
+                    "newsletter_skipped": True,  # halt at confirm gate; no live send
+                },
+                message=msg,
+            )
+
+        # ── Live mode: the only place the audience is emailed ────────────────
+        try:
+            await self.brevo.send_campaign_now(campaign_id, workflow=self.name)
+        except Exception as send_err:
+            logger.warning("Live newsletter send failed (non-fatal): %s", send_err)
+            return StepResult(
+                success=True,
+                data={
+                    "newsletter_campaign_id": campaign_id,
+                    "newsletter_sent": False,
+                    "newsletter_skipped": True,
+                },
+                message=(
+                    f"Live send failed (campaign kept as draft): {send_err}"
+                    f"{_brevo_error_hint(send_err, audience)}"
+                ),
+            )
+
+        # Publish bus event AFTER successful live send
+        await _publish_board_meeting_scheduled(ctx)
+
+        return StepResult(
+            success=True,
+            data={
+                "newsletter_campaign_id": campaign_id,
+                "newsletter_test_addr": test_addr or "",
+                "newsletter_list_ids": list_ids,
+                "newsletter_segment_ids": segment_ids,
+                "newsletter_audience": audience,
+                "newsletter_sent": True,
+                "bus_event_published": True,
+            },
+            message=f"Newsletter sent live (campaign {campaign_id}, {audience})",
+        )
 
     async def _step_confirm_newsletter(self, ctx: dict[str, Any]) -> StepResult:
         """Confirm gate - in live mode this is a no-op (newsletter already sent).
@@ -1544,6 +1520,65 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             data={"newsletter_sent": False},
             message="No newsletter to send.",
         )
+
+
+def _int_ids(value: Any) -> list[int]:
+    """Coerce a config/ctx value to a list of ints; anything else gives []."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    out: list[int] = []
+    for item in value:
+        try:
+            out.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _newsletter_audience(ctx: dict[str, Any]) -> tuple[list[int], list[int]]:
+    """``(list_ids, segment_ids)`` for the member newsletter.
+
+    Explicit ctx values (CLI ``--brevo-lists`` / ``--brevo-segments``) replace
+    the configured audience as a whole, so an override never mixes with config.
+    """
+    ctx_lists = _int_ids(ctx.get("brevo_list_ids"))
+    ctx_segments = _int_ids(ctx.get("brevo_segment_ids"))
+    if ctx_lists or ctx_segments:
+        return ctx_lists, ctx_segments
+    return (
+        _int_ids(getattr(settings.brevo, "newsletter_list_ids", [])),
+        _int_ids(getattr(settings.brevo, "newsletter_segment_ids", [])),
+    )
+
+
+def _describe_audience(list_ids: list[int], segment_ids: list[int]) -> str:
+    parts = []
+    if segment_ids:
+        parts.append("segments " + ", ".join(str(x) for x in segment_ids))
+    if list_ids:
+        parts.append("lists " + ", ".join(str(x) for x in list_ids))
+    return " + ".join(parts) or "no audience"
+
+
+def _brevo_error_hint(err: Exception, audience: str) -> str:
+    """A one-line pointer to the fix for the Brevo failures seen in practice."""
+    text = str(err).lower()
+    if "sender is invalid" in text or "sender is inactive" in text:
+        return (
+            f" -> Sender '{settings.brevo.sender_email}' is not verified in Brevo. "
+            "Verify it at https://app.brevo.com/senders/list, or change brevo.sender_email."
+        )
+    if "401" in text or "unauthorized" in text or "ip address" in text:
+        return (
+            " -> Brevo rejected the API key or this computer's IP address. Authorise the "
+            "IP at https://app.brevo.com/security/authorised_ips, then retry."
+        )
+    if any(k in text for k in ("list", "segment", "recipient", "404")):
+        return (
+            f" -> The audience ({audience}) is not valid in Brevo. Lists and segments "
+            "have separate IDs; run `ai-assistant invite check` to see which exist."
+        )
+    return " -> Run `ai-assistant invite check` to diagnose."
 
 
 def _derive_meeting_id(ctx: dict[str, Any]) -> str:

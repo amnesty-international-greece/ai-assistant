@@ -13,6 +13,34 @@ from src.core.audit import log_action
 logger = logging.getLogger(__name__)
 
 _BREVO_API_BASE = "https://api.brevo.com/v3"
+AUTHORISED_IPS_URL = "https://app.brevo.com/security/authorised_ips"
+
+
+def _error_detail(response: httpx.Response) -> str:
+    """Brevo's own error message, falling back to the raw body."""
+    try:
+        data = response.json()
+    except ValueError:
+        return (response.text or "").strip()[:200]
+    if isinstance(data, dict):
+        return str(data.get("message") or data.get("code") or data)[:200]
+    return str(data)[:200]
+
+
+def build_recipients(list_ids, segment_ids) -> dict[str, list[int]]:
+    """The campaign ``recipients`` object.
+
+    Brevo keeps lists and segments in separate ID spaces (list 1 and segment 1
+    are unrelated). A campaign may target either or both, but needs at least one.
+    """
+    recipients: dict[str, list[int]] = {}
+    if list_ids:
+        recipients["listIds"] = [int(x) for x in list_ids]
+    if segment_ids:
+        recipients["segmentIds"] = [int(x) for x in segment_ids]
+    if not recipients:
+        raise ValueError("A Brevo campaign needs at least one list or segment")
+    return recipients
 
 
 class BrevoClient:
@@ -34,19 +62,26 @@ class BrevoClient:
         preview_text: str | None = None,
         test_emails: list[str] | None = None,
         workflow: str = "brevo",
+        segment_ids: list[int] | None = None,
     ) -> dict[str, Any]:
-        """Create and send an email campaign using a Brevo template with placeholder substitution.
+        """Create a campaign from a Brevo template and, optionally, send a TEST.
 
-        Fetches the template HTML, performs plain-string replacement on all ``params``
-        entries, creates an emailCampaign with the rendered HTML, then either sends a
-        test (``test_emails`` provided) or sends immediately to the contact lists.
+        Fetches the template HTML, performs plain-string replacement on all
+        ``params`` entries, and creates an emailCampaign addressed to
+        ``list_ids`` and/or ``segment_ids``. If ``test_emails`` is given, a test
+        render goes to those addresses.
+
+        This method never sends to the audience. A live send is always a
+        separate, explicit :meth:`send_campaign_now` call. (It used to send live
+        whenever ``test_emails`` was empty, so a test run without a configured
+        test address would have reached the members.)
 
         Args:
             template_id: Brevo template ID to use as the design base.
-            list_ids: Contact list IDs for production sends (ignored for test sends).
+            list_ids: Contact list IDs the campaign is addressed to.
             subject: Email subject line for the campaign.
             params: Mapping of placeholder strings → replacement values to apply
-                    to the template HTML before sending.  Example::
+                    to the template HTML.  Example::
 
                         {
                             "[ΗΜΕΡΟΜΗΝΙΑ]": "14 Απριλίου 2026",
@@ -57,13 +92,19 @@ class BrevoClient:
 
             campaign_name: Display name for the campaign in the Brevo dashboard
                            (defaults to ``subject``).
-            test_emails: If provided, send a test render to these addresses instead
-                         of doing a real send to the contact lists.
+            preview_text: Inbox preview line.
+            test_emails: If provided, send a test render to these addresses.
             workflow: Workflow name for audit logging.
+            segment_ids: Contact segment IDs the campaign is addressed to.
 
         Returns:
-            Dict with ``campaign_id`` (int) and ``test`` (bool).
+            Dict with ``campaign_id`` (int) and ``test`` (bool: a test was sent).
+
+        Raises:
+            ValueError: if neither lists nor segments are given (before any request).
         """
+        recipients = build_recipients(list_ids, segment_ids)
+
         # ── 1. Fetch template HTML ────────────────────────────────────────────
         async with httpx.AsyncClient() as client:
             tmpl_resp = await client.get(
@@ -94,7 +135,7 @@ class BrevoClient:
                 "name":  settings.brevo.sender_name,
             },
             "htmlContent": html,
-            "recipients": {"listIds": list_ids},
+            "recipients": recipients,
         }
         if preview_text:
             create_payload["previewText"] = preview_text
@@ -118,44 +159,163 @@ class BrevoClient:
             action="campaign_created",
             actor="system",
             target=str(campaign_id),
-            details={"name": name, "template_id": template_id},
+            details={"name": name, "template_id": template_id, "recipients": recipients},
         )
-        logger.info("Created Brevo campaign %d: %s", campaign_id, name)
+        logger.info("Created Brevo campaign %d: %s (%s)", campaign_id, name, recipients)
 
-        # ── 4. Send (test or production) ─────────────────────────────────────
-        async with httpx.AsyncClient() as client:
-            if test_emails:
+        # ── 4. Optional test send (never a live send) ────────────────────────
+        if test_emails:
+            async with httpx.AsyncClient() as client:
                 send_resp = await client.post(
                     f"{_BREVO_API_BASE}/emailCampaigns/{campaign_id}/sendTest",
                     headers=self._headers(),
                     json={"emailTo": test_emails},
                 )
-            else:
-                send_resp = await client.post(
-                    f"{_BREVO_API_BASE}/emailCampaigns/{campaign_id}/sendNow",
-                    headers=self._headers(),
-                )
-            if not send_resp.is_success:
-                logger.error(
-                    "Failed to send Brevo campaign %d (%s): %s",
-                    campaign_id, send_resp.status_code, send_resp.text,
-                )
-            send_resp.raise_for_status()
+                if not send_resp.is_success:
+                    logger.error(
+                        "Failed to send Brevo test for campaign %d (%s): %s",
+                        campaign_id, send_resp.status_code, send_resp.text,
+                    )
+                send_resp.raise_for_status()
+            log_action(
+                workflow=workflow,
+                action="campaign_test_sent",
+                actor="system",
+                target=str(campaign_id),
+                details={"test_emails": test_emails},
+            )
+            logger.info("Brevo campaign %d test sent to %s", campaign_id, test_emails)
 
-        action = "campaign_test_sent" if test_emails else "campaign_sent"
-        log_action(
-            workflow=workflow,
-            action=action,
-            actor="system",
-            target=str(campaign_id),
-            details={"list_ids": list_ids, "test_emails": test_emails},
-        )
-        logger.info(
-            "Brevo campaign %d %s",
-            campaign_id,
-            f"test sent to {test_emails}" if test_emails else f"sent to lists {list_ids}",
-        )
         return {"campaign_id": campaign_id, "test": bool(test_emails)}
+
+    async def preflight(
+        self,
+        *,
+        template_id: int | None,
+        list_ids: list[int],
+        segment_ids: list[int],
+        sender_email: str,
+    ) -> dict[str, Any]:
+        """Check, read-only, that a newsletter send would work.
+
+        Verifies the API key and this machine's IP, the template, the sender,
+        and that every configured list and segment exists. Makes no changes.
+
+        Returns:
+            ``{"ok": bool, "problems": [str], "audience": [str]}`` where
+            ``audience`` describes the resolved lists/segments by name.
+        """
+        problems: list[str] = []
+        audience: list[str] = []
+        base = _BREVO_API_BASE
+        async with httpx.AsyncClient(timeout=20) as client:
+            account = await client.get(f"{base}/account", headers=self._headers())
+            if account.status_code == 401:
+                problems.append(
+                    f"Brevo rejected the request: {_error_detail(account)}. If this "
+                    f"mentions an IP address, authorise it at {AUTHORISED_IPS_URL}."
+                )
+                return {"ok": False, "problems": problems, "audience": audience}
+            if not account.is_success:
+                problems.append(
+                    f"Brevo account check failed ({account.status_code}): {_error_detail(account)}"
+                )
+                return {"ok": False, "problems": problems, "audience": audience}
+
+            if template_id:
+                tmpl = await client.get(
+                    f"{base}/smtp/templates/{template_id}", headers=self._headers()
+                )
+                if tmpl.status_code == 404:
+                    problems.append(
+                        f"Template {template_id} does not exist (brevo.newsletter_template_id)."
+                    )
+                elif not tmpl.is_success:
+                    problems.append(
+                        f"Template {template_id} could not be read ({tmpl.status_code}): "
+                        f"{_error_detail(tmpl)}"
+                    )
+            else:
+                problems.append(
+                    "No newsletter template configured (brevo.newsletter_template_id)."
+                )
+
+            senders = await client.get(f"{base}/senders", headers=self._headers())
+            if senders.is_success:
+                wanted = (sender_email or "").strip().lower()
+                match = [
+                    s for s in (senders.json() or {}).get("senders") or []
+                    if (s.get("email") or "").strip().lower() == wanted
+                ]
+                if not match:
+                    problems.append(
+                        f"Sender {sender_email} is not registered in Brevo (brevo.sender_email)."
+                    )
+                elif not match[0].get("active", True):
+                    problems.append(
+                        f"Sender {sender_email} exists in Brevo but is not verified/active."
+                    )
+            else:
+                problems.append(
+                    f"Could not list Brevo senders ({senders.status_code}): {_error_detail(senders)}"
+                )
+
+            for list_id in list_ids:
+                resp = await client.get(
+                    f"{base}/contacts/lists/{list_id}", headers=self._headers()
+                )
+                if resp.status_code == 404:
+                    problems.append(
+                        f"List {list_id} does not exist. Lists and segments have separate "
+                        f"IDs; if {list_id} is a segment, put it under "
+                        "brevo.newsletter_segment_ids instead."
+                    )
+                elif resp.is_success:
+                    data = resp.json() or {}
+                    count = data.get("uniqueSubscribers", data.get("totalSubscribers", "?"))
+                    audience.append(f"list {list_id} '{data.get('name')}' ({count} contacts)")
+                else:
+                    problems.append(
+                        f"List {list_id} could not be read ({resp.status_code}): "
+                        f"{_error_detail(resp)}"
+                    )
+
+            if segment_ids:
+                found: dict[int, str] = {}
+                offset, page = 0, 50
+                while True:
+                    resp = await client.get(
+                        f"{base}/contacts/segments",
+                        headers=self._headers(),
+                        params={"limit": page, "offset": offset},
+                    )
+                    if not resp.is_success:
+                        problems.append(
+                            f"Could not list Brevo segments ({resp.status_code}): "
+                            f"{_error_detail(resp)}"
+                        )
+                        break
+                    batch = (resp.json() or {}).get("segments") or []
+                    for seg in batch:
+                        found[int(seg.get("id"))] = seg.get("segmentName") or seg.get("name") or ""
+                    if len(batch) < page:
+                        break
+                    offset += page
+                for segment_id in segment_ids:
+                    if segment_id in found:
+                        audience.append(f"segment {segment_id} '{found[segment_id]}'")
+                    elif not any(p.startswith("Could not list Brevo segments") for p in problems):
+                        problems.append(
+                            f"Segment {segment_id} does not exist. If {segment_id} is a list, "
+                            "put it under brevo.newsletter_list_ids instead."
+                        )
+
+        if not list_ids and not segment_ids:
+            problems.append(
+                "No newsletter audience configured (brevo.newsletter_segment_ids / "
+                "brevo.newsletter_list_ids); a live send would be refused."
+            )
+        return {"ok": not problems, "problems": problems, "audience": audience}
 
     async def update_template(
         self,
@@ -229,8 +389,9 @@ class BrevoClient:
     ) -> None:
         """Trigger an immediate live send for an already-created campaign.
 
-        Called after the user confirms they're happy with the test send.
-        The campaign must be in 'draft' or 'queued' state.
+        The only method that sends to the audience. Called after the user
+        confirms they're happy with the test send. The campaign must be in
+        'draft' or 'queued' state.
 
         Args:
             campaign_id: Brevo campaign ID (returned by send_campaign).
@@ -254,7 +415,7 @@ class BrevoClient:
             actor="system",
             target=str(campaign_id),
         )
-        logger.info("Brevo campaign %d sent live to contact lists", campaign_id)
+        logger.info("Brevo campaign %d sent live to its audience", campaign_id)
 
     async def delete_campaign(
         self,

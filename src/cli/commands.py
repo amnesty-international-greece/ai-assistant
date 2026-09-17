@@ -81,11 +81,85 @@ def cmd_invite(args: argparse.Namespace) -> None:
     if invite_command == "send-newsletter":
         asyncio.run(_run_invite_send_newsletter(args))
         return
+    if invite_command == "check":
+        ok = asyncio.run(_brevo_preflight(args, verbose=True))
+        sys.exit(0 if ok else 1)
     # Default: run the main workflow
     if getattr(args, "cancel", False) or getattr(args, "rollback", False):
         asyncio.run(_run_invite_cancel(args))
         return
     asyncio.run(_run_invite(args))
+
+
+def _audience_overrides(args: argparse.Namespace) -> dict:
+    """ctx keys for --brevo-lists / --brevo-segments (they replace config)."""
+    out: dict = {}
+    for flag, key in (("brevo_lists", "brevo_list_ids"), ("brevo_segments", "brevo_segment_ids")):
+        raw = getattr(args, flag, None)
+        if raw:
+            out[key] = [int(x) for x in str(raw).split(",") if x.strip()]
+    return out
+
+
+async def _brevo_preflight(
+    args: argparse.Namespace,
+    ctx: dict | None = None,
+    *,
+    verbose: bool = False,
+) -> bool:
+    """Read-only Brevo readiness check before an invitation run.
+
+    Prints the audience the newsletter would reach and any problem (IP not
+    authorised, unverified sender, missing template, list/segment mix-up).
+    Returns True when a run may proceed. ``--skip-brevo-check`` bypasses it.
+    """
+    from src.integrations.brevo import BrevoClient
+    from src.workflows.board_meeting_invitation import _newsletter_audience
+
+    if getattr(args, "skip_brevo_check", False) and not verbose:
+        print("  Brevo check: skipped (--skip-brevo-check)")
+        return True
+
+    ctx = dict(ctx or {})
+    ctx.update(_audience_overrides(args))
+    list_ids, segment_ids = _newsletter_audience(ctx)
+    template_id = (
+        ctx.get("brevo_template_id")
+        or (int(args.brevo_template) if getattr(args, "brevo_template", None) else None)
+        or settings.brevo.newsletter_template_id
+    )
+
+    if not settings.brevo_api_key:
+        print("  Brevo check: FAILED - BREVO_API_KEY is not set in .env")
+        return False
+    try:
+        report = await BrevoClient().preflight(
+            template_id=template_id,
+            list_ids=list_ids,
+            segment_ids=segment_ids,
+            sender_email=settings.brevo.sender_email,
+        )
+    except Exception as exc:  # network down, DNS, timeout
+        print(f"  Brevo check: FAILED - could not reach Brevo: {exc}")
+        return False
+
+    test_addr = settings.testing.test_email
+    if verbose or not report["ok"]:
+        print("  Brevo newsletter readiness")
+        print(f"    Template:    {template_id or '(none)'}")
+        print(f"    Sender:      {settings.brevo.sender_email}")
+        print(f"    Test copy:   {test_addr or '(testing.test_email unset - no test email will be sent)'}")
+    audience = ", ".join(report["audience"]) or "(none)"
+    print(f"  Brevo audience: {audience}")
+    if report["ok"]:
+        print("  Brevo check: OK")
+        return True
+    print("  Brevo check: PROBLEMS")
+    for problem in report["problems"]:
+        print(f"    - {problem}")
+    if not verbose:
+        print("  Fix the above (or pass --skip-brevo-check to run anyway).")
+    return False
 
 
 def _run_invite_reset_sheet(args: argparse.Namespace) -> None:
@@ -248,11 +322,16 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
         + ("  [TEST MODE]" if test_mode else "")
     )
 
+    if not await _brevo_preflight(args):
+        return
+    print()
+
     initial_data: dict = {
         "test_mode": test_mode,
         "_start_at_step": "read_agenda",
         "_skip_approval_guard": True,
     }
+    initial_data.update(_audience_overrides(args))
 
     if getattr(args, "protocol", None):
         initial_data["protocol_number"] = args.protocol
@@ -421,10 +500,21 @@ async def _run_invite_send_newsletter(args: argparse.Namespace) -> None:
         )
         return
 
+    if not await _brevo_preflight(args, ctx):
+        return
+    from src.workflows.board_meeting_invitation import (
+        _describe_audience,
+        _newsletter_audience,
+    )
+    ctx.update(_audience_overrides(args))
+    audience = _describe_audience(*_newsletter_audience(ctx))
+    if test_mode and not settings.testing.test_email:
+        print("  ERROR: --test needs testing.test_email in config.yaml.")
+        return
     recipient = (
-        f"TEST → {settings.testing.test_email or '(testing.test_email unset)'}"
+        f"TEST → {settings.testing.test_email} (draft addressed to {audience}, not sent to it)"
         if test_mode
-        else "LIVE → member newsletter list"
+        else f"LIVE → {audience}"
     )
     print(f"  Workflow:    {wf_id}")
     print(f"  Meeting:     {ctx.get('raw_meeting_id', '?')}")
@@ -434,7 +524,7 @@ async def _run_invite_send_newsletter(args: argparse.Namespace) -> None:
     print()
 
     if not test_mode and not _confirm(
-        "  Send the newsletter LIVE to the member list now? [y/n]: "
+        f"  Send the newsletter LIVE to {audience} now? [y/n]: "
     ):
         print("  Cancelled - nothing sent.")
         return
@@ -478,7 +568,7 @@ async def _run_invite(args: argparse.Namespace) -> None:
         print("  • Reads agenda from Google Sheets (real)")
         print("  • Creates Zoom meeting (real, rolled back at the end)")
         print("  • Generates invitation PDF (real, opened for review)")
-        print("  • Newsletter test send →", test_email or "(skipped - set testing.test_email in config.yaml)")
+        print("  • Newsletter test send →", test_email or "(NO test email - set testing.test_email in config.yaml; only a draft is created)")
         print("  • Archive: skipped")
         print("  • Reminders: handled by Zoom natively")
         print("  • Logging: DEBUG")
@@ -503,8 +593,11 @@ async def _run_invite(args: argparse.Namespace) -> None:
     if args.brevo_template:
         initial_data["brevo_template_id"] = int(args.brevo_template)
 
-    if args.brevo_lists:
-        initial_data["brevo_list_ids"] = [int(x) for x in args.brevo_lists.split(",")]
+    initial_data.update(_audience_overrides(args))
+
+    if not await _brevo_preflight(args, initial_data):
+        return
+    print()
 
     # Manual protocol number overrides whatever the workflow reads from Drive
     if getattr(args, "protocol", None):
@@ -2882,7 +2975,10 @@ def main() -> None:
     invite_parser.add_argument("--poll-url", help="Scheduling poll URL (When2Meet, Doodle, etc.) embedded in board scheduling email")
     invite_parser.add_argument("--response-deadline", help="Deadline (YYYY-MM-DD) for board responses to scheduling email; defaults to today + 4 days")
     invite_parser.add_argument("--brevo-template", help="Brevo template ID for newsletter")
-    invite_parser.add_argument("--brevo-lists", help="Comma-separated Brevo list IDs")
+    invite_parser.add_argument("--brevo-lists", help="Comma-separated Brevo LIST ids (replaces the configured audience)")
+    invite_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
+    invite_parser.add_argument("--skip-brevo-check", action="store_true",
+                               help="Do not run the Brevo readiness check before starting")
     invite_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
     invite_parser.add_argument("--test", action="store_true",
                                help="Test mode: creates Zoom+PDF, emails to test_email, then rollback")
@@ -2906,6 +3002,9 @@ def main() -> None:
     resume_parser.add_argument("--protocol", help="Manual protocol number override (e.g. 2026_029)")
     resume_parser.add_argument("--test", action="store_true", help="Test mode")
     resume_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+    resume_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
+    resume_parser.add_argument("--brevo-lists", help="Comma-separated Brevo LIST ids (replaces the configured audience)")
+    resume_parser.add_argument("--skip-brevo-check", action="store_true", help="Do not run the Brevo readiness check")
 
     send_nl_parser = invite_sub.add_parser(
         "send-newsletter",
@@ -2916,6 +3015,17 @@ def main() -> None:
     send_nl_parser.add_argument("--workflow-id", help="Invitation workflow ID (default: most recent completed invitation)")
     send_nl_parser.add_argument("--test", action="store_true", help="Send one test email to testing.test_email instead of the live member list")
     send_nl_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+    send_nl_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
+    send_nl_parser.add_argument("--brevo-lists", help="Comma-separated Brevo LIST ids (replaces the configured audience)")
+    send_nl_parser.add_argument("--skip-brevo-check", action="store_true", help="Do not run the Brevo readiness check")
+
+    check_parser = invite_sub.add_parser(
+        "check",
+        help="Read-only Brevo readiness check: API key/IP, sender, template, "
+             "and the lists/segments the newsletter would reach",
+    )
+    check_parser.add_argument("--brevo-segments", help="Check these SEGMENT ids instead of the configured audience")
+    check_parser.add_argument("--brevo-lists", help="Check these LIST ids instead of the configured audience")
 
     reset_sheet_parser = invite_sub.add_parser(
         "reset-sheet",

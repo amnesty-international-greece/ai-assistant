@@ -616,6 +616,88 @@ async def test_newsletter_params_no_pdf_link(workflow):
     assert "[PDF_LINK]" not in params
 
 
+def _newsletter_ctx(**over):
+    ctx = {
+        "test_mode": False,
+        "brevo_template_id": 5,
+        "meeting_number": "42",
+        "meeting_date": "2026-04-15",
+        "meeting_time": "18:00",
+        "meeting_type": "ΤΑΚΤΙΚΗ",
+        "agenda_items": ["A"],
+        "raw_meeting_id": "ΔΣ04-2026",
+        "zoom_join_url": "https://zoom.us/j/123",
+    }
+    ctx.update(over)
+    return ctx
+
+
+def _brevo_settings(mock_settings, *, lists, segments, test_email=""):
+    mock_settings.brevo.newsletter_template_id = 5
+    mock_settings.brevo.newsletter_list_ids = lists
+    mock_settings.brevo.newsletter_segment_ids = segments
+    mock_settings.brevo.master_list_id = 82
+    mock_settings.brevo.sender_email = "members@example.org"
+    mock_settings.testing.test_email = test_email
+
+
+@pytest.mark.asyncio
+async def test_step_send_newsletter_live_to_a_segment(workflow):
+    workflow._brevo.send_campaign.return_value = {"campaign_id": 55}
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings, \
+         patch("src.workflows.board_meeting_invitation._publish_board_meeting_scheduled",
+               new_callable=AsyncMock):
+        _brevo_settings(mock_settings, lists=[], segments=[1], test_email="t@example.org")
+        result = await workflow._step_send_newsletter(_newsletter_ctx())
+
+    kwargs = workflow._brevo.send_campaign.await_args.kwargs
+    assert kwargs["segment_ids"] == [1]
+    assert kwargs["list_ids"] == []
+    workflow._brevo.send_campaign_now.assert_awaited_once_with(55, workflow=workflow.name)
+    assert result.data["newsletter_sent"] is True
+
+
+@pytest.mark.asyncio
+async def test_step_send_newsletter_never_falls_back_to_the_master_list(workflow):
+    """A wrong audience used to be retried silently with the full member list."""
+    workflow._brevo.send_campaign.side_effect = RuntimeError("400 list ids are not valid")
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
+        _brevo_settings(mock_settings, lists=[1], segments=[])
+        result = await workflow._step_send_newsletter(_newsletter_ctx())
+
+    assert workflow._brevo.send_campaign.await_count == 1
+    assert workflow._brevo.send_campaign.await_args.kwargs["list_ids"] == [1]
+    workflow._brevo.send_campaign_now.assert_not_called()
+    assert result.data["newsletter_skipped"] is True
+    assert "invite check" in result.message
+
+
+@pytest.mark.asyncio
+async def test_step_send_newsletter_live_without_audience_creates_nothing(workflow):
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
+        _brevo_settings(mock_settings, lists=[], segments=[])
+        result = await workflow._step_send_newsletter(_newsletter_ctx())
+
+    workflow._brevo.send_campaign.assert_not_called()
+    workflow._brevo.send_campaign_now.assert_not_called()
+    assert result.data["newsletter_skipped"] is True
+    assert "no audience" in result.message
+
+
+@pytest.mark.asyncio
+async def test_step_send_newsletter_cli_override_replaces_config_audience(workflow):
+    workflow._brevo.send_campaign.return_value = {"campaign_id": 9}
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
+        _brevo_settings(mock_settings, lists=[], segments=[1], test_email="t@example.org")
+        await workflow._step_send_newsletter(
+            _newsletter_ctx(test_mode=True, brevo_list_ids=[60])
+        )
+    kwargs = workflow._brevo.send_campaign.await_args.kwargs
+    assert kwargs["list_ids"] == [60]
+    assert kwargs["segment_ids"] == []
+    workflow._brevo.send_campaign_now.assert_not_called()
+
+
 # ─── confirm_newsletter ───────────────────────────────────────────────────
 
 

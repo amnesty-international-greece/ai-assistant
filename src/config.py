@@ -70,7 +70,10 @@ class BrevoConfig(BaseModel):
     sender_name: str = "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
     # Default newsletter template & lists (can be overridden via CLI --brevo-template / --brevo-lists)
     newsletter_template_id: int | None = None
+    # Brevo keeps LISTS and SEGMENTS in separate ID spaces; a campaign may
+    # target either or both. The board invitation goes to a segment.
     newsletter_list_ids: list[int] = []
+    newsletter_segment_ids: list[int] = []
     # Master membership list - used as fallback when newsletter_list_ids is empty
     # so Brevo campaign creation doesn't fail with an invalid list ID
     master_list_id: int = 0

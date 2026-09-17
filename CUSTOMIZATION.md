@@ -226,7 +226,8 @@ workflow substitutes. Edit it directly in Google Docs - no code, no deploy.
 `config.yaml` is the no-code control panel. Highlights for output customisation:
 
 - `brevo.sender_name` / `sender_email` - newsletter "From"
-- `brevo.newsletter_list_ids` / `master_list_id` - **who receives** the newsletter
+- `brevo.newsletter_segment_ids` / `newsletter_list_ids` - **who receives** the newsletter
+  (Brevo segments and lists are separate ID spaces; verify with `python -m src.cli invite check`)
 - `workflows.board_meeting.board_members[]` - names + emails on every invitation
 - `urls.*` - links in the welcome DM and embeds
 - `discord.platform_bridge.board_meeting.*` - which channels posts land in

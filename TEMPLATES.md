@@ -68,10 +68,13 @@ brevo.sender_email: "members@amnesty.org.gr"
 brevo.sender_name:  "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
 ```
 
-### 1.9 Brevo recipient list ⚙️
+### 1.9 Brevo recipients ⚙️
 ```yaml
-brevo.newsletter_list_ids: [74]   # Τακτικά Μέλη
+brevo.newsletter_segment_ids: [1]   # Τακτικά Μέλη (a SEGMENT)
+brevo.newsletter_list_ids: []      # LIST ids, if any
 ```
+Segment 1 and list 1 are different things in Brevo. Run `python -m src.cli invite check`
+to confirm the ids resolve before any send.
 
 ---
 

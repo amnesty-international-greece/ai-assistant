@@ -763,14 +763,18 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 message="Brevo παρελήφθη - brevo.newsletter_template_id δεν έχει οριστεί",
             )
 
-        list_ids: list[int] = (
-            ctx.get("brevo_list_ids")
-            or settings.brevo.newsletter_list_ids
-            or []
+        list_ids: list[int] = list(
+            ctx.get("brevo_list_ids") or settings.brevo.newsletter_list_ids or []
         )
+        segment_ids: list[int] = list(
+            ctx.get("brevo_segment_ids") or settings.brevo.newsletter_segment_ids or []
+        )
+        has_audience = bool(list_ids or segment_ids)
+        # Without an audience the master list only makes a draft creatable; it
+        # is never sent to (live send below requires a configured audience).
         fallback_list = settings.brevo.master_list_id
-        effective_list_ids = list_ids if list_ids else ([fallback_list] if fallback_list else [])
-        if not effective_list_ids:
+        effective_list_ids = list_ids if has_audience else ([fallback_list] if fallback_list else [])
+        if not (has_audience or effective_list_ids):
             return StepResult(
                 success=True,
                 data={"brevo_skipped": True},
@@ -805,6 +809,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             result = await self.brevo.send_campaign(
                 template_id=template_id,
                 list_ids=effective_list_ids,
+                segment_ids=segment_ids,
                 subject=subject,
                 params=params,
                 campaign_name=campaign_name,
@@ -813,7 +818,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             )
             campaign_id = result.get("campaign_id")
 
-            if not test_mode and list_ids:
+            if not test_mode and has_audience:
                 try:
                     await self.brevo.send_campaign_now(campaign_id, workflow=self.name)
                 except Exception as send_err:
