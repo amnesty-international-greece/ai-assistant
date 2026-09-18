@@ -467,6 +467,40 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
     else:
         print(f"\n  Status: {result.get('status')} - {result.get('error', '')}")
 
+    await _invite_end_of_run_cleanup(wf, result, test_mode)
+
+
+async def _invite_end_of_run_cleanup(wf, result: dict, test_mode: bool) -> None:
+    """Tear down what a run created when nothing should remain of it.
+
+    Test run (completed or failed): always roll back - delete the test Zoom
+    meeting, the PDF and any draft - after the user has reviewed the output.
+    Failed live run: offer to roll back, but only if the board email has not
+    gone out, so board members are never left with a link to a meeting that
+    a later successful run replaces.
+    """
+    status = result.get("status")
+    ctx = wf.context or {}
+    if test_mode and status in ("completed", "failed"):
+        input("  [TEST MODE] Press Enter when done reviewing to clean up "
+              "(cancel Zoom + delete PDF + draft)...")
+        print("  Cleaning up...")
+        await wf.rollback(ctx)
+        print("  Cleanup done.")
+        print()
+        return
+    if (not test_mode and status == "failed" and ctx.get("zoom_meeting_id")
+            and not ctx.get("board_email_message_id")):
+        print(f"  This failed run created Zoom meeting {ctx.get('zoom_meeting_id')}"
+              " (board members may already be registered on it).")
+        if _confirm("  Delete it and anything else this run created, so the retry "
+                    "starts clean? [y/n]: "):
+            await wf.rollback(ctx)
+            print("  Rolled back. Zoom sends no cancellation emails.")
+        else:
+            print("  Left in place - delete that Zoom meeting by hand before retrying.")
+        print()
+
 
 async def _run_invite_send_newsletter(args: argparse.Namespace) -> None:
     """Send ONLY the member newsletter for an already-completed invitation.
@@ -909,15 +943,8 @@ async def _run_invite(args: argparse.Namespace) -> None:
         print(f"  Error: {result.get('error', 'unknown')}")
     print()
 
-    # Test mode cleanup: always roll back (whether completed or failed).
-    # Runs AFTER the summary so the user sees the final outcome first,
-    # then presses Enter to tear down the Zoom meeting + PDF + Brevo draft.
-    if test_mode and result.get("status") in ("completed", "failed"):
-        input("  [TEST MODE] Press Enter when done reviewing to clean up (cancel Zoom + delete PDF + draft)...")
-        print("  Cleaning up...")
-        await wf.rollback(wf.context)
-        print("  Cleanup done.")
-        print()
+    # Runs AFTER the summary so the user sees the final outcome first.
+    await _invite_end_of_run_cleanup(wf, result, test_mode)
 
 
 # --- Debug (single-step workflow testing) ---
