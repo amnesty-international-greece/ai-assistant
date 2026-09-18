@@ -1158,13 +1158,6 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 data={"board_email_skipped": True},
                 message="Final board email skipped - M365 not configured",
             )
-        if not anchor:
-            return StepResult(
-                success=True,
-                data={"board_email_skipped": True},
-                message="Final board email skipped - no email_thread_anchor (scheduling email did not run)",
-            )
-
         recipient = settings.testing.test_email if test_mode else _BOARD_EMAIL
         if test_mode and not recipient:
             return StepResult(
@@ -1204,13 +1197,25 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
 
         try:
             client = M365MailClient()
-            reply_id = await client.send_reply(
-                parent_internet_message_id=anchor,
-                body=body_html,
-                html=True,
-                to=recipient,
-                workflow=self.name,
-            )
+            if anchor:
+                reply_id = await client.send_reply(
+                    parent_internet_message_id=anchor,
+                    body=body_html,
+                    html=True,
+                    to=recipient,
+                    workflow=self.name,
+                )
+            else:
+                # No scheduling email for this meeting (date fixed by hand):
+                # send the invitation as a new message, same subject pattern
+                # as the scheduling email so later replies thread under it.
+                reply_id = await client.send_email(
+                    to=recipient,
+                    subject=f"Συνεδρίαση {_email_meeting_ref}".strip(),
+                    body=body_html,
+                    html=True,
+                    workflow=self.name,
+                )
         except Exception as e:
             logger.warning("Final board email send failed (non-fatal): %s", e)
             return StepResult(
@@ -1227,10 +1232,12 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             # send_reply derives its subject from the parent - mirror the
             # synthetic reply subject the recipient will see in their inbox.
             mirror_subject = (
-                f"Re: Συνεδρίαση {meeting_ref_for_mirror}"
+                f"Συνεδρίαση {meeting_ref_for_mirror}"
                 if meeting_ref_for_mirror
-                else "Re: Συνεδρίαση"
+                else "Συνεδρίαση"
             )
+            if anchor:
+                mirror_subject = f"Re: {mirror_subject}"
             _agenda_items = ctx.get("agenda_items") or []
             _agenda_summary = "\n".join(f"{i+1}. {item}" for i, item in enumerate(_agenda_items))
             _meeting_date = ctx.get("meeting_date", "")
@@ -1291,8 +1298,16 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
 
         return StepResult(
             success=True,
-            data={"board_email_message_id": reply_id},
-            message=f"Final board invitation sent in thread (reply id={reply_id}, to={recipient})",
+            data={
+                "board_email_message_id": reply_id,
+                # A fresh invitation starts this meeting's thread: later emails
+                # (minutes, Discord mirror, intake matching) reply under it.
+                **({} if anchor else {"email_thread_anchor": reply_id}),
+            },
+            message=(
+                f"Final board invitation sent {'in thread' if anchor else 'as a new email'} "
+                f"(id={reply_id}, to={recipient})"
+            ),
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1372,6 +1387,31 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         separate ID spaces). If campaign creation fails the step stops and says
         why; it never retries with a broader list.
         """
+        test_mode = bool(ctx.get("test_mode"))
+
+        if ctx.get("skip_newsletter") or not getattr(
+            settings.brevo, "invitation_newsletter", True
+        ):
+            # Chosen by the operator (--no-newsletter, or
+            # brevo.invitation_newsletter: false): no Brevo call at all.
+            # The Discord announcement does not depend on the newsletter, so
+            # live runs still publish it here (test runs publish at the
+            # confirm gate, against sandbox channels).
+            published = False
+            if not test_mode:
+                await _publish_board_meeting_scheduled(ctx)
+                published = True
+            return StepResult(
+                success=True,
+                data={
+                    "newsletter_skipped": True,
+                    "newsletter_sent": False,
+                    "bus_event_published": published,
+                },
+                message="Newsletter not sent (--no-newsletter)"
+                + ("; Discord announcement published" if published else ""),
+            )
+
         template_id = ctx.get("brevo_template_id") or settings.brevo.newsletter_template_id
         if not template_id:
             return StepResult(
@@ -1380,7 +1420,6 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 message="Newsletter skipped - set brevo.newsletter_template_id in config.yaml",
             )
 
-        test_mode = bool(ctx.get("test_mode"))
         test_addr = settings.testing.test_email
         template_params, subject, campaign_name, _, preview_text = self._build_newsletter_params(ctx)
         list_ids, segment_ids = _newsletter_audience(ctx)

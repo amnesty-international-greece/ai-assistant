@@ -685,6 +685,38 @@ async def test_step_send_newsletter_live_without_audience_creates_nothing(workfl
 
 
 @pytest.mark.asyncio
+async def test_step_send_newsletter_off_live_still_announces(workflow):
+    """--no-newsletter: no Brevo call at all, but the Discord announcement goes out."""
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings, \
+         patch("src.workflows.board_meeting_invitation._publish_board_meeting_scheduled",
+               new_callable=AsyncMock) as publish:
+        _brevo_settings(mock_settings, lists=[], segments=[1], test_email="t@example.org")
+        result = await workflow._step_send_newsletter(_newsletter_ctx(skip_newsletter=True))
+
+    workflow._brevo.send_campaign.assert_not_called()
+    workflow._brevo.send_campaign_now.assert_not_called()
+    publish.assert_awaited_once()
+    assert result.data["newsletter_skipped"] is True
+    assert result.data["newsletter_sent"] is False
+
+
+@pytest.mark.asyncio
+async def test_step_send_newsletter_off_test_mode_publishes_nothing_yet(workflow):
+    """In test mode the sandbox announcement happens at the confirm gate instead."""
+    with patch("src.workflows.board_meeting_invitation.settings") as mock_settings, \
+         patch("src.workflows.board_meeting_invitation._publish_board_meeting_scheduled",
+               new_callable=AsyncMock) as publish:
+        _brevo_settings(mock_settings, lists=[], segments=[1], test_email="t@example.org")
+        result = await workflow._step_send_newsletter(
+            _newsletter_ctx(skip_newsletter=True, test_mode=True)
+        )
+
+    workflow._brevo.send_campaign.assert_not_called()
+    publish.assert_not_called()
+    assert result.data["newsletter_skipped"] is True
+
+
+@pytest.mark.asyncio
 async def test_step_send_newsletter_cli_override_replaces_config_audience(workflow):
     workflow._brevo.send_campaign.return_value = {"campaign_id": 9}
     with patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
@@ -854,12 +886,27 @@ async def test_step_send_board_email_test_mode_skips_when_no_test_email(workflow
 
 
 @pytest.mark.asyncio
-async def test_step_send_board_email_skips_without_anchor(workflow):
-    with patch("src.workflows.board_meeting_invitation.M365MailClient") as mock_cls, \
+async def test_step_send_board_email_without_anchor_sends_new_email(workflow):
+    """Date fixed by hand (no scheduling email): the invitation is a new message."""
+    mock_client = AsyncMock()
+    mock_client.send_email.return_value = "<new-id>"
+    with patch("src.workflows.board_meeting_invitation.M365MailClient", return_value=mock_client), \
          patch("src.workflows.board_meeting_invitation.settings") as mock_settings:
         mock_settings.ms_client_id = "x"
         mock_settings.ms_tenant_id = "y"
-        result = await workflow._step_send_board_email({})
+        result = await workflow._step_send_board_email({
+            "raw_meeting_id": "ΔΣ07-2026",
+            "meeting_date": "2026-10-01",
+            "meeting_time": "20:30",
+            "zoom_join_url": "https://zoom.us/j/123",
+        })
     assert result.success
-    assert result.data.get("board_email_skipped") is True
-    mock_cls.assert_not_called()
+    assert result.data.get("board_email_skipped") is not True
+    assert result.data.get("board_email_message_id") == "<new-id>"
+    # The new email becomes ΔΣ07's thread anchor for all later emails.
+    assert result.data.get("email_thread_anchor") == "<new-id>"
+    mock_client.send_reply.assert_not_called()
+    kwargs = mock_client.send_email.call_args.kwargs
+    assert kwargs["to"] == "board@amnesty.org.gr"
+    assert kwargs["subject"].endswith("07-2026")
+    assert "zoom.us/j/123" in kwargs["body"]

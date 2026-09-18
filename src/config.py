@@ -74,6 +74,9 @@ class BrevoConfig(BaseModel):
     # target either or both. The board invitation goes to a segment.
     newsletter_list_ids: list[int] = []
     newsletter_segment_ids: list[int] = []
+    # false = board invitations go out WITHOUT the member newsletter (board
+    # email, Zoom, PDF, archive and Discord still happen). Per run: --no-newsletter.
+    invitation_newsletter: bool = True
     # Master membership list - used as fallback when newsletter_list_ids is empty
     # so Brevo campaign creation doesn't fail with an invalid list ID
     master_list_id: int = 0

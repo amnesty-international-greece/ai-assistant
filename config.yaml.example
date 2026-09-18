@@ -68,6 +68,7 @@ brevo:
   # right key; `python -m src.cli invite check` verifies them.
   newsletter_list_ids: []         # Brevo LIST ids to receive board meeting invitations
   newsletter_segment_ids: []      # Brevo SEGMENT ids to receive board meeting invitations
+  invitation_newsletter: true     # false = invitations go out without the member newsletter
 
 discord:
   channels:

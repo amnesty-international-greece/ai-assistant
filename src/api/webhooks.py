@@ -206,13 +206,16 @@ async def _run_invite_workflow(payload: InviteWebhookPayload) -> None:
             initial_data.setdefault("email_thread_anchor", sched_ctx.get("email_thread_anchor", ""))
             if sched_ctx.get("poll_url"):
                 initial_data.setdefault("poll_url", sched_ctx["poll_url"])
+            if sched_ctx.get("skip_newsletter"):
+                # Chosen at scheduling time with `invite --no-newsletter`.
+                initial_data["skip_newsletter"] = True
             logger.info(
                 "Webhook: inherited scheduling thread anchor for %s",
                 payload.raw_meeting_id,
             )
         else:
             logger.warning(
-                "Webhook: no prior scheduling anchor for %s - final board email will be skipped",
+                "Webhook: no prior scheduling anchor for %s - board invitation goes out as a new email",
                 payload.raw_meeting_id or "(none)",
             )
 

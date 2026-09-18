@@ -119,6 +119,14 @@ async def _brevo_preflight(
     if getattr(args, "skip_brevo_check", False) and not verbose:
         print("  Brevo check: skipped (--skip-brevo-check)")
         return True
+    newsletter_off = (
+        getattr(args, "no_newsletter", False)
+        or (ctx or {}).get("skip_newsletter")
+        or not settings.brevo.invitation_newsletter
+    )
+    if newsletter_off and not verbose:
+        print("  Brevo check: not needed (newsletter off)")
+        return True
 
     ctx = dict(ctx or {})
     ctx.update(_audience_overrides(args))
@@ -322,24 +330,24 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
         + ("  [TEST MODE]" if test_mode else "")
     )
 
-    if not await _brevo_preflight(args):
-        return
-    print()
-
     initial_data: dict = {
         "test_mode": test_mode,
         "_start_at_step": "read_agenda",
         "_skip_approval_guard": True,
     }
     initial_data.update(_audience_overrides(args))
+    if getattr(args, "no_newsletter", False):
+        initial_data["skip_newsletter"] = True
 
     if getattr(args, "protocol", None):
         initial_data["protocol_number"] = args.protocol
 
     # Inherit thread anchor from the scheduling workflow
     sched_ctx = _find_scheduling_context(meeting_ref) if meeting_ref else None
-    if not sched_ctx:
-        # Fall back to the most recent scheduling workflow regardless of meeting ref
+    if not sched_ctx and not meeting_ref:
+        # No meeting ref given: fall back to the most recent scheduling
+        # workflow. With a ref, never borrow another meeting's thread; the
+        # invitation then goes out as a new email.
         from src.core.audit import _get_connection
         conn = _get_connection()
         rows = conn.execute(
@@ -357,6 +365,19 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
             except Exception:
                 continue
 
+    # Inherit --no-newsletter only from THIS meeting's scheduling run, never
+    # from the older thread used as a fallback anchor.
+    same_meeting = bool(sched_ctx) and meeting_ref in (
+        sched_ctx.get("raw_meeting_id"), sched_ctx.get("meeting_ref")
+    )
+    if same_meeting and sched_ctx.get("skip_newsletter"):
+        initial_data["skip_newsletter"] = True
+    if initial_data.get("skip_newsletter"):
+        print("  Newsletter: OFF - no Brevo campaign will be created")
+    if not await _brevo_preflight(args, initial_data):
+        return
+    print()
+
     if sched_ctx:
         initial_data["email_thread_anchor"] = sched_ctx.get("email_thread_anchor", "")
         if sched_ctx.get("poll_url"):
@@ -365,7 +386,7 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
         print(f"  Continuing thread for: {ref}")
         print(f"  Anchor: {initial_data['email_thread_anchor'][:60]}...")
     else:
-        print("  WARNING: no prior scheduling thread found - final board email will be skipped.")
+        print("  No scheduling thread for this meeting - the board invitation goes out as a NEW email.")
     print()
 
     wf = BoardMeetingInvitationWorkflow(actor=getattr(args, "actor", "secgen"))
@@ -594,6 +615,9 @@ async def _run_invite(args: argparse.Namespace) -> None:
         initial_data["brevo_template_id"] = int(args.brevo_template)
 
     initial_data.update(_audience_overrides(args))
+    if getattr(args, "no_newsletter", False):
+        initial_data["skip_newsletter"] = True
+        print("  Newsletter: OFF - no Brevo campaign will be created")
 
     if not await _brevo_preflight(args, initial_data):
         return
@@ -2979,6 +3003,9 @@ def main() -> None:
     invite_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
     invite_parser.add_argument("--skip-brevo-check", action="store_true",
                                help="Do not run the Brevo readiness check before starting")
+    invite_parser.add_argument("--no-newsletter", action="store_true",
+                               help="Send the invitation without the Brevo member newsletter "
+                                    "(remembered for the later resume / sheet auto-resume)")
     invite_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
     invite_parser.add_argument("--test", action="store_true",
                                help="Test mode: creates Zoom+PDF, emails to test_email, then rollback")
@@ -3005,6 +3032,8 @@ def main() -> None:
     resume_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
     resume_parser.add_argument("--brevo-lists", help="Comma-separated Brevo LIST ids (replaces the configured audience)")
     resume_parser.add_argument("--skip-brevo-check", action="store_true", help="Do not run the Brevo readiness check")
+    resume_parser.add_argument("--no-newsletter", action="store_true",
+                               help="Send the invitation without the Brevo member newsletter")
 
     send_nl_parser = invite_sub.add_parser(
         "send-newsletter",
