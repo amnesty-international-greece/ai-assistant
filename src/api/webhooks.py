@@ -84,7 +84,7 @@ def _find_in_progress_invite(raw_meeting_id: str) -> str | None:
     return None
 
 
-def _find_scheduling_context(raw_meeting_id: str) -> dict | None:
+def _find_scheduling_context(raw_meeting_id: str, test_mode: bool | None = None) -> dict | None:
     """Return the saved context of this meeting's scheduling-email workflow.
 
     The scheduling email (step 1) stores ``email_thread_anchor`` + ``poll_url``
@@ -96,6 +96,9 @@ def _find_scheduling_context(raw_meeting_id: str) -> dict | None:
     Matches on ``raw_meeting_id`` or the legacy ``meeting_ref`` key (the
     scheduling workflow predates ``raw_meeting_id``), and requires an anchor to
     be present.  Returns the most recently updated match, or None.
+
+    With ``test_mode`` given, only runs of that same mode match, so a live run
+    never replies into a thread that a test run sent to the test inbox.
     """
     if not raw_meeting_id:
         return None
@@ -115,6 +118,8 @@ def _find_scheduling_context(raw_meeting_id: str) -> dict | None:
                 continue
             ctx = data.get("context") or {}
             ref = (ctx.get("raw_meeting_id") or ctx.get("meeting_ref") or "").strip()
+            if test_mode is not None and bool(ctx.get("test_mode")) != bool(test_mode):
+                continue
             if ref == target and ctx.get("email_thread_anchor"):
                 return ctx
     except Exception as e:
@@ -201,7 +206,7 @@ async def _run_invite_workflow(payload: InviteWebhookPayload) -> None:
         # Inherit the scheduling email's thread anchor (+ poll) so the final
         # board invitation lands as a reply in the existing thread instead of
         # being skipped for lack of an anchor.
-        sched_ctx = _find_scheduling_context(payload.raw_meeting_id)
+        sched_ctx = _find_scheduling_context(payload.raw_meeting_id, payload.test_mode)
         if sched_ctx:
             initial_data.setdefault("email_thread_anchor", sched_ctx.get("email_thread_anchor", ""))
             if sched_ctx.get("poll_url"):

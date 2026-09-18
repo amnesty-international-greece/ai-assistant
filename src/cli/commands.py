@@ -343,7 +343,7 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
         initial_data["protocol_number"] = args.protocol
 
     # Inherit thread anchor from the scheduling workflow
-    sched_ctx = _find_scheduling_context(meeting_ref) if meeting_ref else None
+    sched_ctx = _find_scheduling_context(meeting_ref, test_mode) if meeting_ref else None
     if not sched_ctx and not meeting_ref:
         # No meeting ref given: fall back to the most recent scheduling
         # workflow. With a ref, never borrow another meeting's thread; the

@@ -252,6 +252,33 @@ def test_find_scheduling_context_ignores_other_meetings(db):
     assert _find_scheduling_context("ΔΣ05-2026") is None
 
 
+def test_find_scheduling_context_live_run_ignores_test_threads(db):
+    """A test run's thread (sent to the test inbox) must never be a live anchor."""
+    from src.api.webhooks import _find_scheduling_context
+    from src.core.audit import _get_connection
+
+    conn = _get_connection()
+    conn.execute(
+        "INSERT INTO workflow_state (workflow_id, workflow_name, state, data, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+        (
+            "wf-test-run",
+            "board_meeting_invitation",
+            "completed",
+            json.dumps({"context": {
+                "raw_meeting_id": "ΔΣ07-2026",
+                "test_mode": True,
+                "email_thread_anchor": "<test-inbox@example.com>",
+            }}),
+        ),
+    )
+    conn.commit()
+
+    assert _find_scheduling_context("ΔΣ07-2026", test_mode=False) is None
+    ctx = _find_scheduling_context("ΔΣ07-2026", test_mode=True)
+    assert ctx["email_thread_anchor"] == "<test-inbox@example.com>"
+
+
 # ── _auto_resume_gates ───────────────────────────────────────────────────────
 
 
