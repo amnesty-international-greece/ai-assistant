@@ -34,7 +34,7 @@ from src.profile import section
 
 # Default location of the pre-ingested governance corpus (see
 # scripts/ingest_governance_docs.py - do NOT modify it here).
-_DEFAULT_ARTICLES_PATH = "assets/governance/articles.json"
+_DEFAULT_ARTICLES_PATH = str(section.asset_path("governance_corpus"))
 
 _REF_CORE_RE = re.compile(r"^\d+-\d+$")
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)

@@ -19,6 +19,7 @@ from src.documents.pdf_generator import embed_signatures
 from src.integrations.google_drive import GoogleClient
 from src.integrations.zoom import ZoomClient
 from src.utils.transcript_parser import parse_transcript
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -344,7 +345,11 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         meeting_ref: str = ctx.get("meeting_ref", "")
 
         # Load system prompt
-        prompt_path = Path(settings.storage.prompts_dir) / "board_minutes.md"
+        prompt_path = (
+            Path(settings.storage.prompts_dir)
+            if settings.storage.prompts_dir
+            else section.asset_path("prompts")
+        ) / "board_minutes.md"
         if not prompt_path.exists():
             return StepResult(success=False, message=f"System prompt not found: {prompt_path}")
         system_prompt = prompt_path.read_text(encoding="utf-8")

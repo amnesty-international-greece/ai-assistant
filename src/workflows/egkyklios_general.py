@@ -38,6 +38,7 @@ from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
 from src.integrations.onedrive import OneDriveClient
 from src.integrations.brevo import BrevoClient
 from src.utils.pdf_text import extract_pdf_text
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -776,7 +777,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
             )
 
         # Load email template and fill placeholders
-        template_path = Path("assets/email_templates/egkyklios_cover.html")
+        template_path = section.asset_path("email_templates") / "egkyklios_cover.html"
         if template_path.exists():
             html_body = template_path.read_text(encoding="utf-8")
             html_body = html_body.replace("{title}", title)

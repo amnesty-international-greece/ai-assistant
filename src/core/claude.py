@@ -14,6 +14,7 @@ from typing import Any
 
 from src.config import settings
 from src.core.audit import log_action
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -240,14 +241,18 @@ class ClaudeClient:
         return text, input_tokens, output_tokens
 
     def load_prompt(self, prompt_name: str) -> str:
-        """Load a system prompt from src/prompts/{name}.md.
+        """Load a system prompt from the section's prompts folder.
 
         Path is configurable via ``settings.storage.prompts_dir`` (default
         ``src/prompts``) - the prompts live with the code now, not in
         ``data/``, since they're code-like artifacts versioned together
         with the workflows that consume them.
         """
-        prompts_dir = Path(settings.storage.prompts_dir)
+        prompts_dir = (
+            Path(settings.storage.prompts_dir)
+            if settings.storage.prompts_dir
+            else section.asset_path("prompts")
+        )
         prompt_path = prompts_dir / f"{prompt_name}.md"
         if not prompt_path.exists():
             raise FileNotFoundError(f"Prompt not found: {prompt_path}")

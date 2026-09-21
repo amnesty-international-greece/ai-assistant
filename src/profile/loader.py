@@ -93,6 +93,20 @@ class Section(BaseModel):
     profile: SectionProfile = SectionProfile()
     rules: SectionRules = SectionRules()
 
+    def asset_path(self, key: str, default: str = "") -> Path:
+        """Where the section keeps one kind of asset.
+
+        Prompts, email templates and the governance corpus are the section's
+        own words: its prompts speak its language, its templates carry its
+        letterhead, its corpus is its statute. ``profile.assets`` names them;
+        a relative path is taken from the repository root.
+        """
+        raw = str(self.profile.assets.get(key) or default or "").strip()
+        if not raw:
+            raise KeyError(f"Section {self.slug!r} defines no asset {key!r}")
+        path = Path(raw)
+        return path if path.is_absolute() else SECTIONS_DIR.parent / path
+
     @property
     def slug(self) -> str:
         return self.profile.slug

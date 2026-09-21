@@ -39,7 +39,10 @@ roles:
   secgen: "secgen@amnesty.org.gr"
   members: "members@amnesty.org.gr"
 
+# The section's own words: prompts in its language, templates with its
+# letterhead, the corpus of its statute.
 assets:
-  prompts: "src/prompts"
-  email_templates: "assets/email_templates"
-  governance_corpus: "assets/governance/articles.json"
+  prompts: "sections/amnesty-gr/prompts"
+  email_templates: "sections/amnesty-gr/email_templates"
+  discord_templates: "sections/amnesty-gr/discord_templates"
+  governance_corpus: "sections/amnesty-gr/governance/articles.json"

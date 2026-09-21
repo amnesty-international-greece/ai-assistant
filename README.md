@@ -33,9 +33,12 @@ copy .env.example .env          # secrets: API keys and OAuth credentials
 copy config.yaml.example config.yaml
 ```
 
-`config.yaml` is the control panel: role mailboxes, recipients, channel ids,
-retention periods, meeting policy. It is not committed, because it describes
-one section. `.env` holds only secrets.
+Your section lives in `sections/<slug>/`: `profile.yaml` (identity, role
+mailboxes, how the board is named), `rules.yaml` (quorum, notice periods, each
+citing its article), and the section's own prompts, email templates and
+governance corpus. `config.yaml` is what is local to this installation -
+channel ids, sheet ids, retention, which section to load. `.env` holds only
+secrets.
 
 Local transcription is optional and heavy; install it when you need it:
 

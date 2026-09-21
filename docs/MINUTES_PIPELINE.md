@@ -53,7 +53,7 @@ streaming cost. (Full rationale: ROADMAP §6.7.)
 | Transcription orchestration | `src/workflows/minutes_transcription.py` | ✅ built | `Transcriber` protocol, manifest→segments (wall-clock), `build_minutes_from_recording` |
 | faster-whisper transcriber | `FasterWhisperTranscriber` (same file) | 🟡 lazy stub | concrete ASR; exercised post-spike with the dep + real audio |
 | **Pipeline orchestrator + config** | `src/workflows/minutes_pipeline.py`, `minutes build` CLI, `settings.minutes_pipeline` | ✅ built | one command: transcript-file (no-ASR, testable now) or manifest (audio) → skeleton → optional `--draft`; transcriber/model selectable in `config.yaml` |
-| Governance ingestion (Καταστατικό) | `scripts/ingest_governance_docs.py` → `assets/governance/articles.json` | ✅ built | 28 Καταστατικό articles for decision grounding (Κανονισμοί = follow-up) |
+| Governance ingestion (Καταστατικό) | `scripts/ingest_governance_docs.py` → `sections/<slug>/governance/articles.json` | ✅ built | 28 Καταστατικό articles for decision grounding (Κανονισμοί = follow-up) |
 | Decision drafter | `src/workflows/decision_drafter.py`, `minutes propose-decision` | ✅ built | deterministic ΔΣNN-MM-YYYY ref + grounded «έχοντας υπόψη»; anti-hallucination prompt |
 | Discord mid-meeting control panel | - | ⬜ designed | buttons → `meeting_events`; awaits build with SecGen input |
 | SLM cleanup + synthesis tiers | - | ⬜ designed | Tier-1 Krikri third-person; Tier-2 formal synthesis |

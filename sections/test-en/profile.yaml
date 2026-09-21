@@ -36,7 +36,10 @@ roles:
   secgen: "secretary@example.org"
   members: "members@example.org"
 
+# This fictional section exercises structure, not wording, so it borrows the
+# Greek section's files rather than duplicating them.
 assets:
-  prompts: "src/prompts"
-  email_templates: "assets/email_templates"
-  governance_corpus: "assets/governance/articles.json"
+  prompts: "sections/amnesty-gr/prompts"
+  email_templates: "sections/amnesty-gr/email_templates"
+  discord_templates: "sections/amnesty-gr/discord_templates"
+  governance_corpus: "sections/amnesty-gr/governance/articles.json"

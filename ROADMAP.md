@@ -397,7 +397,7 @@ per-participant audio files  →  faster-whisper per file  →  merge by timesta
 
 This upgrades `draft_minutes`'s input from garbage to a clean, speaker-labelled
 Greek transcript. Drafting stays an LLM "structured extraction + formal rewrite"
-task (the existing `src/prompts/board_minutes.md` already defines the πρακτικά
+task (the existing `sections/<slug>/prompts/board_minutes.md` already defines the πρακτικά
 JSON structure and `[ΝΑ ΕΠΙΒΕΒΑΙΩΘΕΙ]` uncertainty markers). Quality levers:
 
 - **Error reduction at source:** seed faster-whisper's `initial_prompt` with a

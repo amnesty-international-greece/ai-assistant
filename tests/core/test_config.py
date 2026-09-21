@@ -29,7 +29,11 @@ def test_workflow_defaults():
 
 
 def test_storage_paths():
-    """Storage paths should be set."""
+    """The database is the platform's; the prompts are the section's."""
     from src.config import settings
+    from src.profile import section
+
     assert settings.storage.database_path == "data/amnesty.db"
-    assert settings.storage.prompts_dir == "src/prompts"
+    # Empty here means "ask the section profile", which is where prompts live.
+    assert settings.storage.prompts_dir == ""
+    assert section.asset_path("prompts").is_dir()

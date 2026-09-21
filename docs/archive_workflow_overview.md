@@ -297,8 +297,8 @@ error. The workflow_state row stays as historical record.
 | Audit log | `src/core/audit.py` (table `audit_log`) |
 | Local πρωτόκολλο backup | `data/backups/protokollo_latest.xlsx` (auto-refreshed) |
 | Taxonomy template (versioned reference) | `assets/protokollo_taxonomy_template.xlsx` |
-| Email templates | `assets/email_templates/*.html` |
-| Prompts | `src/prompts/*.md` |
+| Email templates | `sections/<slug>/email_templates/*.html` |
+| Prompts | `sections/<slug>/prompts/*.md` |
 
 ---
 

@@ -84,6 +84,31 @@ def test_quorum_is_not_judged_when_the_section_states_none(monkeypatch):
     assert result["required"] == 0 and result["met"] is None
 
 
+def test_a_sections_own_words_live_in_its_folder(greek):
+    """Prompts, templates and the corpus are the section's, not the platform's."""
+    for key in ("prompts", "email_templates", "governance_corpus"):
+        path = greek.asset_path(key)
+        assert path.exists(), f"{key} missing at {path}"
+        assert "sections" in path.parts, f"{key} still lives outside the section"
+
+    assert (greek.asset_path("prompts") / "board_minutes.md").exists()
+    assert (greek.asset_path("email_templates") / "invitation_board.html").exists()
+
+
+def test_an_asset_a_section_never_declared_is_an_error(english):
+    with pytest.raises(KeyError):
+        english.asset_path("letterhead")
+
+
+def test_the_platform_keeps_no_prompts_or_templates_of_its_own():
+    stray = [
+        str(p.relative_to(SRC.parent))
+        for p in list(SRC.rglob("*.md")) + list(SRC.rglob("*.html"))
+        if "prompts" in p.parts or "templates" in p.parts
+    ]
+    assert not stray, f"Section wording still under src/: {stray}"
+
+
 def test_every_section_folder_carries_both_files():
     for folder in SECTIONS_DIR.iterdir():
         if not folder.is_dir():

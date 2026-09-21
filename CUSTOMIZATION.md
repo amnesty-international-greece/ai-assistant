@@ -20,7 +20,7 @@ It is written for two readers:
 > `TEMPLATES.md` to locate a **specific** sentence.
 >
 > ⚠️ `TEMPLATES.md` currently points LLM prompts at `data/prompts/` - they have
-> since moved to **`src/prompts/`**. Trust this guide for paths.
+> since moved to **`sections/<slug>/prompts/`**. Trust this guide for paths.
 
 ---
 
@@ -30,7 +30,7 @@ The platform speaks on four channels. Each has its own design system:
 
 | Channel | Audience | Design source | Edit difficulty |
 |---------|----------|---------------|-----------------|
-| **Email** (M365) | Board, Director | `assets/email_templates/` + `_shell.html` | 🎨 HTML, no code |
+| **Email** (M365) | Board, Director | `sections/<slug>/email_templates/` + `_shell.html` | 🎨 HTML, no code |
 | **Newsletter** (Brevo) | All members | [Brevo](https://app.brevo.com/templates/listing) | 🎨 Brevo editor |
 | **Discord posts** | Board + members | `src/integrations/discord/embeds/` | 💻 Python (pure builders) |
 | **Documents** (PDF/Doc) | Board, members, archive | `assets/`, `brand/`, Google Doc, `src/documents/` | mixed |
@@ -39,7 +39,7 @@ Plus two cross-cutting layers:
 
 - **Branding foundations** (§1) - palette, fonts, logo, candle, signatures.
   One change here propagates everywhere.
-- **Generated prose** (§7) - the LLM prompts in `src/prompts/` that shape the
+- **Generated prose** (§7) - the LLM prompts in `sections/<slug>/prompts/` that shape the
   *words* inside invitations, minutes, and circulars before they're poured
   into a template.
 
@@ -55,7 +55,7 @@ defined in **two** places that must stay in sync:
 | Surface | File | Constant |
 |---------|------|----------|
 | Discord | `src/integrations/discord/brand.py` | `AMNESTY_YELLOW`, `AMNESTY_BLACK`, `AMNESTY_WHITE`, `AMNESTY_FLAME` |
-| Email | `assets/email_templates/_shell.html` | CSS hex values (`#FFFF00`, `#0a0a0a`, `#f5f3ee`) |
+| Email | `sections/<slug>/email_templates/_shell.html` | CSS hex values (`#FFFF00`, `#0a0a0a`, `#f5f3ee`) |
 | PDF | `src/documents/pdf_generator.py` | `AMNESTY_YELLOW`, `AMNESTY_BLACK` |
 
 `AMNESTY_FLAME` #E63B11 is reserved - it's only for triage cards and
@@ -93,7 +93,7 @@ signs.
 
 ## 2. Email templates
 
-**Location:** `assets/email_templates/`
+**Location:** `sections/<slug>/email_templates/`
 **Renderer:** `src/core/email_templates.py` → `render_email()`
 
 ### 2.1 The shell 🎨
@@ -175,7 +175,7 @@ touching any workflow.
 
 ### 4.1 Plain-text mirror template 🎨
 
-`assets/discord_templates/board_email_mirror.md` - used only for
+`sections/<slug>/discord_templates/board_email_mirror.md` - used only for
 *conversational* mirrors (member replies, Director announcements), not the
 structured posts above. Placeholders documented in the file's own header;
 keep edits below the marker line.
@@ -238,7 +238,7 @@ workflow substitutes. Edit it directly in Google Docs - no code, no deploy.
 
 ## 7. Generated prose - the LLM prompts 📝
 
-**Location:** `src/prompts/` (config: `storage.prompts_dir`)
+**Location:** `sections/<slug>/prompts/` (config: `storage.prompts_dir`)
 
 These shape the **words** the AI writes before they're placed into a template.
 Editing a prompt changes tone, structure, and content rules - high-leverage.
@@ -331,4 +331,4 @@ Greek string, or consult `TEMPLATES.md`'s 💻 entries. Known ones worth knowing
 
 ### Docs hygiene
 - **Refresh `TEMPLATES.md`:** its LLM-prompt paths still say `data/prompts/`
-  (now `src/prompts/`). Reconcile it with this guide, or merge the two.
+  (now `sections/<slug>/prompts/`). Reconcile it with this guide, or merge the two.

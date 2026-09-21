@@ -88,7 +88,7 @@ def greek_upper(s: str) -> str:
     return unicodedata.normalize("NFC", "".join(out_chars)).upper()
 
 _TEMPLATE_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "assets" / "email_templates"
+    section.asset_path("email_templates")
 )
 _SHELL_NAME = "_shell.html"
 

@@ -34,7 +34,9 @@ class LLMConfig(BaseModel):
 
 class StorageConfig(BaseModel):
     database_path: str = "data/amnesty.db"
-    prompts_dir: str = "src/prompts"   # LLM system-prompt .md files (versioned with code)
+    # Empty: prompts come from the section profile (profile.assets.prompts).
+    # Set a path here only to point one installation somewhere else.
+    prompts_dir: str = ""
 
 
 class OneDriveConfig(BaseModel):
@@ -272,7 +274,8 @@ class MinutesPipelineConfig(BaseModel):
     language: str = "el"
     recordings_dir: str = "data/recordings"
     transcripts_dir: str = "data/transcripts"
-    articles_path: str = "assets/governance/articles.json"
+    # Empty: the governance corpus comes from the section profile.
+    articles_path: str = ""
     # Map Zoom display names (as they appear in the recording timeline) to the
     # canonical Greek roster names, so attributed segments + presence use the
     # board's real names. e.g. {"Giorgos Athanasias": "Γεώργιος Αθανασιάς"}.

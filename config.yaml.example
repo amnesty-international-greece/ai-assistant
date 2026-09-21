@@ -26,7 +26,7 @@ claude:
 
 storage:
   database_path: "data/amnesty.db"
-  prompts_dir: "src/prompts"
+  prompts_dir: ""                 # empty: the section profile says where prompts live
 
 onedrive:
   sharepoint_host: "yourorg.sharepoint.com"
@@ -176,7 +176,7 @@ minutes_pipeline:
   organizer_island_review: true      # re-check short runs filed inside another item stretch
   recordings_dir: "data/recordings"
   transcripts_dir: "data/transcripts"
-  articles_path: "assets/governance/articles.json"
+  articles_path: ""                  # empty: the section profile says where the corpus lives
   # Map each board member's Zoom display name to their canonical roster name.
   speaker_aliases:
     "Display Name in Zoom": "Κανονικό Όνομα"
