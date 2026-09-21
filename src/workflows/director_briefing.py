@@ -41,6 +41,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from src.config import settings
 from src.core.email_templates import greek_upper
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 # ── Constants ────────────────────────────────────────────────────────────────
 
 
-DIRECTOR_EMAIL = "director@amnesty.org.gr"
+DIRECTOR_EMAIL = settings.roles.director
 
 # Used as both subject markers AND filename markers.  greek_upper() handles
 # τόνος/case before comparison so the actual subject text can be "εισηγητικό",
@@ -88,7 +89,7 @@ def is_director(sender_email: str) -> bool:
 
 
 # board@ identity - same constant as the workflow uses for outbound sends.
-BOARD_EMAIL = "board@amnesty.org.gr"
+BOARD_EMAIL = settings.roles.board
 
 
 def board_in_recipients(message: dict) -> bool:

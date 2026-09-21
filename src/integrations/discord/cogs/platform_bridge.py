@@ -240,7 +240,7 @@ class PlatformBridgeCog(commands.Cog):
     # Board email address - duplicated from board_meeting_invitation workflow so
     # this cog stays import-free of that module (avoids circular deps and keeps
     # the bridge self-contained).
-    _BOARD_EMAIL = "board@amnesty.org.gr"
+    _BOARD_EMAIL = settings.roles.board
 
     @staticmethod
     def _html_to_plain(html: str) -> str:

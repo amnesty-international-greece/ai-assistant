@@ -39,8 +39,8 @@ from src.utils.pdf_text import extract_pdf_text
 
 logger = logging.getLogger(__name__)
 
-_BOARD_EMAIL = "board@amnesty.org.gr"
-_DIRECTOR_EMAIL = "director@amnesty.org.gr"
+_BOARD_EMAIL = settings.roles.board
+_DIRECTOR_EMAIL = settings.roles.director
 
 # Greek month names in nominative (upper) for the title
 _GREEK_MONTHS_TITLE = {

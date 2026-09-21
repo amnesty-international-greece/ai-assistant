@@ -37,9 +37,9 @@ from src.integrations.m365_mail import M365MailClient
 
 logger = logging.getLogger(__name__)
 
-_BOARD_EMAIL = "board@amnesty.org.gr"
-_DIRECTOR_EMAIL = "director@amnesty.org.gr"   # BCC'd on the scheduling email only
-_ARCHIVE_FALLBACK_EMAIL = "members@amnesty.org.gr"
+_BOARD_EMAIL = settings.roles.board
+_DIRECTOR_EMAIL = settings.roles.director     # BCC'd on the scheduling email only
+_ARCHIVE_FALLBACK_EMAIL = settings.roles.members
 
 
 class BoardMeetingInvitationWorkflow(BaseWorkflow):

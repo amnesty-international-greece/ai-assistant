@@ -20,6 +20,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from src.config import settings
 from src.integrations.discord.brand import AMNESTY_YELLOW, brand_embed
 
 logger = logging.getLogger(__name__)
@@ -333,7 +334,7 @@ class BoardCog(commands.Cog):
                     parent_internet_message_id=anchor,
                     body=body,
                     html=False,
-                    to="board@amnesty.gr",
+                    to=settings.roles.board,
                     workflow="board_meeting_invitation",
                 )
 
@@ -510,7 +511,7 @@ class BoardCog(commands.Cog):
                     embed.add_field(
                         name="Επόμενο",
                         value=(
-                            "1. Το πρώτο email πήγε στο `board@amnesty.org.gr`.\n"
+                            f"1. Το πρώτο email πήγε στο `{settings.roles.board}`.\n"
                             "2. Το ΔΣ συμπληρώνει διαθεσιμότητες + ημερήσια διάταξη "
                             "στο agenda sheet.\n"
                             "3. Όταν τσεκαριστούν τα `D16/D17/D18`, ο workflow "

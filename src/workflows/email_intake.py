@@ -52,7 +52,7 @@ _INBOX_DIR = Path("data") / "inbox"
 
 # The bot's own outbound identity - emails FROM this address that carry the
 # Discord bridge marker are our own echoes coming back; skip them.
-_BOT_IDENTITY = "members@amnesty.org.gr"
+_BOT_IDENTITY = settings.roles.members
 # Marker prepended by the Discord→email agent so we can detect our own echoes.
 _DISCORD_BRIDGE_MARKER = " via Discord]"
 

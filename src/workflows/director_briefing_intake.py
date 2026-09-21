@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from src.config import settings
 from src.core.audit import (
     log_action,
     record_director_briefing,
@@ -35,7 +36,7 @@ from src.workflows.director_briefing import (
     prefill_archive_context,
 )
 
-_BOARD_EMAIL = "board@amnesty.org.gr"
+_BOARD_EMAIL = settings.roles.board
 _KIND_DISPLAY = {
     "ΕΙΣΗΓΗΤΙΚΟ": "Εισηγητικό",
     "ΕΝΗΜΕΡΩΤΙΚΟ": "Ενημερωτικό",

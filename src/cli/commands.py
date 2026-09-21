@@ -302,7 +302,7 @@ async def _run_invite_share_poll(args: argparse.Namespace) -> None:
             parent_internet_message_id=anchor,
             body=body,
             html=False,
-            to="board@amnesty.gr",
+            to=settings.roles.board,
             workflow="board_meeting_invitation",
         )
     except Exception as e:
@@ -1919,7 +1919,7 @@ async def _run_archive_submit(args: argparse.Namespace) -> None:
     initial_data: dict = {
         "pdf_path": str(pdf_path.resolve()),
         "test_mode": test_mode,
-        "sender_email": getattr(args, "sender", None) or "secgen@amnesty.org.gr",
+        "sender_email": getattr(args, "sender", None) or settings.roles.secgen,
     }
     if getattr(args, "title", None):
         initial_data["override_title"] = args.title
@@ -3201,7 +3201,7 @@ def main() -> None:
     archive_submit_parser.add_argument("--title", help="Override the LLM-picked title")
     archive_submit_parser.add_argument("--labels", help="Comma-separated tag list override")
     archive_submit_parser.add_argument("--proto", help="Manual protocol number (YYYY_NNN)")
-    archive_submit_parser.add_argument("--sender", help="Sender email (default: secgen@amnesty.org.gr)")
+    archive_submit_parser.add_argument("--sender", help="Sender email (default: roles.secgen from config.yaml)")
     archive_submit_parser.add_argument("--actor", default="secgen", help="Actor identity for audit log")
     archive_submit_parser.add_argument("--test", action="store_true",
                                        help="Test mode: skip SharePoint upload + xlsx write")

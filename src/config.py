@@ -331,6 +331,20 @@ class UrlsConfig(BaseModel):
     website: str = "https://www.amnesty.gr"
 
 
+class RolesConfig(BaseModel):
+    """Role mailboxes of the section - one per ROLE, never per person.
+
+    They outlive elections, and they are the first thing another section has to
+    change. Code must read these instead of naming an address, so a typo like
+    ``board@amnesty.gr`` (missing the ``.org``) cannot hide in a call site;
+    ``tests/test_role_addresses.py`` enforces that.
+    """
+    board: str = "board@amnesty.org.gr"        # the Board as a body
+    director: str = "director@amnesty.org.gr"  # Director of the Section
+    secgen: str = "secgen@amnesty.org.gr"      # General Secretary
+    members: str = "members@amnesty.org.gr"    # membership office / the bot itself
+
+
 class TestingConfig(BaseModel):
     """Settings that apply during test (--test) executions."""
     # Emails are redirected here instead of skipped - lets you proof the
@@ -417,6 +431,7 @@ class Settings(BaseModel):
     m365_inbox: M365InboxConfig = M365InboxConfig()
     minutes_pipeline: MinutesPipelineConfig = MinutesPipelineConfig()
     urls: UrlsConfig = UrlsConfig()
+    roles: RolesConfig = RolesConfig()
     testing: TestingConfig = TestingConfig()
 
 

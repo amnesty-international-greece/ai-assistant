@@ -108,7 +108,7 @@ class ArchiveWorkflow(BaseWorkflow):
         return {
             # intake
             "pdf_path": "data/debug/sample.pdf",          # intake reads/validates this path
-            "sender_email": "debug@amnesty.org.gr",       # intake
+            "sender_email": "debug@example.org",          # intake
             "sender_name": "Debug Sender",                # intake
             "email_subject": "[Debug] Δοκιμαστικό έγγραφο",  # intake / extract_metadata
             "email_body": "Δοκιμαστικό σώμα email.",      # intake / extract_metadata
@@ -285,7 +285,7 @@ class ArchiveWorkflow(BaseWorkflow):
         except Exception as exc:
             return StepResult(success=False, message=f"PDF parse failed: {exc}")
 
-        sender_email = (ctx.get("sender_email") or "secgen@amnesty.org.gr").strip()
+        sender_email = (ctx.get("sender_email") or settings.roles.secgen).strip()
 
         # Take ONE snapshot of the πρωτόκολλο xlsx for the entire workflow run.
         # All subsequent reads (taxonomy, categories, recent entries, row
