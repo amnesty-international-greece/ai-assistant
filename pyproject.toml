@@ -28,14 +28,28 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     "openpyxl>=3.1.0",
     "feedparser>=6.0.0",
+    # The active LLM provider (config.llm.provider defaults to gemini).
+    "google-genai>=1.7.0",
+    "APScheduler>=3.10.0",
+    "PyPDF2>=3.0.0",
+    "pillow>=10.2.0",
+    "pillow-heif>=0.15.0",
 ]
 
 [project.optional-dependencies]
+# Local transcription. Heavy (CTranslate2 + model weights) and imported lazily,
+# so a deployment that never transcribes does not need it.
+transcription = [
+    "faster-whisper>=1.0.0",
+    "av>=11.0.0",
+    "numpy>=1.26.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.3.0",
     "black>=24.2.0",
+    "numpy>=1.26.0",
 ]
 
 [project.scripts]

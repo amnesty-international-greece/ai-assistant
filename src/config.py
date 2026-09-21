@@ -80,6 +80,11 @@ class BrevoConfig(BaseModel):
     # Master membership list - used as fallback when newsletter_list_ids is empty
     # so Brevo campaign creation doesn't fail with an invalid list ID
     master_list_id: int = 0
+    # Named lists and segments, e.g. {"regular_members": 1}. Documentation that
+    # the model keeps rather than drops, so `invite check` and future workflows
+    # can resolve an audience by name instead of by a bare number.
+    contact_lists: dict[str, int] = {}
+    segments: dict[str, int] = {}
 
 
 class CrabFitConfig(BaseModel):
@@ -331,6 +336,11 @@ class UrlsConfig(BaseModel):
     website: str = "https://www.amnesty.gr"
 
 
+class BackupConfig(BaseModel):
+    """Nightly copy of the database (state, audit log, protocol reservations)."""
+    keep: int = 14              # how many nightly copies to keep on this machine
+
+
 class RetentionConfig(BaseModel):
     """How long recordings and transcripts may stay on this machine.
 
@@ -387,6 +397,11 @@ class EnvSecrets(BaseSettings):
     zoom_client_id: str = ""
     zoom_client_secret: str = ""
     zoom_webhook_secret_token: str = ""  # Zoom webhook CRC validation, e.g. recording.completed (env: ZOOM_WEBHOOK_SECRET_TOKEN)
+    # In-meeting sidebar (Zoom Apps SDK) - a separate app from the
+    # Server-to-Server one above. Reserved: the sidebar is served from this
+    # process but does not authenticate with them yet.
+    zoom_app_client_id: str = ""
+    zoom_app_client_secret: str = ""
     brevo_api_key: str = ""
     discord_bot_token: str = ""
     discord_guild_id: str = ""
@@ -420,6 +435,11 @@ class Settings(BaseModel):
     zoom_client_id: str = ""
     zoom_client_secret: str = ""
     zoom_webhook_secret_token: str = ""  # Zoom webhook CRC validation, e.g. recording.completed (env: ZOOM_WEBHOOK_SECRET_TOKEN)
+    # In-meeting sidebar (Zoom Apps SDK) - a separate app from the
+    # Server-to-Server one above. Reserved: the sidebar is served from this
+    # process but does not authenticate with them yet.
+    zoom_app_client_id: str = ""
+    zoom_app_client_secret: str = ""
     brevo_api_key: str = ""
     discord_bot_token: str = ""
     discord_guild_id: str = ""
@@ -444,6 +464,7 @@ class Settings(BaseModel):
     urls: UrlsConfig = UrlsConfig()
     roles: RolesConfig = RolesConfig()
     retention: RetentionConfig = RetentionConfig()
+    backup: BackupConfig = BackupConfig()
     testing: TestingConfig = TestingConfig()
 
 

@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from src.config import settings
@@ -205,6 +206,40 @@ def _run_retention(args: argparse.Namespace, *, delete: bool) -> None:
         purged = purge_state_transcripts()
         print(f"  Purged bulky text from {len(purged['workflows'])} saved workflow(s), "
               f"freeing {human_bytes(purged['bytes_freed'])} in the database.")
+
+
+def cmd_backup(args: argparse.Namespace) -> None:
+    """Copy the database now, or list the copies already kept."""
+    from src.core.backup import create_backup, list_backups
+    from src.core.retention import human_bytes
+
+    init_db()
+    command = getattr(args, "backup_command", None)
+    if command == "list":
+        _print_header("Database backups")
+        rows = list_backups()
+        if not rows:
+            print("  None yet. Run `ai-assistant backup now`.")
+            return
+        for path in rows:
+            stat = path.stat()
+            when = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+            print(f"  {when}  {human_bytes(stat.st_size):>9}  {path.name}")
+        print()
+        print(f"  {len(rows)} copy(ies); the newest {settings.backup.keep} are kept.")
+        return
+
+    result = create_backup(keep=settings.backup.keep,
+                           actor=getattr(args, "actor", "secgen"))
+    if not result["path"]:
+        print("  No database to back up yet.")
+        return
+    _print_header("Database backup")
+    print(f"  Written: {result['path']}")
+    print(f"  Size:    {human_bytes(result['bytes'])}")
+    if result["removed"]:
+        print(f"  Removed {len(result['removed'])} copy(ies) beyond the newest "
+              f"{settings.backup.keep}.")
 
 
 def cmd_invite(args: argparse.Namespace) -> None:
@@ -3283,6 +3318,13 @@ def main() -> None:
     )
     reset_sheet_parser.add_argument("--workflow-id", help=argparse.SUPPRESS)
 
+    backup_parser = subparsers.add_parser(
+        "backup", help="Copy the database (state, audit log, protocol reservations)")
+    backup_sub = backup_parser.add_subparsers(dest="backup_command")
+    backup_now = backup_sub.add_parser("now", help="Write a backup now and rotate old ones")
+    backup_now.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+    backup_sub.add_parser("list", help="List the backups kept on this machine")
+
     retention_parser = subparsers.add_parser(
         "retention", help="Delete recordings and transcripts per the GDPR retention rules")
     retention_sub = retention_parser.add_subparsers(dest="retention_command")
@@ -3628,6 +3670,7 @@ def main() -> None:
         "invite": cmd_invite,
         "register": cmd_register,
         "retention": cmd_retention,
+        "backup": cmd_backup,
         "auth-google": cmd_auth_google,
         "auth": cmd_auth,
         "onedrive": cmd_onedrive,

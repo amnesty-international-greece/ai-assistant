@@ -134,7 +134,6 @@ ai-in-ai/
 ├── FOUNDATION.md              # This document
 ├── .env.example               # Template for secrets (never commit .env)
 ├── config.yaml                # Non-secret configuration
-├── requirements.txt
 ├── pyproject.toml
 │
 ├── src/

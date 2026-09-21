@@ -206,6 +206,18 @@ async def _inbox_tmpdir_cleanup_job() -> None:
         )
 
 
+async def _database_backup_job() -> None:
+    """Copy the database and keep the newest ``backup.keep`` copies."""
+    from src.core.backup import create_backup
+
+    try:
+        result = create_backup(keep=settings.backup.keep)
+        if result["path"]:
+            logger.info("Nightly backup written to %s", result["path"])
+    except Exception as exc:
+        logger.error("Nightly database backup failed: %s", exc)
+
+
 def start_scheduler() -> AsyncIOScheduler:
     """Start the background scheduler (idempotent)."""
     global _scheduler
@@ -241,6 +253,15 @@ def start_scheduler() -> AsyncIOScheduler:
     # Γενική Εγκύκλιος Ενημέρωσης - quarterly: first day of each calendar
     # quarter at 00:00 Europe/Athens.  Parks at SecGen approval gate; the
     # SecGen advances via `/board egkyklios general-approve`.
+    # Nightly database backup. The DB is the record of what the Board did and
+    # which protocol numbers were issued; a laptop disk is a single point of
+    # failure. Kept on this machine - moving copies off it is the section's call.
+    _scheduler.add_job(
+        _database_backup_job,
+        CronTrigger(hour=3, minute=30),
+        id="backup.database_nightly",
+        replace_existing=True,
+    )
     _scheduler.add_job(
         _egkyklios_general_quarterly_job,
         CronTrigger(month="1,4,7,10", day=1, hour=0, minute=0),

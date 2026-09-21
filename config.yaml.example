@@ -7,6 +7,8 @@ app:
   version: "0.1.0"
 
 llm:
+  max_retries: 4                  # transient provider errors are retried
+  retry_base_seconds: 5.0         # first backoff, then doubling
   provider: "gemini"              # "gemini" (free, prototyping) | "claude" (production)
   model: "gemini-2.0-flash"       # switch to "claude-sonnet-4-20250514" for production
   max_tokens: 4096
@@ -68,6 +70,9 @@ brevo:
   # right key; `python -m src.cli invite check` verifies them.
   newsletter_list_ids: []         # Brevo LIST ids to receive board meeting invitations
   newsletter_segment_ids: []      # Brevo SEGMENT ids to receive board meeting invitations
+  # Named ids, so an audience can be referred to by name rather than a number.
+  contact_lists: {}               # e.g. {member_register: 82}
+  segments: {}                    # e.g. {regular_members: 1, youth_members: 5}
   invitation_newsletter: true     # false = invitations go out without the member newsletter
 
 discord:
@@ -102,6 +107,7 @@ discord:
       agenda_channel_id: ""       # Public forum channel - members-visible agenda threads
       agenda_channel_id_test: ""  # Sandbox channel for --test runs
       board_channel_id: ""        # Private board forum channel
+      agenda_forum_tag_name: "Συνεδριάσεις"  # tag applied to public forum threads
       board_channel_id_test: ""   # Sandbox channel for --test runs
       board_role_id: ""           # Discord role ID gating /archive and right-click archive
       reminder_hours_before: 6
@@ -157,6 +163,11 @@ minutes_pipeline:
   draft_block_chars: 12000           # transcript chars per drafting call; long items are split
   draft_min_speaker_coverage: 0.5    # lenient floor; below it a block is retried once
   organizer_enabled: true            # LLM re-files ambiguous turns under the right agenda item + tags them
+  organizer_max_tokens: 8000         # output ceiling per organiser call
+  organizer_island_max_turns: 8      # an isolated run of turns this short is re-checked
+  organizer_island_gap_seconds: 180.0  # ... when the silence around it is at least this long
+  director_briefings_dir: "data/director_briefings"  # where briefing notes are kept
+  glossary_extra: []              # extra terms to prime ASR (names, English words spoken in Greek)
   organizer_batch_turns: 40          # turns per organiser call
   organizer_text_limit: 600          # chars of each turn shown to the organiser
   organizer_context_turns: 8         # previous turns shown read-only to each organiser batch
@@ -181,6 +192,13 @@ roles:
   director: "director@yourorg.gr"
   secgen: "secgen@yourorg.gr"
   members: "members@yourorg.gr"
+
+
+# ── Backups ───────────────────────────────────────────────────────────────────
+# A copy of data/amnesty.db is written nightly at 03:30 Europe/Athens while the
+# server runs, or on demand with: python -m src.cli backup now
+backup:
+  keep: 14                       # nightly copies kept on this machine
 
 
 # ── Retention (GDPR) ──────────────────────────────────────────────────────────
