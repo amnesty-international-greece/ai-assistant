@@ -648,15 +648,18 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             final_date = ctx.get("meeting_date") or meeting_date
             final_time = ctx.get("meeting_time") or meeting_time
 
-            # ── Interactive fallback for missing time ────────────────────────
+            # A step never asks a question: it says what it is missing and
+            # stops, so a webhook or Discord run fails instead of hanging on a
+            # prompt nobody can answer. The CLI collects the value and restarts.
             if not final_time:
-                print(f"\n  Tab '{tab_title}' has no meeting time set.")
-                raw_t = input("  Enter meeting start time (e.g. 18:00): ").strip()
-                if raw_t and _re.match(r"^\d{1,2}:\d{2}$", raw_t):
-                    h, m = map(int, raw_t.split(":"))
-                    final_time = f"{h:02d}:{m:02d}"
-                elif raw_t:
-                    print(f"  Invalid format '{raw_t}' - time left blank.")
+                return StepResult(
+                    success=False,
+                    data={"needs_input": "meeting_time"},
+                    message=(
+                        f"Tab '{tab_title}' has no meeting start time. "
+                        f"Fill it in the sheet, or pass --time HH:MM."
+                    ),
+                )
 
             # ── Date sanity check ────────────────────────────────────────────
             if not final_date:
@@ -686,17 +689,17 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                     ),
                 )
 
-            if days_until > max_advance:
-                print(
-                    f"\n  WARNING: Meeting is {days_until} days away "
-                    f"(policy maximum: {max_advance} days)."
+            if days_until > max_advance and not ctx.get("allow_far_date"):
+                return StepResult(
+                    success=False,
+                    data={"needs_input": "allow_far_date"},
+                    message=(
+                        f"Meeting is {days_until} days away, beyond the "
+                        f"{max_advance}-day maximum in "
+                        f"workflows.board_meeting.max_advance_days. "
+                        f"Re-run with --allow-far-date to go ahead."
+                    ),
                 )
-                confirm = input("  Proceed anyway? [y/n]: ").strip().lower()
-                if confirm not in ("y", "yes"):
-                    return StepResult(
-                        success=False,
-                        message=f"Cancelled - meeting date {final_date} is too far in advance.",
-                    )
 
             return StepResult(
                 success=True,
@@ -756,17 +759,11 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                     message="Meeting date is required to schedule Zoom - check the agenda sheet.",
                 )
             if not meeting_time:
-                import re as _re
-                print("\n  Meeting time not set. Required for the Zoom meeting.")
-                raw_t = input("  Enter meeting start time (e.g. 18:00): ").strip()
-                if raw_t and _re.match(r"^\d{1,2}:\d{2}$", raw_t):
-                    h, m = map(int, raw_t.split(":"))
-                    meeting_time = f"{h:02d}:{m:02d}"
-                else:
-                    return StepResult(
-                        success=False,
-                        message=f"Invalid or missing meeting time '{raw_t}' - cannot schedule Zoom.",
-                    )
+                return StepResult(
+                    success=False,
+                    data={"needs_input": "meeting_time"},
+                    message="No meeting time - cannot schedule Zoom. Pass --time HH:MM.",
+                )
 
             start_time = f"{meeting_date}T{meeting_time}:00"
 
@@ -859,14 +856,13 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 protocol_number = await _fetch_next_protocol_number(self.onedrive) or ""
 
             if not protocol_number:
-                print()
-                print("  Αριθμός Πρωτοκόλλου: δεν βρέθηκε στο Πρωτόκολλο.")
-                raw = input("  Εισάγετε αριθμό πρωτοκόλλου (π.χ. 2026_017) ή Enter για παράλειψη: ").strip()
-                if raw and _re.match(_PROTO_RE, raw):
-                    protocol_number = raw
-                elif raw:
-                    print(f"  Μη έγκυρη μορφή '{raw}' - παράλειψη αριθμού πρωτοκόλλου.")
-                    protocol_number = ""
+                # The PDF is still worth producing; the number can be added with
+                # --protocol on a re-run. Zoom already exists at this point, so
+                # stopping here would cost more than it saves.
+                logger.warning(
+                    "No protocol number found in the register; the invitation PDF "
+                    "is generated without one (pass --protocol to set it)."
+                )
 
             greek_date = _format_greek_date(meeting_date)
             type_genitive = _meeting_type_genitive(meeting_type)

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import platform
+import re
 import sys
 from pathlib import Path
 
@@ -89,6 +90,43 @@ def cmd_invite(args: argparse.Namespace) -> None:
         asyncio.run(_run_invite_cancel(args))
         return
     asyncio.run(_run_invite(args))
+
+
+async def _run_invite_collecting_input(wf_factory, initial_data: dict):
+    """Run the invitation, asking for a value only a person can supply.
+
+    Steps never prompt: one that lacks a value fails with ``needs_input``
+    naming it, so an unattended run (webhook, Discord) fails cleanly instead
+    of hanging on a question nobody sees. At a terminal, this asks for that
+    value and starts again - only ever before Zoom, the PDF or any email
+    exists, so a restart costs nothing.
+
+    Returns ``(workflow, result)``.
+    """
+    base = dict(initial_data)
+    wf = wf_factory()
+    result = await wf.run(dict(base))
+    while result.get("status") == "failed":
+        need = ((result.get("data") or {}).get("needs_input") or "").strip()
+        if not need or not sys.stdin.isatty():
+            break
+        print(f"\n  {result.get('error', '')}")
+        if need == "meeting_time":
+            raw = input("  Meeting start time (HH:MM), or Enter to stop: ").strip()
+            match = re.match(r"^(\d{1,2}):(\d{2})$", raw)
+            if not match:
+                break
+            base["meeting_time"] = f"{int(match.group(1)):02d}:{match.group(2)}"
+        elif need == "allow_far_date":
+            if not _confirm("  Schedule it anyway? [y/n]: "):
+                break
+            base["allow_far_date"] = True
+        else:
+            break
+        print()
+        wf = wf_factory()
+        result = await wf.run(dict(base))
+    return wf, result
 
 
 def _audience_overrides(args: argparse.Namespace) -> dict:
@@ -338,6 +376,8 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
     initial_data.update(_audience_overrides(args))
     if getattr(args, "no_newsletter", False):
         initial_data["skip_newsletter"] = True
+    if getattr(args, "allow_far_date", False):
+        initial_data["allow_far_date"] = True
 
     if getattr(args, "protocol", None):
         initial_data["protocol_number"] = args.protocol
@@ -393,7 +433,10 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
     print(f"  Workflow ID: {wf.workflow_id}")
     print()
 
-    result = await wf.run(initial_data)
+    wf, result = await _run_invite_collecting_input(
+        lambda: BoardMeetingInvitationWorkflow(actor=getattr(args, "actor", "secgen")),
+        initial_data,
+    )
 
     # Same interactive gate loop as the full invite command
     while result.get("status") == "awaiting_approval":
@@ -652,6 +695,8 @@ async def _run_invite(args: argparse.Namespace) -> None:
     if getattr(args, "no_newsletter", False):
         initial_data["skip_newsletter"] = True
         print("  Newsletter: OFF - no Brevo campaign will be created")
+    if getattr(args, "allow_far_date", False):
+        initial_data["allow_far_date"] = True
 
     if not await _brevo_preflight(args, initial_data):
         return
@@ -726,7 +771,10 @@ async def _run_invite(args: argparse.Namespace) -> None:
     print()
 
     # Run workflow (will pause at approval gate)
-    result = await wf.run(initial_data)
+    wf, result = await _run_invite_collecting_input(
+        lambda: BoardMeetingInvitationWorkflow(actor=getattr(args, "actor", "secgen")),
+        initial_data,
+    )
 
     while result.get("status") == "awaiting_approval":
         current_step = result.get("step", "")
@@ -3030,6 +3078,8 @@ def main() -> None:
     invite_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
     invite_parser.add_argument("--skip-brevo-check", action="store_true",
                                help="Do not run the Brevo readiness check before starting")
+    invite_parser.add_argument("--allow-far-date", action="store_true",
+                               help="Allow a meeting date beyond workflows.board_meeting.max_advance_days")
     invite_parser.add_argument("--no-newsletter", action="store_true",
                                help="Send the invitation without the Brevo member newsletter "
                                     "(remembered for the later resume / sheet auto-resume)")
@@ -3059,6 +3109,8 @@ def main() -> None:
     resume_parser.add_argument("--brevo-segments", help="Comma-separated Brevo SEGMENT ids (replaces the configured audience)")
     resume_parser.add_argument("--brevo-lists", help="Comma-separated Brevo LIST ids (replaces the configured audience)")
     resume_parser.add_argument("--skip-brevo-check", action="store_true", help="Do not run the Brevo readiness check")
+    resume_parser.add_argument("--allow-far-date", action="store_true",
+                               help="Allow a meeting date beyond workflows.board_meeting.max_advance_days")
     resume_parser.add_argument("--no-newsletter", action="store_true",
                                help="Send the invitation without the Brevo member newsletter")
 

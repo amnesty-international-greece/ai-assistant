@@ -150,7 +150,14 @@ class BaseWorkflow(ABC):
                 result = await self._run_step(step)
                 if not result.success:
                     self._transition(WorkflowState.FAILED)
-                    return {"status": "failed", "step": step.name, "error": result.message}
+                    # data carries what the step needs from the caller, e.g.
+                    # {"needs_input": "meeting_time"} - steps never prompt.
+                    return {
+                        "status": "failed",
+                        "step": step.name,
+                        "error": result.message,
+                        "data": result.data,
+                    }
 
                 self.current_step_index += 1
 
@@ -191,7 +198,12 @@ class BaseWorkflow(ABC):
         result = await self._run_step(step)
         if not result.success:
             self._transition(WorkflowState.FAILED)
-            return {"status": "failed", "step": step.name, "error": result.message}
+            return {
+                "status": "failed",
+                "step": step.name,
+                "error": result.message,
+                "data": result.data,
+            }
 
         self.current_step_index += 1
         self._transition(WorkflowState.IN_PROGRESS)
