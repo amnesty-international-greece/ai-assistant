@@ -380,6 +380,66 @@ def get_audit_log(
     return [dict(row) for row in rows]
 
 
+# A workflow context can carry something huge - a full transcript, a draft, a
+# base64 attachment. Persisting that on every step rewrites megabytes dozens of
+# times and turns the state row into a store of personal data that the
+# retention job cannot see. Anything over this goes to a file beside the DB and
+# leaves a pointer behind; get_workflow_state() puts it back.
+_STATE_BLOB_THRESHOLD = 64 * 1024
+_BLOB_MARKER = "__blob__"
+
+
+def _blob_dir() -> Path:
+    return Path(_DB_PATH).parent / "state_blobs"
+
+
+def _offload_large_values(workflow_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Replace oversized top-level context values with a pointer to a file."""
+    context = data.get("context")
+    if not isinstance(context, dict):
+        return data
+    slimmed = dict(context)
+    for key, value in context.items():
+        if key.startswith("_") or isinstance(value, (int, float, bool, type(None))):
+            continue
+        try:
+            encoded = json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            continue
+        if len(encoded.encode("utf-8")) < _STATE_BLOB_THRESHOLD:
+            continue
+        try:
+            folder = _blob_dir() / workflow_id
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"{key}.json"
+            path.write_text(encoded, encoding="utf-8")
+            slimmed[key] = {_BLOB_MARKER: str(path)}
+            logger.info("workflow_state: %s.%s (%d bytes) stored at %s",
+                        workflow_id, key, len(encoded), path)
+        except OSError as exc:
+            logger.warning("Could not offload %s.%s (%s); keeping it inline",
+                           workflow_id, key, exc)
+    return {**data, "context": slimmed}
+
+
+def _restore_large_values(data: Any) -> Any:
+    """Put offloaded values back, so callers never see the pointer."""
+    if not isinstance(data, dict):
+        return data
+    context = data.get("context")
+    if not isinstance(context, dict):
+        return data
+    restored = dict(context)
+    for key, value in context.items():
+        if isinstance(value, dict) and set(value) == {_BLOB_MARKER}:
+            try:
+                restored[key] = json.loads(Path(value[_BLOB_MARKER]).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                logger.warning("Offloaded value %s is unreadable (%s)", value[_BLOB_MARKER], exc)
+                restored[key] = None
+    return {**data, "context": restored}
+
+
 def save_workflow_state(
     workflow_name: str,
     workflow_id: str,
@@ -387,6 +447,8 @@ def save_workflow_state(
     data: dict[str, Any] | None = None,
 ) -> None:
     """Save or update workflow state."""
+    if data:
+        data = _offload_large_values(workflow_id, data)
     conn = _get_connection()
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -408,12 +470,23 @@ def save_workflow_state(
 
 
 def get_workflow_state(workflow_id: str) -> dict[str, Any] | None:
-    """Retrieve workflow state by ID."""
+    """Retrieve workflow state by ID, with any offloaded values put back."""
     conn = _get_connection()
     row = conn.execute(
         "SELECT * FROM workflow_state WHERE workflow_id = ?", (workflow_id,)
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    raw = result.get("data")
+    if isinstance(raw, str) and _BLOB_MARKER in raw:
+        try:
+            result["data"] = json.dumps(
+                _restore_large_values(json.loads(raw)), ensure_ascii=False
+            )
+        except ValueError:
+            pass
+    return result
 
 
 # ── Protocol-number reservations ─────────────────────────────────────────────

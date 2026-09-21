@@ -331,6 +331,17 @@ class UrlsConfig(BaseModel):
     website: str = "https://www.amnesty.gr"
 
 
+class RetentionConfig(BaseModel):
+    """How long recordings and transcripts may stay on this machine.
+
+    FOUNDATION.md §3.1: kept until the minutes are finalised, then deleted.
+    Confirmed by the Board on 2026-09-21. Phase 4 moves these to the section's
+    rules.yaml, so each section can set its own periods under its own law.
+    """
+    grace_days: int = 14        # after the minutes are finalised
+    max_age_days: int = 365     # hard ceiling, even without finalised minutes
+
+
 class RolesConfig(BaseModel):
     """Role mailboxes of the section - one per ROLE, never per person.
 
@@ -432,6 +443,7 @@ class Settings(BaseModel):
     minutes_pipeline: MinutesPipelineConfig = MinutesPipelineConfig()
     urls: UrlsConfig = UrlsConfig()
     roles: RolesConfig = RolesConfig()
+    retention: RetentionConfig = RetentionConfig()
     testing: TestingConfig = TestingConfig()
 
 

@@ -183,6 +183,15 @@ roles:
   members: "members@yourorg.gr"
 
 
+# ── Retention (GDPR) ──────────────────────────────────────────────────────────
+# Recordings and transcripts are the most sensitive data here. FOUNDATION.md
+# 3.1: kept until the minutes are finalised, then deleted. Board-confirmed
+# 2026-09-21. Check with: python -m src.cli retention report
+retention:
+  grace_days: 14                 # kept this long after the minutes are finalised
+  max_age_days: 365              # deleted at this age even if minutes never were
+
+
 # ── Test mode ─────────────────────────────────────────────────────────────────
 testing:
   test_email: ""                  # Redirect all outbound emails here during --test runs

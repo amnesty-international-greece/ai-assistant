@@ -155,6 +155,58 @@ async def _run_register_audit(args: argparse.Namespace) -> None:
     print("  Register is consistent." if clean else "  See the entries above.")
 
 
+def cmd_retention(args: argparse.Namespace) -> None:
+    """Report or apply the retention rules for recordings and transcripts."""
+    init_db()
+    command = getattr(args, "retention_command", None)
+    if command in ("report", "apply"):
+        _run_retention(args, delete=(command == "apply"))
+        return
+    print("Usage: ai-assistant retention report | retention apply [--yes] [--purge-state]")
+
+
+def _run_retention(args: argparse.Namespace, *, delete: bool) -> None:
+    from src.core.retention import apply as apply_retention
+    from src.core.retention import human_bytes, plan, purge_state_transcripts
+
+    items = plan()
+    _print_header("Retention" + ("" if delete else " (report only - nothing is deleted)"))
+    print(f"  Rule: delete {settings.retention.grace_days} days after the minutes are "
+          f"finalised; never keep beyond {settings.retention.max_age_days} days.")
+    print()
+    if not items:
+        print("  Nothing stored under the recordings or transcripts folders.")
+        return
+
+    print(f"  {'kind':11}{'meeting':13}{'size':>10}  {'age':>5}  action  reason")
+    doomed = [i for i in items if i.delete]
+    for item in items:
+        print(f"  {item.kind:11}{item.meeting_ref or '-':13}{human_bytes(item.bytes):>10}  "
+              f"{item.age_days:>4}d  {'DELETE' if item.delete else 'keep  '}  {item.reason}")
+    print()
+    total = sum(i.bytes for i in doomed)
+    print(f"  {len(doomed)} folder(s) due for deletion, {human_bytes(total)} of media.")
+
+    if not delete:
+        print("  Run `ai-assistant retention apply --yes` to carry it out.")
+        return
+    if doomed and not getattr(args, "yes", False):
+        if not _confirm("  Delete the media listed above? [y/n]: "):
+            print("  Nothing deleted.")
+            return
+    if doomed:
+        summary = apply_retention(items, actor=getattr(args, "actor", "secgen"))
+        print(f"  Deleted {len(summary['folders'])} folder(s); "
+              f"freed {human_bytes(summary['bytes_freed'])}.")
+        if summary["failed"]:
+            print(f"  {len(summary['failed'])} file(s) could not be deleted (in use?).")
+
+    if getattr(args, "purge_state", False):
+        purged = purge_state_transcripts()
+        print(f"  Purged bulky text from {len(purged['workflows'])} saved workflow(s), "
+              f"freeing {human_bytes(purged['bytes_freed'])} in the database.")
+
+
 def cmd_invite(args: argparse.Namespace) -> None:
     """Dispatch invite subcommands or run the workflow."""
     init_db()
@@ -3231,6 +3283,16 @@ def main() -> None:
     )
     reset_sheet_parser.add_argument("--workflow-id", help=argparse.SUPPRESS)
 
+    retention_parser = subparsers.add_parser(
+        "retention", help="Delete recordings and transcripts per the GDPR retention rules")
+    retention_sub = retention_parser.add_subparsers(dest="retention_command")
+    retention_sub.add_parser("report", help="Show what would be deleted, and what is kept and why")
+    retention_apply = retention_sub.add_parser("apply", help="Delete what the report lists")
+    retention_apply.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+    retention_apply.add_argument("--purge-state", action="store_true",
+                                 help="Also drop bulky transcripts from saved workflow state")
+    retention_apply.add_argument("--actor", default="secgen", help="Actor identity for audit log")
+
     register_parser = subparsers.add_parser(
         "register", help="Protocol register (πρωτόκολλο) utilities")
     register_sub = register_parser.add_subparsers(dest="register_command")
@@ -3565,6 +3627,7 @@ def main() -> None:
         "smoke-test": cmd_smoke_test,
         "invite": cmd_invite,
         "register": cmd_register,
+        "retention": cmd_retention,
         "auth-google": cmd_auth_google,
         "auth": cmd_auth,
         "onedrive": cmd_onedrive,

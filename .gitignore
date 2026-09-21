@@ -24,6 +24,7 @@ data/amnesty.db
 
 # Local safety backups (refreshed on every SharePoint download — never commit)
 data/backups/
+data/state_blobs/        # oversized workflow-context values, offloaded from the DB
 data/inbox/
 data/output/
 
