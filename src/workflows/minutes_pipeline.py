@@ -51,6 +51,7 @@ from src.workflows.timeline_speakers import (
     attribute_segments,
     parse_timeline,
 )
+from src.profile import section
 
 
 def _remap_speakers(segments, aliases: dict) -> list:
@@ -68,7 +69,7 @@ def _remap_speakers(segments, aliases: dict) -> list:
 
 logger = logging.getLogger(__name__)
 
-_ORG_NAMES = ["Διεθνής Αμνηστία", "Αμνηστία"]
+_ORG_NAMES = section.profile.identity.aliases or [section.profile.identity.organisation]
 
 # Drafting defaults (overridable from settings.minutes_pipeline).
 # Output ceiling: deliberately generous. Greek costs ~2-3 tokens/word, so a low

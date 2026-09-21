@@ -1,0 +1,42 @@
+# A fictional second section, in English.
+#
+# Not a real Amnesty entity. It exists so the test suite can run the platform
+# against a section whose name, language, board prefix and rules differ from
+# the Greek one: anything that still comes out in Greek is a value the
+# platform is carrying that belongs in a profile.
+
+slug: test-en
+locale: en
+
+identity:
+  organisation: "Rights Watch"
+  section: "Test Section"
+  display_name: "Rights Watch - Test Section"
+  legal_name: "Rights Watch Test Section"
+  website: "https://example.org"
+  email: "members@example.org"
+  phone: "+44 20 7946 0000"
+  address_lines:
+    - "1 Example Street"
+    - "London, EX1 2MP"
+  office_location: "at 1 Example Street, second floor"
+  aliases:
+    - "Rights Watch"
+
+board:
+  name: "Board of Trustees"
+  name_genitive: "Board of Trustees"
+  short_name: "BT"
+  ref_prefix: "BT"
+  seats: 7
+
+roles:
+  board: "board@example.org"
+  director: "director@example.org"
+  secgen: "secretary@example.org"
+  members: "members@example.org"
+
+assets:
+  prompts: "src/prompts"
+  email_templates: "assets/email_templates"
+  governance_corpus: "assets/governance/articles.json"

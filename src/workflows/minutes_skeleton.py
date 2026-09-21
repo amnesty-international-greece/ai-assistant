@@ -76,6 +76,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from src.profile import section
 
 
 @dataclass
@@ -302,6 +303,23 @@ def _last_item_started_before(items: list[dict], moment: datetime) -> int | None
             best = i
             best_start = lo
     return best
+
+
+def _quorum(presence: dict) -> dict:
+    """Whether the meeting had a quorum, by the section's own rule.
+
+    The statute states a number (5 of 9 for the Greek section, καταστατικό
+    16.2); the platform only counts. A section that states no quorum gets
+    ``required: 0`` and no judgement either way.
+    """
+    required = int(section.rules.board.quorum or 0)
+    present = len(presence.get("present") or [])
+    return {
+        "required": required,
+        "present": present,
+        "met": present >= required if required else None,
+        "article": section.rules.board.quorum_article,
+    }
 
 
 def _resolve_presence(
@@ -532,6 +550,7 @@ def build_minutes_skeleton(
     presence = _resolve_presence(
         events, segments, roster, ignore_speakers, attendees=attendees
     )
+    presence["quorum"] = _quorum(presence)
 
     # Strip the private ``_window`` key before returning.
     public_items = []

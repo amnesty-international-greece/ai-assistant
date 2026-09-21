@@ -30,6 +30,8 @@ from reportlab.pdfgen import canvas as pdf_canvas
 
 from src.core.audit import log_action
 from src.documents.pdf_generator import AMNESTY_YELLOW, AMNESTY_BLACK
+from src.core.email_templates import greek_upper
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +41,20 @@ _LOGO_PATH = Path(
     "ENG_Amnesty_logo_RGB_black/ENG_Amnesty_logo_RGB_black.png"
 )
 
-_ORG_HEADER = "ΔΙΕΘΝΗΣ ΑΜΝΗΣΤΙΑ / ΕΛΛΗΝΙΚΟ ΤΜΗΜΑ"
-_ORG_FOOTER = "ΔΙΕΘΝΗΣ ΑΜΝΗΣΤΙΑ / ΕΛΛΗΝΙΚΟ ΤΜΗΜΑ / amnesty.gr"
+_ORG_HEADER = " / ".join(
+    greek_upper(part)
+    for part in (section.profile.identity.organisation, section.profile.identity.section)
+    if part
+)
+def _org_footer() -> str:
+    """The footer line: organisation, section and site, from the profile."""
+    identity = section.profile.identity
+    host = identity.website.split("//")[-1].strip("/")
+    parts = [greek_upper(identity.organisation), greek_upper(identity.section), host]
+    return " / ".join(p for p in parts if p)
+
+
+_ORG_FOOTER = _org_footer()
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ import httpx
 
 from src.config import settings
 from src.core.audit import log_action
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ class BrevoClient:
             "subject": subject,
             "sender": {
                 "email": settings.brevo.sender_email,
-                "name":  settings.brevo.sender_name,
+                "name":  settings.brevo.sender_name or section.name,
             },
             "htmlContent": html,
             "recipients": recipients,

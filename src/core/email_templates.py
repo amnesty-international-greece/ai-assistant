@@ -55,6 +55,7 @@ from __future__ import annotations
 import unicodedata
 from pathlib import Path
 from typing import Any
+from src.profile import section
 
 
 def greek_upper(s: str) -> str:
@@ -157,10 +158,11 @@ def render_email(
     # Logo + candle: either an <img> if the caller passed a real URL, or a
     # typographic fallback so emails render cleanly without external images.
     # Both fallbacks are styled in the shell's CSS (``.logo-text``).
+    wordmark = greek_upper(section.name)
     logo_html = (
-        f'<img src="{logo_url}" alt="ΔΙΕΘΝΗΣ ΑΜΝΗΣΤΙΑ - ΕΛΛΗΝΙΚΟ ΤΜΗΜΑ" />'
+        f'<img src="{logo_url}" alt="{wordmark}" />'
         if logo_url
-        else '<span class="logo-text">ΔΙΕΘΝΗΣ ΑΜΝΗΣΤΙΑ - ΕΛΛΗΝΙΚΟ ΤΜΗΜΑ</span>'
+        else f'<span class="logo-text">{wordmark}</span>'
     )
     candle_html = (
         f'<img class="candle-mark" src="{candle_url}" alt="" />'

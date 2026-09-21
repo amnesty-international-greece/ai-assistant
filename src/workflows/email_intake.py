@@ -43,6 +43,7 @@ from src.integrations.m365_inbox import (
 )
 from src.integrations.m365_mail import M365MailClient
 from src.workflows.archive import ArchiveWorkflow
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ async def _send_failure_reply(
             title="Δεν αρχειοθετήθηκε<br/>το έγγραφό σας.",
             header_ref="ΣΦΑΛΜΑ ΑΡΧΕΙΟΘΕΤΗΣΗΣ",
             footer_note=(
-                "Διεθνής Αμνηστία - Ελληνικό Τμήμα - "
+                f"{section.name} - "
                 "Αυτή είναι αυτόματη απάντηση από το AI Assistant."
             ),
             subject=message.get("subject", "(no subject)"),

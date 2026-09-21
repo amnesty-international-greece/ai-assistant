@@ -1,0 +1,16 @@
+# Deliberately different from the Greek section, so a hard-coded Greek value
+# shows up as a test failure rather than as correct-looking output.
+
+board:
+  quorum: 4
+  quorum_article: "7.3"
+  min_meetings_per_year: 4
+  min_notice_days: 10
+  max_advance_days: 30
+  consecutive_absences_forfeiting_seat: 2
+  absences_forfeiting_seat: 4
+
+assembly:
+  min_notice_days: 21
+  min_electronic_notice_days: 14
+  quorum_required: true

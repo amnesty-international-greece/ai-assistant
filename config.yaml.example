@@ -2,6 +2,11 @@
 # Copy this file to config.yaml and fill in your values.
 # Secrets (API keys, tokens) go in .env - see .env.example.
 
+# ── Section ───────────────────────────────────────────────────────────────────
+# Your section's folder under sections/: profile.yaml (identity, roles,
+# wording) and rules.yaml (quorum, notice periods).
+section: "amnesty-gr"
+
 app:
   name: "AI Assistant Platform"
   version: "0.1.0"

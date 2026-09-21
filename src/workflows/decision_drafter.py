@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Protocol
 
 from src.domain.refs import decision_ref
+from src.profile import section
 
 # Default location of the pre-ingested governance corpus (see
 # scripts/ingest_governance_docs.py - do NOT modify it here).
@@ -214,8 +215,8 @@ def render_decision(proposal: dict) -> str:
 # Lazy real drafter (thin; not unit-tested against a real LLM)
 # --------------------------------------------------------------------------- #
 _SYSTEM_PROMPT = """\
-Είσαι βοηθός σύνταξης αποφάσεων του Διοικητικού Συμβουλίου του Ελληνικού \
-Τμήματος της Διεθνούς Αμνηστίας. Συντάσσεις ΜΙΑ απόφαση σε επίσημη ελληνική \
+Είσαι βοηθός σύνταξης αποφάσεων του [ΟΡΓΑΝΟ] \
+του φορέα «[ΦΟΡΕΑΣ]». Συντάσσεις ΜΙΑ απόφαση σε επίσημη ελληνική \
 γλώσσα, ακολουθώντας πιστά τη δομή των πρακτικών.
 
 Η απόφαση αποτελείται από:
@@ -239,7 +240,7 @@ _SYSTEM_PROMPT = """\
 
 Απάντησε ΑΠΟΚΛΕΙΣΤΙΚΑ με έγκυρο JSON αυτής της μορφής, χωρίς άλλο κείμενο:
 {"considerations": ["...", "..."], "decision_text": "..."}
-"""
+""".replace("[ΟΡΓΑΝΟ]", section.profile.board.name_genitive or section.profile.board.name).replace("[ΦΟΡΕΑΣ]", section.name)
 
 
 class LLMDecisionDrafter:

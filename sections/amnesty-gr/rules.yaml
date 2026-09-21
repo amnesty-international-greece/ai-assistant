@@ -1,0 +1,31 @@
+# What the statute requires of this section.
+#
+# Every value cites the article it comes from, so a reader can check it and a
+# future amendment has one place to land. The platform enforces these; it does
+# not know them.
+
+board:
+  # "Το Διοικητικό Συμβούλιο βρίσκεται σε απαρτία όταν είναι παρόντα
+  #  τουλάχιστον πέντε (5) μέλη του" - καταστατικό 16.2
+  quorum: 5
+  quorum_article: "16.2"
+
+  # "συνεδριάζει τακτικά τουλάχιστον ανά δίμηνο" - καταστατικό 16.1
+  min_meetings_per_year: 6
+
+  # Notice given to the Board before a meeting. Practice, not statute: 16.1
+  # requires the agenda to go out with the invitation but sets no period.
+  min_notice_days: 7
+  max_advance_days: 14
+
+  # "απουσιάζει αδικαιολόγητα σε τρεις (3) συνεχόμενες συνεδριάσεις ή σε
+  #  πέντε (5) οποιεσδήποτε συνεδριάσεις εκπίπτει" - καταστατικό 16.4
+  consecutive_absences_forfeiting_seat: 3
+  absences_forfeiting_seat: 5
+
+assembly:
+  # "τριάντα (30) τουλάχιστον ημέρες πριν" - καταστατικό 13.5
+  min_notice_days: 30
+  min_electronic_notice_days: 15
+  # "δεν απαιτείται απαρτία" - καταστατικό 13.6
+  quorum_required: false

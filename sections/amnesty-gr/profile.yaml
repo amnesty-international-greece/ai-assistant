@@ -1,0 +1,45 @@
+# Διεθνής Αμνηστία - Ελληνικό Τμήμα
+#
+# Everything here belongs to this section, not to the platform. Another
+# section adopting the platform writes its own file; nothing in src/ should
+# name Amnesty International Greece.
+
+slug: amnesty-gr
+locale: el
+
+identity:
+  organisation: "Διεθνής Αμνηστία"
+  section: "Ελληνικό Τμήμα"
+  display_name: "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
+  legal_name: "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
+  website: "https://www.amnesty.gr"
+  email: "members@amnesty.org.gr"
+  phone: "2103600628"
+  address_lines:
+    - "Σίνα 30"
+    - "Αθήνα, 10672"
+  office_location: "στη διεύθυνση Σίνα 30, 2ος όροφος"
+  # How the organisation is said aloud - primes transcription and helps the
+  # minutes recognise references to itself.
+  aliases:
+    - "Διεθνής Αμνηστία"
+    - "Αμνηστία"
+
+board:
+  name: "Διοικητικό Συμβούλιο"
+  name_genitive: "Διοικητικού Συμβουλίου"
+  short_name: "ΔΣ"
+  ref_prefix: "ΔΣ"          # meeting references read ΔΣ07-2026
+  seats: 9                   # καταστατικό 13.12
+
+# Role mailboxes: one per role, never per person.
+roles:
+  board: "board@amnesty.org.gr"
+  director: "director@amnesty.org.gr"
+  secgen: "secgen@amnesty.org.gr"
+  members: "members@amnesty.org.gr"
+
+assets:
+  prompts: "src/prompts"
+  email_templates: "assets/email_templates"
+  governance_corpus: "assets/governance/articles.json"

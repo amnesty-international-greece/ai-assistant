@@ -14,6 +14,7 @@ from discord.ext import commands
 from src.config import settings
 from src.core.audit import log_action
 from src.integrations.discord.brand import AMNESTY_YELLOW, brand_embed
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class WelcomeCog(commands.Cog):
             title=f"{candle_emoji}Καλώς ήρθες στην Αμνηστία",
             description=(
                 f"Καλώς ήρθες, {member.mention}, στον Discord server της "
-                "**Διεθνούς Αμνηστίας - Ελληνικό Τμήμα**.\n\n"
+                f"**{section.name}**.\n\n"
                 "Ο server είναι ο χώρος επικοινωνίας και συντονισμού των μελών μας."
             ),
             color=AMNESTY_YELLOW,
@@ -77,7 +78,7 @@ class WelcomeCog(commands.Cog):
             ),
             inline=False,
         )
-        embed.set_footer(text="Διεθνής Αμνηστία - Ελληνικό Τμήμα")
+        embed.set_footer(text=section.name)
 
         try:
             dm = await member.create_dm()

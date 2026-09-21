@@ -97,9 +97,11 @@ def test_settings_that_belong_in_the_yaml_are_shown_in_the_example():
 def test_env_example_and_the_settings_agree():
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
     documented = {m.group(1).lower() for m in re.finditer(r"^([A-Z0-9_]+)=", text, re.M)}
+    example = _example()
     env_fields = {
         name for name, field in Settings.model_fields.items()
         if not (isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel))
+        and name not in example      # settings the YAML carries are not secrets
     }
     assert not (documented - env_fields), (
         f".env.example documents variables nothing reads: {sorted(documented - env_fields)}"

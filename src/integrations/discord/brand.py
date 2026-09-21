@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Iterable
 
 import discord
+from src.profile import section
+
+_SECTION_FOOTER = section.name
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +224,7 @@ def brand_embed(
     color: discord.Color | None = None,
     url: str | None = None,
     timestamp: datetime | None = None,
-    footer: str | None = "Διεθνής Αμνηστία - Ελληνικό Τμήμα",
+    footer: str | None = _SECTION_FOOTER,
     thumbnail_url: str | None = None,
     image_url: str | None = None,
     flame_bars: list[tuple[str, int]] | dict[str, int] | None = None,
@@ -230,8 +233,8 @@ def brand_embed(
 ) -> discord.Embed:
     """Return a pre-configured Embed in the Amnesty palette.
 
-    Defaults: AMNESTY_YELLOW color, our footer text.  Pass ``footer=None`` to
-    suppress the footer entirely.  ``timestamp=None`` defaults to NOW.
+    Defaults: AMNESTY_YELLOW color, and the section's name as the footer.
+    Pass ``footer=None`` to suppress the footer entirely.  ``timestamp=None`` defaults to NOW.
 
     v2 additions (2026-05-27 - backwards compatible):
         thumbnail_url:  Small image top-right.  Pass the literal string

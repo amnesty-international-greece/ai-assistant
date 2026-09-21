@@ -40,6 +40,7 @@ from src.integrations.discord.state import (
     EnabledChannelsStore,
     NotificationUsersStore,
 )
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ class AiAssistantCog(commands.Cog):
             embed = discord.Embed(
                 title="AI Assistant Bot",
                 description=(
-                    "Πλατφόρμα αυτοματισμού για τη Διεθνή Αμνηστία - Ελληνικό Τμήμα.\n\n"
+                    f"Πλατφόρμα αυτοματισμού για: {section.name}.\n\n"
                     "Διαχειρίζεται προσκλήσεις ΔΣ, πρωτόκολλο εγγράφων, ενημερωτικά δελτία, "
                     "γέφυρα email↔Discord, και πολλά άλλα."
                 ),
@@ -118,7 +119,7 @@ class AiAssistantCog(commands.Cog):
             website = settings.urls.website or ""
             if website:
                 embed.add_field(name="Web", value=website, inline=True)
-            embed.set_footer(text="Διεθνής Αμνηστία - Ελληνικό Τμήμα")
+            embed.set_footer(text=section.name)
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         @app_commands.command(name="health", description="Πλατφόρμα - υγεία υπηρεσιών")

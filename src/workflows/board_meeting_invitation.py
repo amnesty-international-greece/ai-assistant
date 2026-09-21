@@ -46,6 +46,7 @@ from src.integrations.zoom import ZoomClient
 from src.integrations.onedrive import OneDriveClient
 from src.integrations.brevo import BrevoClient
 from src.integrations.m365_mail import M365MailClient
+from src.profile import section
 
 logger = logging.getLogger(__name__)
 
@@ -886,7 +887,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             greek_date = _format_greek_date(meeting_date)
             type_genitive = _meeting_type_genitive(meeting_type)
 
-            _OFFICE_ADDRESS = "στη διεύθυνση Σίνα 30, 2ος όροφος"
+            _OFFICE_ADDRESS = section.profile.identity.office_location
             loc_upper = (location or "ΔΙΑΔΙΚΤΥΑΚΑ").strip().upper()
 
             if loc_upper == "ΔΙΑ ΖΩΣΗΣ":

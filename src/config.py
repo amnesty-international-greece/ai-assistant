@@ -67,7 +67,7 @@ class ZoomConfig(BaseModel):
 
 class BrevoConfig(BaseModel):
     sender_email: str = "info@amnesty.org.gr"
-    sender_name: str = "Διεθνής Αμνηστία - Ελληνικό Τμήμα"
+    sender_name: str = ""      # blank: the section profile names the sender
     # Default newsletter template & lists (can be overridden via CLI --brevo-template / --brevo-lists)
     newsletter_template_id: int | None = None
     # Brevo keeps LISTS and SEGMENTS in separate ID spaces; a campaign may
@@ -463,6 +463,8 @@ class Settings(BaseModel):
     minutes_pipeline: MinutesPipelineConfig = MinutesPipelineConfig()
     urls: UrlsConfig = UrlsConfig()
     roles: RolesConfig = RolesConfig()
+    # Which section this deployment serves: sections/<slug>/profile.yaml
+    section: str = "amnesty-gr"
     retention: RetentionConfig = RetentionConfig()
     backup: BackupConfig = BackupConfig()
     testing: TestingConfig = TestingConfig()
@@ -478,11 +480,23 @@ def _load_yaml_config() -> dict[str, Any]:
 
 
 def load_settings() -> Settings:
-    """Create Settings instance, merging .env secrets and config.yaml."""
+    """Create Settings instance, merging .env secrets, the section profile and config.yaml.
+
+    Precedence is profile, then config.yaml: the section's own file describes
+    who the deployment serves, and config.yaml may still override a value for
+    this installation. Secrets come only from the environment.
+    """
     yaml_config = _load_yaml_config()
     env_secrets = EnvSecrets()
-    # Merge: env secrets (flat) + yaml config (nested)
     merged = {**env_secrets.model_dump(), **yaml_config}
+
+    # Role mailboxes belong to the section, so they come from its profile
+    # unless config.yaml names them explicitly.
+    from src.profile.loader import load_section
+
+    section = load_section(str(merged.get("section") or "amnesty-gr"))
+    if section.profile.roles:
+        merged["roles"] = {**section.profile.roles, **(yaml_config.get("roles") or {})}
     return Settings(**merged)
 
 
