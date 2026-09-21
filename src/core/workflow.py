@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -195,6 +196,66 @@ class BaseWorkflow(ABC):
         self.current_step_index += 1
         self._transition(WorkflowState.IN_PROGRESS)
         return await self.run(self.context)
+
+    async def resume(self, workflow_id: str, approval_granted: bool = True) -> dict[str, Any]:
+        """Continue a SAVED run that stopped at an approval gate.
+
+        ``approve_and_resume`` only works on the run still held in memory, but
+        approval usually arrives later and in another process: someone runs a
+        CLI command or presses a Discord button hours after the run halted.
+        This rebuilds that run from ``workflow_state`` - its id, context and
+        position - and carries on from the gate.
+
+        With ``approval_granted=False`` the run is rolled back (when the
+        workflow defines ``rollback``) and marked cancelled.
+
+        Raises:
+            ValueError: no saved state, or the state cannot be read.
+            RuntimeError: the saved run is not waiting for approval.
+        """
+        state = get_workflow_state(workflow_id)
+        if not state:
+            raise ValueError(f"No saved state for workflow {workflow_id}")
+        data = state.get("data") or "{}"
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError as exc:
+                raise ValueError(f"Saved state of {workflow_id} is unreadable: {exc}") from exc
+
+        self.workflow_id = workflow_id
+        self.context = data.get("context") or {}
+        self.current_step_index = int(data.get("step_index") or 0)
+        saved_state = (state.get("state") or "").strip()
+
+        if saved_state == WorkflowState.COMPLETED.value:
+            return {"status": "completed", "context": self.context}
+        if saved_state != WorkflowState.AWAITING_APPROVAL.value:
+            raise RuntimeError(
+                f"Workflow {workflow_id} is '{saved_state}', not awaiting approval"
+            )
+        if self.current_step_index >= len(self.steps):
+            raise RuntimeError(
+                f"Workflow {workflow_id} stopped past its last step "
+                f"({self.current_step_index} of {len(self.steps)})"
+            )
+
+        self.state = WorkflowState.AWAITING_APPROVAL
+        if not approval_granted:
+            log_action(
+                workflow=self.name,
+                action="approval_denied",
+                actor=self.actor,
+                target=self.steps[self.current_step_index].name,
+                details={"workflow_id": workflow_id},
+            )
+            rollback = getattr(self, "rollback", None)
+            if callable(rollback):
+                await rollback(self.context)
+            self._transition(WorkflowState.CANCELLED)
+            return {"status": "cancelled", "workflow_id": workflow_id, "context": self.context}
+
+        return await self.approve_and_resume()
 
     async def _run_step(self, step: WorkflowStep) -> StepResult:
         """Execute a step with logging."""
