@@ -11,6 +11,7 @@ from typing import Any
 
 from src.config import settings
 from src.core.protocol import allocate_protocol_number, commit_protocol_reservation
+from src.workflows.decision_drafter import compute_decision_ref
 from src.core.claude import ClaudeClient
 from src.core.email_templates import render_email
 from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
@@ -648,11 +649,13 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                 message="google.decisions_sheet_id not configured",
             )
 
-        # Determine starting decision sequence number
-        # Decision format: ΔΣ{decision_seq:02d}-{meeting_number:02d}-{year}
-        # Look for last entry for this meeting
+        # Decision refs are ΔΣ{NN}-{MM}-{YYYY}: compute_decision_ref is the one
+        # implementation of that, shared with the Zoom sidebar.
         mm = f"{meeting_number:02d}"
         yyyy = str(meeting_year)
+        meeting_ref = (
+            ctx.get("raw_meeting_id") or ctx.get("meeting_ref") or f"ΔΣ{mm}-{yyyy}"
+        ).strip()
         decision_seq = 1
 
         try:
@@ -672,13 +675,45 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             logger.warning("Could not read Βιβλίο Αποφάσεων sheet: %s - starting at 1", e)
             decision_seq = 1
 
-        # Build rows to write
+        # The Βιβλίο Αποφάσεων is the legal record of what the Board resolved,
+        # so it takes the wording captured live during the meeting, not the
+        # LLM's retelling of it in the minutes draft.
+        captured: dict[int, dict] = {}
+        try:
+            from src.core.meeting_events import MeetingEventsStore
+
+            for event in MeetingEventsStore().list_events(meeting_ref, event_type="decision"):
+                payload = event.get("payload") or {}
+                seq = int(payload.get("seq") or 0)
+                if seq:
+                    captured[seq] = payload
+        except Exception as exc:
+            logger.warning("Could not read captured decisions for %s: %s", meeting_ref, exc)
+
+        if captured and len(captured) != len(decisions):
+            logger.warning(
+                "%s: %d decision(s) captured during the meeting, %d in the draft - "
+                "writing the captured wording where available",
+                meeting_ref, len(captured), len(decisions),
+            )
+
         rows: list[list[str]] = []
         decision_numbers: list[str] = []
+        verbatim_used = 0
         for d in decisions:
-            decision_number = f"ΔΣ{decision_seq:02d}-{mm}-{yyyy}"
+            payload = captured.get(decision_seq) or {}
+            text = (payload.get("decision_text") or "").strip() or d.get("text", "")
+            if payload.get("decision_text"):
+                verbatim_used += 1
+            try:
+                decision_number = payload.get("ref") or compute_decision_ref(
+                    meeting_ref, decision_seq
+                )
+            except ValueError as exc:
+                logger.warning("Could not compute a decision ref for %s: %s", meeting_ref, exc)
+                decision_number = f"ΔΣ{decision_seq:02d}-{mm}-{yyyy}"
             decision_numbers.append(decision_number)
-            rows.append([decision_number, d.get("text", "")])
+            rows.append([decision_number, text])
             decision_seq += 1
 
         if test_mode:
@@ -697,6 +732,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             message=f"{'[TEST] Would write' if test_mode else 'Wrote'} {len(rows)} decision(s) to Βιβλίο Αποφάσεων",
             data={
                 "decisions_written": len(rows),
+                "decisions_verbatim": verbatim_used,
                 "decision_numbers": decision_numbers,
             },
         )
