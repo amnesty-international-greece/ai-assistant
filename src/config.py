@@ -497,6 +497,30 @@ def load_settings() -> Settings:
     section = load_section(str(merged.get("section") or "amnesty-gr"))
     if section.profile.roles:
         merged["roles"] = {**section.profile.roles, **(yaml_config.get("roles") or {})}
+
+    # Notice periods and cadence are what the statute requires, so they come
+    # from the section's rules.yaml. config.yaml may still override one for
+    # this installation, but it is no longer where they are written down.
+    workflows_yaml = dict(yaml_config.get("workflows") or {})
+    board_rules = {
+        "min_notice_days": section.rules.board.min_notice_days,
+        "max_advance_days": section.rules.board.max_advance_days,
+    }
+    assembly_rules = {
+        "min_notice_days": section.rules.assembly.min_notice_days,
+        "min_electronic_notice_days": section.rules.assembly.min_electronic_notice_days,
+    }
+    merged["workflows"] = {
+        **workflows_yaml,
+        "board_meeting": {
+            **{k: v for k, v in board_rules.items() if v},
+            **(workflows_yaml.get("board_meeting") or {}),
+        },
+        "general_assembly": {
+            **{k: v for k, v in assembly_rules.items() if v},
+            **(workflows_yaml.get("general_assembly") or {}),
+        },
+    }
     return Settings(**merged)
 
 

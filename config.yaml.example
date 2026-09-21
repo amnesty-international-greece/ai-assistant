@@ -119,9 +119,9 @@ discord:
 
 workflows:
   board_meeting:
+    # Notice periods and cadence live in sections/<slug>/rules.yaml,
+    # with the article each one comes from.
     reminder_hours_before: 3
-    min_notice_days: 7
-    max_advance_days: 14
     minutes_share_message: "Σας κοινοποιούνται τα πρόχειρα πρακτικά προς σχολιασμό. Παρακαλώ αφήστε τα σχόλιά σας απευθείας στο έγγραφο."
     # Add one entry per board member. Each receives a personal Zoom join link.
     board_members:
@@ -132,9 +132,6 @@ workflows:
         first_name: "Γεν. Γραμματέας"
         last_name: "Επώνυμο"
       # Add remaining board members here...
-  general_assembly:
-    min_notice_days: 30
-    min_electronic_notice_days: 15
 
 # ── M365 inbox watcher ────────────────────────────────────────────────────────
 m365_inbox:

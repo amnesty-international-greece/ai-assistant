@@ -298,6 +298,10 @@ async def _run_invite_collecting_input(wf_factory, initial_data: dict):
             if not _confirm("  Schedule it anyway? [y/n]: "):
                 break
             base["allow_far_date"] = True
+        elif need == "allow_short_notice":
+            if not _confirm("  Call it on shorter notice anyway? [y/n]: "):
+                break
+            base["allow_short_notice"] = True
         else:
             break
         print()
@@ -555,6 +559,8 @@ async def _run_invite_resume(args: argparse.Namespace) -> None:
         initial_data["skip_newsletter"] = True
     if getattr(args, "allow_far_date", False):
         initial_data["allow_far_date"] = True
+    if getattr(args, "allow_short_notice", False):
+        initial_data["allow_short_notice"] = True
 
     if getattr(args, "protocol", None):
         initial_data["protocol_number"] = args.protocol
@@ -874,6 +880,8 @@ async def _run_invite(args: argparse.Namespace) -> None:
         print("  Newsletter: OFF - no Brevo campaign will be created")
     if getattr(args, "allow_far_date", False):
         initial_data["allow_far_date"] = True
+    if getattr(args, "allow_short_notice", False):
+        initial_data["allow_short_notice"] = True
 
     if not await _brevo_preflight(args, initial_data):
         return
@@ -3255,7 +3263,9 @@ def main() -> None:
     invite_parser.add_argument("--skip-brevo-check", action="store_true",
                                help="Do not run the Brevo readiness check before starting")
     invite_parser.add_argument("--allow-far-date", action="store_true",
-                               help="Allow a meeting date beyond workflows.board_meeting.max_advance_days")
+                               help="Allow a meeting date beyond the section's max_advance_days")
+    invite_parser.add_argument("--allow-short-notice", action="store_true",
+                               help="Call the meeting with less notice than the section's rules give")
     invite_parser.add_argument("--no-newsletter", action="store_true",
                                help="Send the invitation without the Brevo member newsletter "
                                     "(remembered for the later resume / sheet auto-resume)")
@@ -3286,7 +3296,9 @@ def main() -> None:
     resume_parser.add_argument("--brevo-lists", help="Comma-separated Brevo LIST ids (replaces the configured audience)")
     resume_parser.add_argument("--skip-brevo-check", action="store_true", help="Do not run the Brevo readiness check")
     resume_parser.add_argument("--allow-far-date", action="store_true",
-                               help="Allow a meeting date beyond workflows.board_meeting.max_advance_days")
+                               help="Allow a meeting date beyond the section's max_advance_days")
+    resume_parser.add_argument("--allow-short-notice", action="store_true",
+                               help="Call the meeting with less notice than the section's rules give")
     resume_parser.add_argument("--no-newsletter", action="store_true",
                                help="Send the invitation without the Brevo member newsletter")
 

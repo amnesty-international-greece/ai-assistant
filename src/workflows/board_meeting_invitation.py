@@ -709,6 +709,21 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                     ),
                 )
 
+            try:
+                min_notice = int(settings.workflows.board_meeting.min_notice_days or 0)
+            except (TypeError, ValueError):   # a stubbed setting in a test
+                min_notice = 0
+            if min_notice and days_until < min_notice and not ctx.get("allow_short_notice"):
+                return StepResult(
+                    success=False,
+                    data={"needs_input": "allow_short_notice"},
+                    message=(
+                        f"Meeting is {days_until} day(s) away; the section gives the "
+                        f"Board {min_notice} days' notice. Re-run with "
+                        f"--allow-short-notice to call it anyway."
+                    ),
+                )
+
             if days_until > max_advance and not ctx.get("allow_far_date"):
                 return StepResult(
                     success=False,

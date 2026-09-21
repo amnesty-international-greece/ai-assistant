@@ -39,6 +39,15 @@ _DISTRIBUTIONS = {
 }
 _TEST_ONLY = {"pytest"}
 
+# Settings whose values are the statute's, so they live in the section's
+# rules.yaml (with the article they come from) and not in config.yaml.
+_FROM_SECTION_RULES = {
+    "workflows.board_meeting.min_notice_days",
+    "workflows.board_meeting.max_advance_days",
+    "workflows.general_assembly.min_notice_days",
+    "workflows.general_assembly.min_electronic_notice_days",
+}
+
 
 def _model_paths(model: type[BaseModel], prefix: str = "") -> dict[str, object]:
     out: dict[str, object] = {}
@@ -89,6 +98,7 @@ def test_settings_that_belong_in_the_yaml_are_shown_in_the_example():
     missing = [
         path for path in _model_paths(Settings)
         if "." in path and path not in example
+        and path not in _FROM_SECTION_RULES
         and not any(path.startswith(s + ".") for s in secrets)
     ]
     assert not missing, f"Settings absent from config.yaml.example: {sorted(missing)}"
