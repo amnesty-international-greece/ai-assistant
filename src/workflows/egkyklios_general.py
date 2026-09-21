@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import settings
+from src.core.protocol import allocate_protocol_number, commit_protocol_reservation
 from src.core.audit import (
     create_egkyklios_draft,
     get_egkyklios_draft,
@@ -691,9 +692,11 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
 
         try:
             year_str = period_end[:4] if len(period_end) >= 4 else str(date.today().year)
-            protocol_number = await self.onedrive.get_next_protocol_number(int(year_str))
+            protocol_number = await allocate_protocol_number(
+                self.onedrive, int(year_str), self.workflow_id
+            )
         except Exception as e:
-            logger.warning("Αποτυχία ανάκτησης αριθμού πρωτοκόλλου: %s", e)
+            logger.warning("Αποτυχία δέσμευσης αριθμού πρωτοκόλλου: %s", e)
             protocol_number = f"{date.today().year}_000"
 
         filename = f"[{protocol_number}] Γενική Εγκύκλιος Ενημέρωσης - {title}.pdf"
@@ -725,6 +728,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 main_points="",
                 tags="Εγκύκλιοι, Ενημέρωση Μελών",
             )
+            commit_protocol_reservation(self.workflow_id)
         except Exception as e:
             logger.warning("Αποτυχία εγγραφής στο πρωτόκολλο (non-fatal): %s", e)
 

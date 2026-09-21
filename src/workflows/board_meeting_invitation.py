@@ -27,6 +27,11 @@ from zoneinfo import ZoneInfo
 _ATHENS_TZ = ZoneInfo("Europe/Athens")
 
 from src.config import settings
+from src.core.protocol import (
+    allocate_protocol_number,
+    commit_protocol_reservation,
+    release_protocol_reservation,
+)
 from src.core.email_templates import render_email
 from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
 from src.integrations.google_drive import GoogleClient
@@ -187,6 +192,13 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                 logger.info("Rollback: deleted archived PDF %s", remote_path)
             except Exception as e:
                 logger.warning("Rollback: could not delete archived PDF (non-fatal): %s", e)
+
+        # Free the reservation, so the number is not burned by a run that
+        # never reached the register.
+        try:
+            release_protocol_reservation(self.workflow_id)
+        except Exception as exc:
+            logger.warning("Rollback: could not release protocol reservation: %s", exc)
 
         # Delete protocol row (non-fatal)
         protocol_number = ctx.get("protocol_number") or ""
@@ -853,7 +865,9 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
 
             _PROTO_RE = r"^\d{4}[_-]\d+$"
             if not (protocol_number and _re.match(_PROTO_RE, protocol_number.strip())):
-                protocol_number = await _fetch_next_protocol_number(self.onedrive) or ""
+                protocol_number = await _fetch_next_protocol_number(
+                    self.onedrive, self.workflow_id
+                ) or ""
 
             if not protocol_number:
                 # The PDF is still worth producing; the number can be added with
@@ -1067,8 +1081,22 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
                         main_points=main_pts,
                         tags="Διοικητικά, Προσκλήσεις",
                     )
+                    commit_protocol_reservation(self.workflow_id)
                 except Exception as reg_err:
-                    logger.warning("Protocol registry update failed (non-fatal): %s", reg_err)
+                    # The number is printed on the PDF that was just uploaded.
+                    # Carrying on would leave a number in use that the register
+                    # never learns about - the gap nobody can explain later.
+                    logger.error("Protocol register write failed for %s: %s",
+                                 protocol_number, reg_err)
+                    return StepResult(
+                        success=False,
+                        data={"archive_file_id": file_id, "archive_share_link": share_link},
+                        message=(
+                            f"Protocol register write failed for {protocol_number}: {reg_err}. "
+                            f"The PDF is uploaded; add the row by hand or re-run after fixing "
+                            f"access, then check `ai-assistant register audit`."
+                        ),
+                    )
 
             return StepResult(
                 success=True,
@@ -1711,18 +1739,18 @@ async def _publish_board_meeting_scheduled(ctx: dict[str, Any]) -> None:
         logger.warning("Bus publish board.meeting.scheduled failed (non-fatal): %s", exc)
 
 
-async def _fetch_next_protocol_number(onedrive_client) -> str:
+async def _fetch_next_protocol_number(onedrive_client, workflow_id: str) -> str:
+    """Reserve this run's protocol number (never just read the next one)."""
     if not settings.ms_client_id or not settings.ms_tenant_id:
         logger.debug("MS credentials not configured - skipping auto protocol fetch")
         return ""
 
     try:
-        year = _date.today().year
         # Awaited directly - the workflow already runs inside an event loop, so
         # asyncio.run() here would raise "cannot be called from a running loop".
-        return await onedrive_client.get_next_protocol_number(year)
+        return await allocate_protocol_number(onedrive_client, _date.today().year, workflow_id)
     except Exception as e:
-        logger.warning("Could not fetch protocol number from SharePoint Excel: %s", e)
+        logger.warning("Could not reserve a protocol number: %s", e)
         return ""
 
 

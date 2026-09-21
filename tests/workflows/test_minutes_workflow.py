@@ -376,7 +376,8 @@ async def test_step_finalize(workflow, tmp_path):
 
     workflow._google.export_doc_as_pdf.side_effect = fake_export
     workflow._google.rename_file.return_value = None
-    workflow._onedrive.get_next_protocol_number.return_value = "2026_006"
+    # The register holds 2026_005, so this run reserves 2026_006.
+    workflow._onedrive.get_current_year_max_seq.return_value = 5
     workflow._onedrive.upload_file.return_value = {"id": "od-file-id", "size": 1024}
     workflow._onedrive.append_protocol_row.return_value = None
 
@@ -397,8 +398,8 @@ async def test_step_finalize(workflow, tmp_path):
     assert result.data["protocol_number"] == "2026_006"
     workflow._google.export_doc_as_pdf.assert_called_once()
 
-    # Protocol number was fetched from OneDrive, not from Google sheet
-    workflow._onedrive.get_next_protocol_number.assert_awaited_once_with(2026)
+    # The number is reserved, seeded from the register - not just read from it
+    workflow._onedrive.get_current_year_max_seq.assert_awaited_once_with(2026)
     workflow._google.get_last_row_value.assert_not_called()
 
     # Upload kwargs assertions
@@ -448,7 +449,7 @@ async def test_step_finalize_no_onedrive(workflow, tmp_path):
     assert result.data["archive_info"]["status"] == "skipped"
     # OneDrive should NOT have been called
     workflow._onedrive.upload_file.assert_not_called()
-    workflow._onedrive.get_next_protocol_number.assert_not_called()
+    workflow._onedrive.get_current_year_max_seq.assert_not_called()
     workflow._onedrive.append_protocol_row.assert_not_called()
 
 

@@ -66,6 +66,95 @@ def _confirm(prompt: str = "Approve? [y/n]: ") -> bool:
 # --- Workflow Commands ---
 
 
+def cmd_register(args: argparse.Namespace) -> None:
+    """Protocol register utilities."""
+    init_db()
+    if getattr(args, "register_command", None) == "audit":
+        asyncio.run(_run_register_audit(args))
+        return
+    print("Usage: ai-assistant register audit [--year YYYY] [--offline] [--release WORKFLOW_ID]")
+
+
+async def _run_register_audit(args: argparse.Namespace) -> None:
+    """Report gaps, stale reservations and rows nobody reserved.
+
+    A protocol number must be unique and gapless: it is how a document is
+    referred to for the rest of its life. This compares the reservations the
+    platform made with what the register actually contains, so a number burned
+    by a failed run is visible instead of becoming an unexplained hole.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from src.core.protocol import find_register_gaps, release_protocol_reservation
+
+    year = int(getattr(args, "year", 0) or datetime.now().year)
+    _print_header(f"Protocol register audit - {year}")
+
+    released_id = getattr(args, "release", None)
+    if released_id:
+        count = release_protocol_reservation(released_id)
+        print(f"  Released {count} uncommitted reservation(s) of workflow {released_id}.")
+        print()
+
+    register_ids: list[str] | None = None
+    if getattr(args, "offline", False):
+        print("  Register: not read (--offline); reservations only.")
+    elif not (settings.ms_client_id and settings.ms_tenant_id):
+        print("  Register: not read (M365 not configured); reservations only.")
+    else:
+        from src.integrations.m365.onedrive import OneDriveClient
+        try:
+            register_ids = await OneDriveClient().list_protocol_ids(year)
+            print(f"  Register: {len(register_ids)} row(s) for {year}.")
+        except Exception as exc:
+            print(f"  Register: could not be read ({exc}); reservations only.")
+
+    report = find_register_gaps(year, register_ids)
+    reserved = report["reserved"]
+    print(f"  Reservations: {len(reserved)}  |  highest number in use: "
+          f"{year}_{report['highest']:03d}")
+    print()
+
+    stale_after = timedelta(hours=int(getattr(args, "stale_hours", 24) or 24))
+    now = datetime.now(timezone.utc)
+    stale = []
+    for row in report["uncommitted"]:
+        try:
+            reserved_at = datetime.fromisoformat(str(row.get("reserved_at")))
+            if reserved_at.tzinfo is None:
+                reserved_at = reserved_at.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            reserved_at = now
+        if now - reserved_at > stale_after:
+            stale.append((row, reserved_at))
+
+    if stale:
+        print("  STALE reservations (claimed, never written to the register):")
+        for row, reserved_at in stale:
+            print(f"    {year}_{int(row['seq']):03d}  workflow {row['workflow_id']}  "
+                  f"reserved {reserved_at.date()}")
+        print("    Release one with: ai-assistant register audit --release <workflow_id>")
+        print()
+
+    if report["missing"]:
+        print("  Committed but NOT in the register (write failed after the fact):")
+        print("    " + ", ".join(f"{year}_{n:03d}" for n in report["missing"]))
+        print()
+
+    if report["unreserved"]:
+        print("  In the register with no reservation (added by hand - normal):")
+        print("    " + ", ".join(f"{year}_{n:03d}" for n in report["unreserved"]))
+        print()
+
+    if report["gaps"] and register_ids is not None:
+        print("  GAPS - numbers nobody holds and the register lacks:")
+        print("    " + ", ".join(f"{year}_{n:03d}" for n in report["gaps"]))
+        print()
+
+    clean = not (stale or report["missing"] or (report["gaps"] and register_ids is not None))
+    print("  Register is consistent." if clean else "  See the entries above.")
+
+
 def cmd_invite(args: argparse.Namespace) -> None:
     """Dispatch invite subcommands or run the workflow."""
     init_db()
@@ -3142,6 +3231,22 @@ def main() -> None:
     )
     reset_sheet_parser.add_argument("--workflow-id", help=argparse.SUPPRESS)
 
+    register_parser = subparsers.add_parser(
+        "register", help="Protocol register (πρωτόκολλο) utilities")
+    register_sub = register_parser.add_subparsers(dest="register_command")
+    register_audit = register_sub.add_parser(
+        "audit",
+        help="Compare reserved protocol numbers with the register: gaps, stale "
+             "reservations, rows added by hand",
+    )
+    register_audit.add_argument("--year", type=int, help="Year to audit (default: this year)")
+    register_audit.add_argument("--offline", action="store_true",
+                                help="Do not read the register from SharePoint")
+    register_audit.add_argument("--stale-hours", type=int, default=24,
+                                help="Age at which an uncommitted reservation counts as stale")
+    register_audit.add_argument("--release", metavar="WORKFLOW_ID",
+                                help="Release that workflow's uncommitted reservations")
+
     # Upload Brevo template
     tmpl_parser = subparsers.add_parser("upload-template", help="Upload HTML file to a Brevo template")
     tmpl_parser.add_argument("--file", required=True, help="Path to the HTML file")
@@ -3459,6 +3564,7 @@ def main() -> None:
         "test-claude": cmd_test_claude,
         "smoke-test": cmd_smoke_test,
         "invite": cmd_invite,
+        "register": cmd_register,
         "auth-google": cmd_auth_google,
         "auth": cmd_auth,
         "onedrive": cmd_onedrive,

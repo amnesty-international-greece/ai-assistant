@@ -1129,6 +1129,27 @@ class OneDriveClient(M365GraphAuthMixin):
         # Last n entries (most recent end of the list)
         return collected[-n:] if collected else []
 
+    async def list_protocol_ids(self, year: int) -> list[str]:
+        """Every protocol id recorded for *year*, in sheet order.
+
+        Read-only. Used by ``register audit`` to compare what the register
+        holds against what the workflows reserved.
+        """
+        import re as _re
+        import openpyxl
+
+        wb_path = await self._workbook_path_for_read()
+        wb = openpyxl.load_workbook(wb_path, data_only=True, read_only=True)
+        sheet_name = str(year)
+        if sheet_name not in wb.sheetnames:
+            return []
+        ids: list[str] = []
+        for row in wb[sheet_name].iter_rows(min_row=2, max_col=1, values_only=True):
+            val = row[0]
+            if val and _re.match(r"^(\d{4})[-_](\d+)$", str(val).strip()):
+                ids.append(str(val).strip())
+        return ids
+
     async def get_current_year_max_seq(self, year: int) -> int:
         """Return the highest seq number present in the xlsx for *year*, or 0.
 

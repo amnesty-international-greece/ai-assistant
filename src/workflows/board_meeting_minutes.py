@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import settings
+from src.core.protocol import allocate_protocol_number, commit_protocol_reservation
 from src.core.claude import ClaudeClient
 from src.core.email_templates import render_email
 from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
@@ -514,9 +515,11 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         protocol_number = ""
         if settings.ms_client_id and settings.ms_tenant_id:
             try:
-                protocol_number = await self.onedrive.get_next_protocol_number(meeting_year)
+                protocol_number = await allocate_protocol_number(
+                    self.onedrive, meeting_year, self.workflow_id
+                )
             except Exception as e:
-                logger.warning("Could not fetch next protocol number from OneDrive: %s", e)
+                logger.warning("Could not reserve a protocol number: %s", e)
                 protocol_number = f"{meeting_year}_001"
         else:
             protocol_number = f"{meeting_year}_001"
@@ -560,6 +563,7 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
                         main_points=key_points,
                         tags="Διοικητικά, Πρακτικά",
                     )
+                    commit_protocol_reservation(self.workflow_id)
                 except Exception as e:
                     logger.warning("Could not append row to protocol registry: %s", e)
 
