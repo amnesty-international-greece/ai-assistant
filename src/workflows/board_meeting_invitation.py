@@ -27,6 +27,13 @@ from zoneinfo import ZoneInfo
 _ATHENS_TZ = ZoneInfo("Europe/Athens")
 
 from src.config import settings
+from src.domain.locale_el import (
+    MONTHS_GENITIVE_LIST,
+    format_date,
+    meeting_type_adjective,
+    meeting_type_genitive,
+)
+from src.domain.refs import meeting_id, meeting_ref_from_date
 from src.core.protocol import (
     allocate_protocol_number,
     commit_protocol_reservation,
@@ -780,9 +787,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             start_time = f"{meeting_date}T{meeting_time}:00"
 
             raw_id = ctx.get("raw_meeting_id", "")
-            year = meeting_date[:4] if len(meeting_date) >= 4 else "ΧΧΧΧ"
-            seq_str = str(meeting_number).zfill(2) if str(meeting_number).isdigit() else str(meeting_number)
-            meeting_ref = raw_id or f"ΔΣ{seq_str}-{year}"
+            meeting_ref = meeting_ref_from_date(meeting_number, meeting_date, raw=raw_id)
             topic = f"Συνεδρίαση {meeting_ref}"
 
             agenda_items = ctx.get("agenda_items", [])
@@ -959,9 +964,7 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             zoom_url = ctx.get("invitation_zoom_url") or ctx.get("zoom_join_url", "")
 
             raw_id = ctx.get("raw_meeting_id", "")
-            year = meeting_date[:4] if len(meeting_date) >= 4 else "ΧΧΧΧ"
-            seq_str = str(meeting_number).zfill(2) if str(meeting_number).isdigit() else str(meeting_number)
-            meeting_ref = raw_id or f"ΔΣ{seq_str}-{year}"
+            meeting_ref = meeting_ref_from_date(meeting_number, meeting_date, raw=raw_id)
 
             import re as _re
             doc_base = f"Πρόσκληση - Συνεδρίαση {meeting_ref}"
@@ -1069,9 +1072,9 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
             if protocol_number and year_str:
                 try:
                     raw_id = ctx.get("raw_meeting_id", "")
-                    year = meeting_date[:4] if len(meeting_date) >= 4 else "ΧΧΧΧ"
-                    seq_str = str(meeting_number).zfill(2) if str(meeting_number).isdigit() else str(meeting_number)
-                    meeting_ref = raw_id or f"ΔΣ{seq_str}-{year}"
+                    meeting_ref = meeting_ref_from_date(
+                        meeting_number, meeting_date, raw=raw_id
+                    )
                     title = f"Πρόσκληση - Συνεδρίαση {meeting_ref}"
                     main_pts = "\n".join(f"{i}. {item}" for i, item in enumerate(agenda_items, 1)) if agenda_items else ""
                     await self.onedrive.append_protocol_row(
@@ -1345,22 +1348,9 @@ class BoardMeetingInvitationWorkflow(BaseWorkflow):
         meeting_type = ctx.get("meeting_type", "ΤΑΚΤΙΚΗ")
         zoom_link = ctx.get("zoom_join_url", "")
         raw_id = ctx.get("raw_meeting_id", "")
-        year = meeting_date[:4] if len(meeting_date) >= 4 else "ΧΧΧΧ"
-        seq_str = str(meeting_number).zfill(2) if str(meeting_number).isdigit() else str(meeting_number)
-        meeting_ref = raw_id or f"ΔΣ{seq_str}-{year}"
-
-        _GREEK_MONTHS = {
-            1: "Ιανουαρίου", 2: "Φεβρουαρίου", 3: "Μαρτίου", 4: "Απριλίου",
-            5: "Μαΐου", 6: "Ιουνίου", 7: "Ιουλίου", 8: "Αυγούστου",
-            9: "Σεπτεμβρίου", 10: "Οκτωβρίου", 11: "Νοεμβρίου", 12: "Δεκεμβρίου",
-        }
-        try:
-            dt = _date.fromisoformat(meeting_date)
-            greek_date = f"{dt.day} {_GREEK_MONTHS[dt.month]} {dt.year}"
-        except (ValueError, KeyError):
-            greek_date = meeting_date
-
-        type_lower = "έκτακτη" if "ΕΚΤΑΚΤΗ" in str(meeting_type).upper() else "τακτική"
+        meeting_ref = meeting_ref_from_date(meeting_number, meeting_date, raw=raw_id)
+        greek_date = format_date(meeting_date)
+        type_lower = meeting_type_adjective(meeting_type)
 
         agenda_items = ctx.get("agenda_items", [])
         if agenda_items:
@@ -1653,17 +1643,12 @@ def _derive_meeting_id(ctx: dict[str, Any]) -> str:
 
     Returns "" if no usable data is present.
     """
-    raw_id = (ctx.get("raw_meeting_id") or "").strip()
-    if raw_id:
-        return f"board_meeting:{raw_id}"
-
-    meeting_number = ctx.get("meeting_number", "")
-    meeting_date = ctx.get("meeting_date", "")
-    if meeting_number and meeting_date and len(meeting_date) >= 4:
-        seq_str = str(meeting_number).zfill(2) if str(meeting_number).isdigit() else str(meeting_number)
-        year = meeting_date[:4]
-        return f"board_meeting:ΔΣ{seq_str}-{year}"
-    return ""
+    ref = meeting_ref_from_date(
+        ctx.get("meeting_number", ""),
+        ctx.get("meeting_date", ""),
+        raw=ctx.get("raw_meeting_id") or "",
+    )
+    return meeting_id(ref) if ref else ""
 
 
 async def _publish_board_meeting_scheduled(ctx: dict[str, Any]) -> None:
@@ -1842,24 +1827,8 @@ def _parse_sheet_time(raw: str) -> str:
     return ""
 
 
-_GREEK_MONTHS = [
-    "", "Ιανουαρίου", "Φεβρουαρίου", "Μαρτίου", "Απριλίου", "Μαΐου", "Ιουνίου",
-    "Ιουλίου", "Αυγούστου", "Σεπτεμβρίου", "Οκτωβρίου", "Νοεμβρίου", "Δεκεμβρίου",
-]
-
-
-def _format_greek_date(iso_date: str) -> str:
-    try:
-        d = _date.fromisoformat(iso_date)
-        return f"{d.day} {_GREEK_MONTHS[d.month]} {d.year}"
-    except (ValueError, TypeError, IndexError):
-        return iso_date
-
-
-def _meeting_type_genitive(meeting_type: str) -> str:
-    t = (meeting_type or "ΤΑΚΤΙΚΗ").strip().upper()
-    if t in ("ΤΑΚΤΙΚΗ", "ΤΑΚΤΙΚΗΣ"):
-        return "ΤΑΚΤΙΚΗΣ"
-    if t in ("ΕΚΤΑΚΤΗ", "ΕΚΤΑΚΤΗΣ"):
-        return "ΕΚΤΑΚΤΗΣ"
-    return t
+# Kept as module-level names because tests and callers import them; the
+# implementations now live in the domain locale.
+_GREEK_MONTHS = MONTHS_GENITIVE_LIST
+_format_greek_date = format_date
+_meeting_type_genitive = meeting_type_genitive

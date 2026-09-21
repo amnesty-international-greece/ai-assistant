@@ -15,6 +15,7 @@ from pathlib import Path
 
 from src.config import settings
 from src.core.audit import init_db, get_audit_log, log_action
+from src.domain.refs import meeting_ref_from_date
 from src.core.claude import ClaudeClient
 
 logger = logging.getLogger(__name__)
@@ -1019,8 +1020,8 @@ async def _run_invite(args: argparse.Namespace) -> None:
             location       = ctx.get("location") or "ΔΙΑΔΙΚΤΥΑΚΑ"
             agenda_items   = ctx.get("agenda_items", [])
 
-            seq = meeting_number.zfill(2) if meeting_number.isdigit() else meeting_number
-            print(f"  Συνεδρίαση:  ΔΣ{seq}-{meeting_date[:4]}")
+            print(f"  Συνεδρίαση:  "
+                  f"{meeting_ref_from_date(meeting_number, meeting_date)}")
             print(f"  Ημερομηνία:  {meeting_date}  {meeting_time}")
             print(f"  Τύπος:       {meeting_type}")
             print(f"  Τοποθεσία:   {location}")
@@ -1130,12 +1131,11 @@ async def _run_invite(args: argparse.Namespace) -> None:
     if result.get("status") == "completed":
         _print_header("WORKFLOW COMPLETED")
         ctx = wf.context
-        raw_id = ctx.get('raw_meeting_id', '')
-        mn = ctx.get('meeting_number', '')
-        md = ctx.get('meeting_date', '')
-        year = md[:4] if len(md) >= 4 else 'ΧΧΧΧ'
-        seq = mn.zfill(2) if mn.isdigit() else mn
-        meeting_label = raw_id or f"ΔΣ{seq}-{year}"
+        meeting_label = meeting_ref_from_date(
+            ctx.get("meeting_number", ""),
+            ctx.get("meeting_date", ""),
+            raw=ctx.get("raw_meeting_id", ""),
+        )
         print(f"  Meeting:       {meeting_label}")
         print(f"  Date:          {ctx.get('meeting_date', 'N/A')}")
         print(f"  Zoom:          {ctx.get('zoom_join_url', 'N/A')}")

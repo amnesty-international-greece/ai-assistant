@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config import settings
+from src.domain.locale_el import MONTHS_GENITIVE, MONTHS_NOMINATIVE_UPPER
 from src.core.protocol import allocate_protocol_number, commit_protocol_reservation
 from src.core.audit import (
     create_egkyklios_draft,
@@ -43,19 +44,8 @@ logger = logging.getLogger(__name__)
 _BOARD_EMAIL = settings.roles.board
 _DIRECTOR_EMAIL = settings.roles.director
 
-# Greek month names in nominative (upper) for the title
-_GREEK_MONTHS_TITLE = {
-    1: "ΙΑΝΟΥΑΡΙΟΣ", 2: "ΦΕΒΡΟΥΑΡΙΟΣ", 3: "ΜΑΡΤΙΟΣ", 4: "ΑΠΡΙΛΙΟΣ",
-    5: "ΜΑΪΟΣ", 6: "ΙΟΥΝΙΟΣ", 7: "ΙΟΥΛΙΟΣ", 8: "ΑΥΓΟΥΣΤΟΣ",
-    9: "ΣΕΠΤΕΜΒΡΙΟΣ", 10: "ΟΚΤΩΒΡΙΟΣ", 11: "ΝΟΕΜΒΡΙΟΣ", 12: "ΔΕΚΕΜΒΡΙΟΣ",
-}
-
-# Greek month names in genitive (for prose references)
-_GREEK_MONTHS_GEN = {
-    1: "Ιανουαρίου", 2: "Φεβρουαρίου", 3: "Μαρτίου", 4: "Απριλίου",
-    5: "Μαΐου", 6: "Ιουνίου", 7: "Ιουλίου", 8: "Αυγούστου",
-    9: "Σεπτεμβρίου", 10: "Οκτωβρίου", 11: "Νοεμβρίου", 12: "Δεκεμβρίου",
-}
+_GREEK_MONTHS_TITLE = MONTHS_NOMINATIVE_UPPER
+_GREEK_MONTHS_GEN = MONTHS_GENITIVE
 
 
 def _period_title(period_start: str, period_end: str) -> str:

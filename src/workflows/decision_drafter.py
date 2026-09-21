@@ -29,6 +29,8 @@ import unicodedata
 from pathlib import Path
 from typing import Protocol
 
+from src.domain.refs import decision_ref
+
 # Default location of the pre-ingested governance corpus (see
 # scripts/ingest_governance_docs.py - do NOT modify it here).
 _DEFAULT_ARTICLES_PATH = "assets/governance/articles.json"
@@ -54,18 +56,7 @@ def compute_decision_ref(meeting_ref: str, sequence: int) -> str:
     Raises:
         ValueError: if *meeting_ref* lacks a ``\\d+-\\d+`` core, or *sequence* < 1.
     """
-    core = meeting_ref.replace("ΔΣ", "", 1).strip() if meeting_ref.startswith("ΔΣ") else meeting_ref.strip()
-    core = core.strip()
-    if not _REF_CORE_RE.match(core):
-        raise ValueError(
-            f"Invalid meeting_ref {meeting_ref!r}: expected leading 'ΔΣ' "
-            f"then a 'MM-YYYY' core matching \\d+-\\d+, got core {core!r}."
-        )
-    if sequence < 1:
-        raise ValueError(
-            f"Invalid sequence {sequence!r}: must be >= 1 (1-based)."
-        )
-    return f"ΔΣ{sequence:02d}-{core}"
+    return decision_ref(meeting_ref, sequence)
 
 
 # --------------------------------------------------------------------------- #

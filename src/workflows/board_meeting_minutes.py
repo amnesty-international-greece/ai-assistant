@@ -11,7 +11,7 @@ from typing import Any
 
 from src.config import settings
 from src.core.protocol import allocate_protocol_number, commit_protocol_reservation
-from src.workflows.decision_drafter import compute_decision_ref
+from src.domain.refs import decision_ref, meeting_ref as meeting_ref_of
 from src.core.claude import ClaudeClient
 from src.core.email_templates import render_email
 from src.core.workflow import BaseWorkflow, WorkflowStep, StepResult
@@ -654,7 +654,9 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
         mm = f"{meeting_number:02d}"
         yyyy = str(meeting_year)
         meeting_ref = (
-            ctx.get("raw_meeting_id") or ctx.get("meeting_ref") or f"ΔΣ{mm}-{yyyy}"
+            ctx.get("raw_meeting_id")
+            or ctx.get("meeting_ref")
+            or meeting_ref_of(meeting_number, meeting_year)
         ).strip()
         decision_seq = 1
 
@@ -706,12 +708,14 @@ class BoardMeetingMinutesWorkflow(BaseWorkflow):
             if payload.get("decision_text"):
                 verbatim_used += 1
             try:
-                decision_number = payload.get("ref") or compute_decision_ref(
+                decision_number = payload.get("ref") or decision_ref(
                     meeting_ref, decision_seq
                 )
             except ValueError as exc:
                 logger.warning("Could not compute a decision ref for %s: %s", meeting_ref, exc)
-                decision_number = f"ΔΣ{decision_seq:02d}-{mm}-{yyyy}"
+                decision_number = decision_ref(
+                    meeting_ref_of(meeting_number, meeting_year), decision_seq
+                )
             decision_numbers.append(decision_number)
             rows.append([decision_number, text])
             decision_seq += 1
