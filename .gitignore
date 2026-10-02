@@ -19,13 +19,18 @@ env/
 *.pem
 *.key
 
-# Database
+# Database (and SQLite's write-ahead files, which hold live rows)
 data/amnesty.db
+data/amnesty.db-wal
+data/amnesty.db-shm
 
 # Local safety backups (refreshed on every SharePoint download — never commit)
 data/backups/
-sections/*/roster.yaml      # the people: personal data, never committed
-data/state_blobs/        # oversized workflow-context values, offloaded from the DB
+# The people: personal data, never committed.
+# (Git has no inline comments: a "# ..." after a pattern becomes part of it.)
+sections/*/roster.yaml
+# Oversized workflow-context values, offloaded from the DB
+data/state_blobs/
 data/inbox/
 data/output/
 
