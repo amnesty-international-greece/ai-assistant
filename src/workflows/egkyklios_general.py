@@ -17,12 +17,19 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from src.config import settings
-from src.domain.locale_el import MONTHS_GENITIVE, MONTHS_NOMINATIVE_UPPER
+from src.domain.locale_el import (
+    MONTHS_GENITIVE,
+    MONTHS_NOMINATIVE_UPPER,
+    format_date,
+    month_accusative,
+)
 from src.core.protocol import allocate_protocol_number, commit_protocol_reservation
 from src.core.audit import (
     create_egkyklios_draft,
@@ -91,6 +98,343 @@ def _default_quarter(test_mode: bool = False) -> tuple[str, str]:
         end = date(today.year, end_month, end_day)
     return start.isoformat(), end.isoformat()
 
+
+
+def _bundle_briefings(briefing_texts: list[dict]) -> str:
+    """All briefing text, in order, with its provenance kept visible."""
+    out = ""
+    for bt in briefing_texts:
+        scan = " [ΣΚΑΝΑΡΙΣΜΕΝΟ]" if bt.get("is_scan") else ""
+        out += (f"\n--- {bt['kind']} / Συνεδρίαση {bt['meeting_ref']} "
+                f"({bt.get('archived_at', '')[:10]}){scan} ---\n{bt['text']}\n")
+    return out
+
+
+def _period_words(period_start: str, period_end: str) -> tuple[str, str, str]:
+    """The months as the opening sentence needs them: "από τον Απρίλιο ..."."""
+    try:
+        ds, de = date.fromisoformat(period_start), date.fromisoformat(period_end)
+        return month_accusative(ds.month), month_accusative(de.month), str(de.year)
+    except Exception:
+        return period_start, period_end, ""
+
+
+def _meeting_heading(index: int, meeting_date: str, month_shared: bool = False) -> str:
+    """"Τακτική Συνεδρίαση Ιουνίου"; with the day when two meetings share a month."""
+    try:
+        d = date.fromisoformat(meeting_date)
+        when = _GREEK_MONTHS_GEN[d.month]
+        if month_shared:
+            when = f"{d.day}ης {when}"
+        return f"### **1.{index}. Τακτική Συνεδρίαση {when}**"
+    except Exception:
+        return f"### **1.{index}. Τακτική Συνεδρίαση**"
+
+
+def _previous_sections() -> str:
+    """The last edition's Office sections, as a naming preference."""
+    try:
+        path = section.asset_path("style_reference") / "egkyklios_previous_sections.txt"
+        lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()]
+        return "\n".join(f"- {ln}" for ln in lines if ln and not ln.startswith("#"))
+    except Exception as exc:
+        logger.warning("No previous-section reference (%s)", exc)
+        return "- (δεν υπάρχει προηγούμενη εγκύκλιος)"
+
+
+def _parse_json(raw: str) -> dict:
+    """The first JSON object in a model reply, fences or not."""
+    text = (raw or "").strip()
+    first, last = text.find("{"), text.rfind("}")
+    if first < 0 or last <= first:
+        raise ValueError("no JSON object in the reply")
+    return json.loads(text[first:last + 1])
+
+
+def _in_period(item: dict, period_start: str, period_end: str) -> bool:
+    """Undated items stay; dated ones must fall inside the edition's window."""
+    start = (item.get("date") or "").strip()
+    end = (item.get("date_end") or "").strip() or start
+    if not start:
+        return True
+    return end >= period_start and start <= period_end
+
+
+def _extract_items(client, prompt: str, briefing_texts: list[dict],
+                   period_start: str, period_end: str, workflow: str
+                   ) -> tuple[list[dict], list[str], list[str]]:
+    """Every briefing, broken into items; personal and out-of-period ones dropped.
+
+    Returns (items, staff_names, failures). Items carry an id ("I01"...) so the
+    plan can assign them and each section writer sees only its own.
+    """
+    items: list[dict] = []
+    staff: set[str] = set()
+    failures: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for bt in briefing_texts:
+        label = f"{bt.get('kind', '')} {bt.get('meeting_ref', '')}".strip()
+        data = None
+        for attempt in (1, 2):
+            # one malformed reply from a free model should not sink the run;
+            # two in a row is a real problem and stops it
+            try:
+                # the provenance line carries the date the year is inferred
+                # from: briefings write "13/06" and leave the year to the reader
+                raw = client.generate(user_prompt=_bundle_briefings([bt]), system_prompt=prompt,
+                                      workflow=workflow, max_tokens=24000)
+                data = _parse_json(raw)
+                break
+            except Exception as exc:
+                logger.warning("Item extraction from %s failed (attempt %d): %s",
+                               label, attempt, exc)
+                if attempt == 2:
+                    failures.append(f"εξαγωγή θεμάτων από {label}: {str(exc)[:100]}")
+        if data is None:
+            continue
+        staff.update(n.strip() for n in data.get("staff_names") or [] if n and n.strip())
+        for item in data.get("items") or []:
+            if item.get("personal"):
+                continue
+            if not _in_period(item, period_start, period_end):
+                continue
+            key = ((item.get("date") or "").strip(),
+                   re.sub(r"\W+", "", (item.get("title") or "").lower())[:24])
+            if key in seen:            # the same event in two briefings
+                continue
+            seen.add(key)
+            item["source"] = label
+            items.append(item)
+    items.sort(key=lambda it: (it.get("date") or "9999", it.get("title") or ""))
+    for index, item in enumerate(items, 1):
+        item["id"] = f"I{index:02d}"
+    return items, sorted(staff), failures
+
+
+def _item_line(item: dict) -> str:
+    when = item.get("date") or "χωρίς ημερομηνία"
+    if item.get("date_end"):
+        when += f" έως {item['date_end']}"
+    return f"{item['id']} | {when} | {item.get('title', '')} | ενότητα εισηγητικού: {item.get('heading', '')}"
+
+
+def _canonical_title(title: str, previous_titles: list[str]) -> str:
+    """The previous edition's exact wording when the model meant the same section.
+
+    The model inflects titles freely ("Διεθνή Γραμματεία" for "Διεθνής
+    Γραμματεία"); members should see the same heading from edition to edition.
+    """
+    def stems(text: str) -> list[str]:
+        bare = unicodedata.normalize("NFD", text.lower())
+        bare = "".join(c for c in bare if not unicodedata.combining(c))
+        return [w[:6] for w in re.findall(r"\w+", bare)]
+
+    for prev in previous_titles:
+        if stems(prev) == stems(title):
+            return prev
+    return title
+
+
+def _plan_office_sections(client, plan_prompt: str, items: list[dict], previous: str,
+                          period_start: str, period_end: str, workflow: str) -> list[dict]:
+    """Assign items to sections; fall back to the Director's own headings."""
+    prompt = (plan_prompt.replace("{period_start}", period_start)
+              .replace("{period_end}", period_end)
+              .replace("{previous_sections}", previous))
+    known = {it["id"] for it in items}
+    previous_titles = [ln[2:].split("|")[0].strip()
+                       for ln in previous.splitlines() if ln.startswith("- ")]
+    try:
+        raw = client.generate(user_prompt="\n".join(_item_line(it) for it in items),
+                              system_prompt=prompt, workflow=workflow, max_tokens=3000)
+        sections = []
+        taken: set[str] = set()
+        for sec in _parse_json(raw).get("sections") or []:
+            # one event, one entry: the same item in two sections reads to a
+            # member as two events
+            ids = [i for i in sec.get("items") or [] if i in known and i not in taken]
+            taken.update(ids)
+            title = _canonical_title((sec.get("title") or "").split("|")[0].strip(),
+                                     previous_titles)
+            if title and ids:
+                sections.append({"title": title, "items": ids})
+        placed = {i for sec in sections for i in sec["items"]}
+        missing = [it["id"] for it in items if it["id"] not in placed]
+        if missing and sections:
+            # nothing silently disappears: an unplaced item goes to the section
+            # sharing a word with the Director's heading for it, else the last
+            by_id = {it["id"]: it for it in items}
+            for item_id in missing:
+                words = {w[:5] for w in re.findall(r"\w{5,}", by_id[item_id].get("heading", "").lower())}
+                home = next((sec for sec in sections
+                             if words & {w[:5] for w in re.findall(r"\w{5,}", sec["title"].lower())}),
+                            sections[-1])
+                home["items"].append(item_id)
+                logger.warning("Plan left %s unplaced; placed in %r", item_id, home["title"])
+        if sections:
+            return sections
+    except Exception as exc:
+        logger.warning("Section planning failed (%s); grouping by the Director's headings", exc)
+    grouped: dict[str, list[str]] = {}
+    for it in items:
+        grouped.setdefault(it.get("heading") or "Λοιπά", []).append(it["id"])
+    return [{"title": title, "items": ids} for title, ids in grouped.items()]
+
+
+_MONEY = re.compile(r"\d[\d.,]*\s*(?:€|ευρώ|EUR)", re.I)
+_PAY = ("μισθ", "αύξηση", "αυξήσ", "αποδοχ", "αμοιβ", "καθαρά")
+# what makes a mention of an employee a personal matter rather than a byline
+_HR = _PAY + ("πρόσληψ", "προσλήφθ", "προσλαμβ", "αποχώρ", "παραίτ", "απόλυσ",
+              "αξιολόγ", "υποψήφι", "βραχεία λίστα", "καθήκοντα", "καθηκόντων",
+              "άδεια", "ασθέν")
+
+
+def _prices_pay(sentence: str) -> bool:
+    """A sum of money with a word about pay right next to it ("αύξηση κατά 100€").
+
+    Proximity, not co-occurrence: "the reserve rose to 15.000 ευρώ, and inflation
+    will inform the salary review" is the organisation's finances, not anyone's pay.
+    """
+    low = sentence.lower()
+    for m in _MONEY.finditer(sentence):
+        window = low[max(0, m.start() - 40):m.end() + 40]
+        if any(p in window for p in _PAY):
+            return True
+    return False
+
+
+def _redact(markdown: str, staff_names: list[str]) -> tuple[str, list[str], list[str]]:
+    """Remove what puts an employee's personal matters in front of the members.
+
+    A second line of defence behind the prompts and the extraction step, which
+    dropped personal items already: a model that ignores an instruction once is
+    enough to put a colleague's salary in front of every member.
+
+    * a paragraph that names an employee *and* concerns hiring, leaving, pay or
+      evaluation goes;
+    * a sentence that puts a figure on pay goes;
+    * any other mention of a name is kept and listed for the reviewer, since
+      the list of names comes from the model and a run once counted the
+      journalists hosting an interview among the staff.
+
+    Returns (markdown, removed, to_review).
+    """
+    stems = set()
+    for name in staff_names:
+        for part in name.split():
+            if len(part) >= 5:
+                stems.add(part[:-1].lower())      # tolerate case endings
+    named = (re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, sorted(stems))) + ")")
+             if stems else None)
+    removed: list[str] = []
+    review: list[str] = []
+    out_lines = []
+    for line in markdown.split("\n"):
+        if line.startswith("#") or not line.strip():
+            out_lines.append(line)
+            continue
+        low = line.lower()
+        names_someone = bool(named and named.search(low))
+        if names_someone and any(k in low for k in _HR):
+            removed.append(line.strip())
+            continue
+        kept = []
+        for sentence in re.split(r"(?<=[.;·!])\s+", line):
+            if _prices_pay(sentence):
+                removed.append(sentence.strip())
+            else:
+                kept.append(sentence)
+        if kept:
+            out_lines.append(" ".join(kept))
+            if names_someone:
+                review.append(" ".join(kept).strip())
+
+    # an entry whose whole body went must not stay behind as a bare heading
+    lines = out_lines
+    out_lines = []
+    for i, line in enumerate(lines):
+        if line.startswith("### "):
+            body = []
+            for nxt in lines[i + 1:]:
+                if nxt.startswith("#"):
+                    break
+                body.append(nxt)
+            if not "".join(body).strip():
+                removed.append(f"(κενή εγγραφή) {line.lstrip('# ').strip()}")
+                continue
+        out_lines.append(line)
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines))
+    return text, removed, review
+
+
+def _tidy(markdown: str) -> str:
+    """The house conventions the model keeps half-following, made exact.
+
+    Only a plain hyphen, and every dated entry as ``### **\\[13 - 14 Ιουνίου
+    2026\\] Title**`` - the form the circular has always used.
+    """
+    text = markdown.replace("–", "-").replace("—", "-")
+
+    def date_part(raw: str) -> str:
+        raw = re.sub(r"\s+έως\s+", " - ", raw.strip())
+        raw = re.sub(r"\s*-\s*", " - ", raw)
+        m = re.fullmatch(r"(\d{1,2}) (\S+) (\d{4}) - (\d{1,2}) (\S+) (\d{4})", raw)
+        if m and m.group(3) == m.group(6):
+            if m.group(2) == m.group(5):
+                return f"{m.group(1)} - {m.group(4)} {m.group(2)} {m.group(3)}"
+            return f"{m.group(1)} {m.group(2)} - {m.group(4)} {m.group(5)} {m.group(3)}"
+        return raw
+
+    def heading(m: re.Match) -> str:
+        inner = m.group(1).replace("*", "").replace("\\", "").strip()
+        d = re.match(r"\[([^\]]+)\]\s*(.*)", inner)
+        if not d:
+            return m.group(0)
+        return f"### **\\[{date_part(d.group(1))}\\] {d.group(2).strip()}**"
+
+    text = re.sub(r"^###\s+(.+)$", heading, text, flags=re.M)
+    return re.sub(r"^(###[^\n]*)\n(?=[^\n#])", r"\1\n\n", text, flags=re.M)
+
+
+def _assemble(title: str, month_start: str, month_end: str, year: str,
+              part_a: list[str], part_b: list[str]) -> str:
+    """Put the drafted pieces into the section's frame.
+
+    The frame is optional and deliberately thin: the wording a section is
+    obliged to repeat in every edition (here, the paragraph the Internal
+    Regulations prescribe) and the names of the two parts. Everything else -
+    how many meetings, which Office sections, in what order - comes out of the
+    sources. A section that drops no frame in gets the structure only, so
+    adopting the workflow does not start with filling in a template.
+    """
+    frame = ""
+    try:
+        frame = (section.asset_path("templates") / "egkyklios.md").read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.info("No circular frame for this section (%s); using the bare structure", exc)
+
+    # Comments in the frame are notes for whoever edits it, not for members.
+    frame = re.sub(r"<!--.*?-->", "", frame, flags=re.S).lstrip()
+
+    if not frame.strip():
+        frame = (
+            "# {{TITLE_HEADING}}\n\n## {{TITLE}}\n\n"
+            "# Α. ΔΙΟΙΚΗΤΙΚΟ ΣΥΜΒΟΥΛΙΟ\n\n## 1\\. Συνεδριάσεις\n\n{{PART_A}}\n\n"
+            "# Β. ΓΡΑΦΕΙΟ\n\n{{PART_B}}\n"
+        )
+
+    filled = (frame
+              .replace("{{TITLE_HEADING}}", "ΓΕΝΙΚΗ ΕΓΚΥΚΛΙΟΣ ΕΝΗΜΕΡΩΣΗΣ")
+              .replace("{{TITLE}}", title)
+              .replace("{{MONTH_START}}", month_start)
+              .replace("{{MONTH_END}}", month_end)
+              .replace("{{YEAR}}", year)
+              .replace("{{PART_A}}", "\n".join(part_a).strip())
+              .replace("{{PART_A_EXTRA}}", "")
+              .replace("{{PART_B}}", "\n".join(part_b).strip()))
+    while "\n\n\n" in filled:
+        filled = filled.replace("\n\n\n", "\n\n")
+    return filled.rstrip() + "\n"
 
 class EgkykliosGeneralWorkflow(BaseWorkflow):
     """Γενική Εγκύκλιος Ενημέρωσης - full 10-step workflow."""
@@ -297,7 +641,7 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 logger.warning("Briefing PDF not found at %s, skipping", p)
                 continue
             try:
-                text, meta = extract_pdf_text(p, max_chars=8000)
+                text, meta = extract_pdf_text(p, max_chars=60000)
                 extracted.append({
                     "meeting_ref": b.get("meeting_ref", ""),
                     "kind": b.get("kind", ""),
@@ -392,114 +736,151 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _step_draft_circular(self, ctx: dict[str, Any]) -> StepResult:
+        """Draft the circular one section at a time.
+
+        A single call for a whole six-month edition produces a summary of a
+        summary: the model has one output budget for forty events. So the work
+        is split the way a person would split it: each meeting is written on
+        its own; the briefings are broken into items (dropping what falls
+        outside the period or concerns one employee), the items are assigned
+        to sections, and each section is written from its own items only, so
+        an event appears once. A deterministic guard then removes any sentence
+        that still names an employee or prices someone's pay.
+        """
         period_start: str = ctx.get("period_start", "")
         period_end: str = ctx.get("period_end", "")
         title: str = ctx.get("title", _period_title(period_start, period_end))
         briefing_texts: list[dict] = ctx.get("briefing_texts", [])
         meeting_summaries: list[dict] = ctx.get("meeting_summaries", [])
 
-        # Build source bundles for the prompt
-        briefings_text = ""
-        for bt in briefing_texts:
-            scan_note = " [ΣΚΑΝΑΡΙΣΜΕΝΟ - περιορισμένη ανάγνωση]" if bt.get("is_scan") else ""
-            briefings_text += (
-                f"\n--- {bt['kind']} / Συνεδρίαση {bt['meeting_ref']} "
-                f"({bt.get('archived_at', '')[:10]}){scan_note} ---\n"
-                f"{bt['text']}\n"
-            )
-
-        minutes_text = ""
-        for ms in meeting_summaries:
-            minutes_text += (
-                f"\n--- Πρακτικά Συνεδρίασης {ms.get('meeting_ref') or ms.get('workflow_id', '')} "
-                f"({ms.get('meeting_date', '')}) ---\n"
-                f"{ms['text']}\n"
-            )
-
-        if not briefings_text.strip():
-            briefings_text = "[Δεν υπάρχουν εισηγητικά για αυτή την περίοδο]"
-        if not minutes_text.strip():
-            minutes_text = "[Δεν υπάρχουν πρακτικά συνεδριάσεων για αυτή την περίοδο]"
-
-        # Load prompt template
+        client = ClaudeClient(model=settings.llm.drafting_model or None)
         try:
-            client = ClaudeClient()
-            system_prompt = client.load_prompt("egkyklios_general")
+            plan_prompt = client.load_prompt("egkyklios_plan")
+            board_prompt = client.load_prompt("egkyklios_board")
+            office_prompt = client.load_prompt("egkyklios_office")
         except FileNotFoundError as e:
             return StepResult(success=False, message=f"Δεν βρέθηκε prompt: {e}")
 
-        # Derive prose month names for intro paragraph substitution
-        try:
-            ds = date.fromisoformat(period_start)
-            de = date.fromisoformat(period_end)
-            month_start = _GREEK_MONTHS_GEN[ds.month]
-            month_end = _GREEK_MONTHS_GEN[de.month]
-            year = str(de.year)
-        except Exception:
-            month_start = period_start
-            month_end = period_end
-            year = ""
+        month_start, month_end, year = _period_words(period_start, period_end)
 
-        # Fill prompt placeholders in the system prompt
-        system_prompt = system_prompt.replace("{period_start}", period_start)
-        system_prompt = system_prompt.replace("{period_end}", period_end)
-        system_prompt = system_prompt.replace("{title}", title)
-        system_prompt = system_prompt.replace("{month_start}", month_start)
-        system_prompt = system_prompt.replace("{month_end}", month_end)
-        system_prompt = system_prompt.replace("{year}", year)
+        # Any piece that fails stops the step: a circular with holes in it must
+        # not reach the review gate looking like a draft. (One run with an
+        # unavailable model produced eleven failure notices, emailed them for
+        # review and parked them for approval.)
+        failures: list[str] = []
 
-        user_prompt = (
-            f"## Εισηγητικά / Ενημερωτικά Διευθυντή\n\n{briefings_text}\n\n"
-            f"## Πρακτικά Συνεδριάσεων ΔΣ\n\n{minutes_text}"
-        )
-
-        try:
-            raw_md = client.generate(
-                user_prompt=user_prompt,
-                system_prompt=system_prompt,
-                workflow=self.name,
-                max_tokens=8000,
+        # ── Part A: one call per meeting ──────────────────────────────────────
+        part_a: list[str] = []
+        months = [(s.get("meeting_date") or "")[:7] for s in meeting_summaries]
+        for index, summary in enumerate(meeting_summaries, 1):
+            meeting_ref = summary.get("meeting_ref") or summary.get("workflow_id", "")
+            meeting_date = summary.get("meeting_date", "")
+            heading = _meeting_heading(index, meeting_date,
+                                       month_shared=months.count(meeting_date[:7]) > 1)
+            prompt = (
+                board_prompt
+                .replace("{meeting_ref}", meeting_ref)
+                .replace("{meeting_date_greek}", format_date(meeting_date))
             )
-        except Exception as e:
-            return StepResult(success=False, message=f"Αποτυχία LLM κλήσης: {e}")
+            try:
+                body = client.generate(
+                    user_prompt=f"## Πρακτικά\n\n{summary.get('text', '')}",
+                    system_prompt=prompt,
+                    workflow=self.name,
+                    max_tokens=4000,
+                )
+            except Exception as e:
+                logger.warning("Draft failed for %s: %s", meeting_ref, e)
+                failures.append(f"{meeting_ref}: {str(e)[:120]}")
+                continue
+            part_a.append(f"{heading}\n\n{body.strip()}\n")
+            logger.info("[%s] drafted %s (%d chars)", self.workflow_id, meeting_ref, len(body))
 
-        # Save Markdown to disk
+        # ── Part B: items first, then the plan, then one writer per section ──
+        try:
+            extract_prompt = client.load_prompt("egkyklios_extract")
+        except FileNotFoundError as e:
+            return StepResult(success=False, message=f"Δεν βρέθηκε prompt: {e}")
+        items, staff_names, extract_failures = _extract_items(
+            client, extract_prompt, briefing_texts, period_start, period_end, self.name
+        )
+        failures.extend(extract_failures)
+        by_id = {it["id"]: it for it in items}
+        previous = _previous_sections()
+        plan = _plan_office_sections(client, plan_prompt, items, previous,
+                                     period_start, period_end, self.name)
+        logger.info("[%s] %d item(s) in %d section(s)", self.workflow_id, len(items), len(plan))
+
+        part_b: list[str] = []
+        for index, sec in enumerate(plan, 1):
+            section_title = sec["title"]
+            assigned = [by_id[i] for i in sec["items"] if i in by_id]
+            prompt = (office_prompt.replace("{section_title}", section_title)
+                      .replace("{period_start}", period_start)
+                      .replace("{period_end}", period_end))
+            user = "\n\n".join(
+                f"### {_item_line(it)}\n{it.get('text', '')}" for it in assigned
+            )
+            try:
+                body = client.generate(user_prompt=user, system_prompt=prompt,
+                                       workflow=self.name, max_tokens=6000)
+            except Exception as e:
+                logger.warning("Draft failed for section %s: %s", section_title, e)
+                failures.append(f"{section_title}: {str(e)[:120]}")
+                continue
+            part_b.append(f"## {index}\\. {section_title}\n\n{body.strip()}\n")
+            logger.info("[%s] drafted section %r from %d item(s)",
+                        self.workflow_id, section_title, len(assigned))
+
+        if failures:
+            return StepResult(
+                success=False,
+                data={"draft_failures": failures},
+                message=(f"Η σύνταξη απέτυχε σε {len(failures)} σημείο(α): "
+                         + "; ".join(failures[:4])),
+            )
+
+        markdown = _assemble(title, month_start, month_end, year, part_a, part_b)
+        markdown, redactions, privacy_review = _redact(_tidy(markdown), staff_names)
+        if redactions:
+            logger.warning("[%s] privacy guard removed %d passage(s)",
+                           self.workflow_id, len(redactions))
+
         drafts_dir = Path("data/egkyklios/drafts")
         drafts_dir.mkdir(parents=True, exist_ok=True)
-        md_filename = f"{period_start}_{period_end}_draft.md"
-        md_path = drafts_dir / md_filename
-        md_path.write_text(raw_md, encoding="utf-8")
-
-        # Create DB row
-        draft_id = create_egkyklios_draft(
-            kind="general",
-            period_start=period_start,
-            period_end=period_end,
-            title=title,
-            workflow_id=self.workflow_id,
+        md_path = drafts_dir / f"{period_start}_{period_end}_draft.md"
+        md_path.write_text(markdown, encoding="utf-8")
+        report_path = md_path.with_name(md_path.stem + "_redactions.md")
+        report_path.write_text(
+            "# Αφαιρέθηκαν από τον έλεγχο απορρήτου\n\n"
+            + ("\n".join(f"- {r}" for r in redactions) if redactions else "Τίποτα.")
+            + "\n\n# Να ελεγχθούν: αναφέρουν πρόσωπο που ίσως είναι εργαζόμενος\n\n"
+            + ("\n".join(f"- {r}" for r in privacy_review) if privacy_review else "Τίποτα.")
+            + "\n",
+            encoding="utf-8",
         )
-        update_egkyklios_draft(draft_id, draft_md_path=str(md_path))
+
+        draft_id = ctx.get("egkyklios_draft_id") or create_egkyklios_draft(
+            kind="general", period_start=period_start, period_end=period_end,
+            title=title, workflow_id=self.workflow_id,
+        )
+        update_egkyklios_draft(draft_id, draft_md_path=str(md_path), status="drafting")
 
         log_action(
-            workflow=self.name,
-            action="circular_drafted",
-            actor=self.actor,
+            workflow=self.name, action="circular_drafted", actor=self.actor,
             target=str(md_path),
-            details={
-                "draft_id": draft_id,
-                "title": title,
-                "md_chars": len(raw_md),
-            },
+            details={"chars": len(markdown), "meetings": len(part_a), "sections": len(part_b)},
         )
-
         return StepResult(
             success=True,
-            data={
-                "draft_md_path": str(md_path),
-                "draft_markdown": raw_md,
-                "egkyklios_draft_id": draft_id,
-            },
-            message=f"Πρόχειρο εγκυκλίου δημιουργήθηκε: {md_path} ({len(raw_md)} χαρακτήρες)",
+            data={"draft_markdown": markdown, "draft_md_path": str(md_path),
+                  "egkyklios_draft_id": draft_id,
+                  "redactions": redactions,
+                  "privacy_review": privacy_review,
+                  "office_items": len(items),
+                  "office_sections": [s.get("title") for s in plan]},
+            message=(f"Συντάχθηκε προσχέδιο {len(markdown)} χαρακτήρων "
+                     f"({len(part_a)} συνεδριάσεις, {len(part_b)} ενότητες Γραφείου)"),
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -531,6 +912,9 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
         drafts_dir.mkdir(parents=True, exist_ok=True)
         pdf_path = drafts_dir / pdf_filename
 
+        # The published document is produced by pasting this Markdown into the
+        # section's letterhead. The PDF here is only a readable proof for the
+        # review gate, so a failure to render it is not fatal.
         try:
             render_egkyklios_pdf(
                 markdown_text=draft_markdown,
@@ -538,11 +922,11 @@ class EgkykliosGeneralWorkflow(BaseWorkflow):
                 title=title,
                 period_start=period_start,
                 period_end=period_end,
-                protocol_number="",  # not yet assigned
+                protocol_number="",  # assigned at archiving
                 workflow=self.name,
             )
         except Exception as e:
-            return StepResult(success=False, message=f"Αποτυχία απόδοσης PDF: {e}")
+            logger.warning("Proof PDF could not be rendered (%s); the Markdown stands", e)
 
         if draft_id:
             update_egkyklios_draft(draft_id, draft_pdf_path=str(pdf_path))

@@ -56,12 +56,59 @@ def _org_footer() -> str:
 
 _ORG_FOOTER = _org_footer()
 
+
+# ── Fonts ─────────────────────────────────────────────────────────────────────
+# Helvetica, reportlab's default, has no Greek: every Greek letter came out as
+# a black box. The section's letterhead template uses Roboto, which does, so
+# the proof uses the same family the published document will. If a section
+# ships no fonts, fall back to Helvetica and say so.
+
+def _register_fonts() -> dict[str, str]:
+    from reportlab.lib.fonts import addMapping
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    names = {"regular": "Helvetica", "bold": "Helvetica-Bold",
+             "italic": "Helvetica-Oblique", "bold_italic": "Helvetica-BoldOblique"}
+    try:
+        folder = section.asset_path("fonts")
+    except KeyError:
+        logger.warning("Section defines no fonts; the proof PDF cannot show Greek")
+        return names
+    files = {"regular": "Roboto-Regular.ttf", "bold": "Roboto-Bold.ttf",
+             "italic": "Roboto-Italic.ttf", "bold_italic": "Roboto-BoldItalic.ttf"}
+    try:
+        for key, filename in files.items():
+            face = f"DocSans-{key}"
+            if face not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont(face, str(folder / filename)))
+            names[key] = face
+        # so <b> and <i> inside a paragraph pick the right face
+        addMapping("DocSans-regular", 0, 0, names["regular"])
+        addMapping("DocSans-regular", 1, 0, names["bold"])
+        addMapping("DocSans-regular", 0, 1, names["italic"])
+        addMapping("DocSans-regular", 1, 1, names["bold_italic"])
+    except Exception as exc:
+        logger.warning("Could not register the section's fonts (%s); Greek will not render", exc)
+        return {"regular": "Helvetica", "bold": "Helvetica-Bold",
+                "italic": "Helvetica-Oblique", "bold_italic": "Helvetica-BoldOblique"}
+    return names
+
+
+FONTS = _register_fonts()
+_HELVETICA_TO_DOC = {
+    "Helvetica": FONTS["regular"],
+    "Helvetica-Bold": FONTS["bold"],
+    "Helvetica-Oblique": FONTS["italic"],
+    "Helvetica-BoldOblique": FONTS["bold_italic"],
+}
+
 # ── Styles ────────────────────────────────────────────────────────────────────
 
 
 def _make_styles() -> dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
-    return {
+    styles = {
         "doc_title": ParagraphStyle(
             "EgkTitle",
             parent=base["Title"],
@@ -128,7 +175,7 @@ def _make_styles() -> dict[str, ParagraphStyle]:
             leading=15,
             spaceBefore=10,
             spaceAfter=5,
-            fontName="Helvetica-BoldOblique",
+            fontName="Helvetica-Bold",
         ),
         "body": ParagraphStyle(
             "EgkBody",
@@ -153,6 +200,9 @@ def _make_styles() -> dict[str, ParagraphStyle]:
             textColor=colors.grey,
         ),
     }
+    for style in styles.values():
+        style.fontName = _HELVETICA_TO_DOC.get(style.fontName, style.fontName)
+    return styles
 
 
 # ── Markdown parser (handles subset the LLM emits) ───────────────────────────
@@ -162,14 +212,24 @@ _ITALIC_RE = re.compile(r"\*(.+?)\*")
 _DATE_REF_RE = re.compile(r"\[(\d{1,2}\s+\w+\s+\d{4})\]")
 
 
-def _md_inline(text: str) -> str:
+_MD_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!])")
+
+
+def _plain(text: str) -> str:
+    """Heading text as a reader sees it: no ``**``, no ``\\.`` or ``\\[``."""
+    return _MD_ESCAPE_RE.sub(r"\1", text).replace("**", "").strip()
+
+
+def _md_inline(text: str, *, bold_dates: bool = True) -> str:
     """Convert inline markdown (bold, italic) to ReportLab XML."""
+    # XML first: a stray "&" or "<" in the prose would abort the whole render
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = _MD_ESCAPE_RE.sub(r"\1", text)
     text = _BOLD_RE.sub(r"<b>\1</b>", text)
     text = _ITALIC_RE.sub(r"<i>\1</i>", text)
-    # Date references in brackets: [5 Μαρτίου 2026] → bold
-    text = _DATE_REF_RE.sub(r"<b>[\1]</b>", text)
-    # Escape remaining & and < that aren't part of our tags
-    # (very light-touch - avoids XML parse errors)
+    if bold_dates:
+        # Date references in brackets: [5 Μαρτίου 2026] → bold
+        text = _DATE_REF_RE.sub(r"<b>[\1]</b>", text)
     return text
 
 
@@ -228,7 +288,7 @@ def _draw_header_footer(
 
     if not is_first_page:
         # Header: logo left (40pt wide), org name right
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(FONTS["regular"], 8)
         canvas.setFillColor(colors.HexColor("#333333"))
         canvas.drawRightString(w - 1.5 * cm, h - 1.0 * cm, _ORG_HEADER)
         if logo_exists:
@@ -247,7 +307,7 @@ def _draw_header_footer(
         canvas.line(1.5 * cm, h - 1.7 * cm, w - 1.5 * cm, h - 1.7 * cm)
 
         # Footer: org name left, logo right
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(FONTS["regular"], 8)
         canvas.setFillColor(colors.HexColor("#333333"))
         canvas.drawString(1.5 * cm, 0.9 * cm, _ORG_FOOTER)
         if logo_exists:
@@ -263,7 +323,7 @@ def _draw_header_footer(
     else:
         # Page 1 footer: protocol number only
         if protocol_number:
-            canvas.setFont("Helvetica", 8)
+            canvas.setFont(FONTS["regular"], 8)
             canvas.setFillColor(colors.grey)
             canvas.drawString(
                 1.5 * cm, 0.9 * cm,
@@ -322,11 +382,20 @@ def render_egkyklios_pdf(
     # ── Parse tokens ─────────────────────────────────────────────────────────
     tokens = parse_markdown(markdown_text)
 
-    # ── Collect TOC entries (level 2 & 3 headings, skip title/subtitle) ──────
+    # The title block is drawn below; drop the Markdown's own copy of it
+    def is_title(tok: dict[str, Any]) -> bool:
+        text = _plain(tok["text"]).upper()
+        return tok["type"] == "heading" and tok["level"] <= 2 and (
+            text == "ΓΕΝΙΚΗ ΕΓΚΥΚΛΙΟΣ ΕΝΗΜΕΡΩΣΗΣ" or text == title.upper())
+
+    tokens = [tok for tok in tokens if not is_title(tok)]
+
+    # ── TOC: the parts (#) and their sections (##); dated entries would make
+    # it pages long ────────────────────────────────────────────────────────────
     toc_entries: list[tuple[int, str]] = []
     for tok in tokens:
-        if tok["type"] == "heading" and tok["level"] in (2, 3):
-            toc_entries.append((tok["level"], tok["text"]))
+        if tok["type"] == "heading" and tok["level"] in (1, 2):
+            toc_entries.append((tok["level"], _plain(tok["text"])))
 
     # ── Build flowables ───────────────────────────────────────────────────────
     elements: list[Any] = []
@@ -340,25 +409,19 @@ def render_egkyklios_pdf(
     if toc_entries:
         elements.append(Paragraph("Περιεχόμενα", styles["toc_heading"]))
         for level, heading in toc_entries:
-            indent = "    " if level == 3 else ""
+            indent = "&nbsp;" * 6 if level == 2 else ""
+            heading = heading.replace("&", "&amp;").replace("<", "&lt;")
             elements.append(Paragraph(f"{indent}{heading}", styles["toc_entry"]))
         elements.append(Spacer(1, 0.5 * cm))
         elements.append(HRFlowable(width="100%", thickness=1, color=colors.lightgrey, spaceAfter=8))
 
-    # Render tokens (skip the doc title/subtitle if the LLM also emitted them)
-    seen_main_heading = False
     for tok in tokens:
         if tok["type"] == "heading":
             lvl = tok["level"]
-            text = tok["text"]
-            # Skip top-level title/subtitle duplicates
-            if lvl == 1 and not seen_main_heading:
-                seen_main_heading = True
-                continue  # title already added above
-            if lvl == 1 and text.startswith(title[:8]):
-                continue
-            style_key = {1: "h1", 2: "h1", 3: "h2", 4: "h3"}.get(lvl, "h2")
-            elements.append(Paragraph(_md_inline(text), styles[style_key]))
+            style_key = {1: "h1", 2: "h2", 3: "h3", 4: "h3"}.get(lvl, "h3")
+            # headings are styled bold already; their ** markers are just noise
+            text = tok["text"].replace("**", "")
+            elements.append(Paragraph(_md_inline(text, bold_dates=False), styles[style_key]))
         elif tok["type"] == "bullet":
             elements.append(Paragraph(f"• {_md_inline(tok['text'])}", styles["bullet"]))
         elif tok["type"] == "para":

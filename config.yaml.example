@@ -12,6 +12,7 @@ app:
   version: "0.1.0"
 
 llm:
+  drafting_model: ""              # stronger model for documents people publish; empty = model
   max_retries: 4                  # transient provider errors are retried
   retry_base_seconds: 5.0         # first backoff, then doubling
   provider: "gemini"              # "gemini" (free, prototyping) | "claude" (production)

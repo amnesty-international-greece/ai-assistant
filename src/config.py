@@ -30,6 +30,9 @@ class LLMConfig(BaseModel):
     # retried with exponential backoff: retry_base_seconds, then doubling.
     max_retries: int = 4
     retry_base_seconds: float = 5.0
+    # Documents a human will publish (minutes, circulars) are drafted with this
+    # model instead of the cheap default. Empty = use `model`.
+    drafting_model: str = ""
 
 
 class StorageConfig(BaseModel):

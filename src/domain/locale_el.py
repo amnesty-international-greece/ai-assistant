@@ -26,20 +26,33 @@ MONTHS_NOMINATIVE_UPPER = {
     9: "ΣΕΠΤΕΜΒΡΙΟΣ", 10: "ΟΚΤΩΒΡΙΟΣ", 11: "ΝΟΕΜΒΡΙΟΣ", 12: "ΔΕΚΕΜΒΡΙΟΣ",
 }
 
+# "από τον Απρίλιο μέχρι και τον Σεπτέμβριο" - the form used after a preposition.
+MONTHS_ACCUSATIVE = {
+    1: "Ιανουάριο", 2: "Φεβρουάριο", 3: "Μάρτιο", 4: "Απρίλιο",
+    5: "Μάιο", 6: "Ιούνιο", 7: "Ιούλιο", 8: "Αύγουστο",
+    9: "Σεπτέμβριο", 10: "Οκτώβριο", 11: "Νοέμβριο", 12: "Δεκέμβριο",
+}
+
 # Same names indexed by month number, for callers that index a list.
 MONTHS_GENITIVE_LIST = [""] + [MONTHS_GENITIVE[i] for i in range(1, 13)]
 
 __all__ = [
+    "MONTHS_ACCUSATIVE",
     "MONTHS_GENITIVE",
     "MONTHS_GENITIVE_LIST",
     "MONTHS_NOMINATIVE_UPPER",
     "format_date",
+    "month_accusative",
     "month_genitive",
     "month_title",
     "meeting_type_genitive",
     "meeting_type_adjective",
     "greek_upper",
 ]
+
+
+def month_accusative(month: int) -> str:
+    return MONTHS_ACCUSATIVE.get(int(month), "")
 
 
 def month_genitive(month: int) -> str:

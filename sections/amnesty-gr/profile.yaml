@@ -46,3 +46,7 @@ assets:
   email_templates: "sections/amnesty-gr/email_templates"
   discord_templates: "sections/amnesty-gr/discord_templates"
   governance_corpus: "sections/amnesty-gr/governance/articles.json"
+  letterhead: "sections/amnesty-gr/brand/letterhead-yellow.ott"
+  fonts: "sections/amnesty-gr/brand/fonts"   # Roboto, as the letterhead uses
+  style_reference: "sections/amnesty-gr/style"
+  templates: "sections/amnesty-gr/templates"   # thin frames: only what repeats each edition

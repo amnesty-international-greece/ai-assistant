@@ -60,9 +60,11 @@ class ClaudeClient:
         text = client.generate(user_prompt="...", system_prompt="...")
     """
 
-    def __init__(self) -> None:
+    def __init__(self, model: str | None = None) -> None:
+        """``model`` overrides config for this client, e.g. a stronger model
+        for drafting a document a human will publish."""
         self._provider = settings.llm.provider
-        self._model = settings.llm.model
+        self._model = model or settings.llm.model
         self._total_input_tokens = 0
         self._total_output_tokens = 0
         self._backend = self._init_backend()

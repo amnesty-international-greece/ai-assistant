@@ -811,7 +811,11 @@ class GoogleClient:
         # Step 4: Apply paragraph styles
         style_map = {
             "title": "TITLE",
+            "subtitle": "SUBTITLE",
             "heading": "HEADING_2",
+            "heading1": "HEADING_1",
+            "heading2": "HEADING_2",
+            "heading3": "HEADING_3",
             "body": "NORMAL_TEXT",
         }
 

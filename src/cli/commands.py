@@ -1488,6 +1488,7 @@ async def _run_egkyklios_general(args: argparse.Namespace) -> None:
     if status == "failed":
         print(f"  Σφάλμα στο βήμα:  {result.get('step', '?')}")
         print(f"  Μήνυμα:           {result.get('error', '?')}")
+        sys.exit(1)
 
 
 async def _run_egkyklios_general_approve(args: argparse.Namespace) -> None:
@@ -1557,6 +1558,7 @@ async def _run_egkyklios_general_approve(args: argparse.Namespace) -> None:
     elif status == "failed":
         print(f"  Σφάλμα στο βήμα: {result.get('step', '?')}")
         print(f"  Μήνυμα:          {result.get('error', '?')}")
+        sys.exit(1)
 
 
 def _run_egkyklios_list(args: argparse.Namespace) -> None:
