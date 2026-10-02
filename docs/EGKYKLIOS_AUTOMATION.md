@@ -156,10 +156,27 @@ absent from the archive altogether.
 
 ### Phase C: drafting that can be trusted (3 to 4 weeks)
 
-6. **Re-filing pass.** Reuse the minutes organiser: given the briefing items and
-   the circular's sections, decide where each item belongs, and split one item
-   into two sections where it belongs in both. This is the step that turns a
-   briefing into a circular rather than a transcript of one.
+6. **Section reconciliation, not a fixed template.** The Director writes under
+   whatever headings suit the period, and that is deliberate: the circular's
+   structure follows his, it does not dictate it. The step is therefore:
+
+   1. parse each briefing in the period into headings and the items beneath them;
+   2. split compound headings into atomic topics, so
+      "Εκδηλώσεις - Ακτιβισμός - Θεσμικές παρεμβάσεις" yields three;
+   3. cluster those topics across the period's briefings into candidate sections;
+   4. place each item, allowing one item in two sections where it genuinely
+      belongs in both, as a press conference belongs to both events and media;
+   5. label each section with the previous circular's wording when the cluster
+      matches it, so members see continuity, and with the Director's own wording
+      otherwise;
+   6. order the sections as the last edition did, appending anything new beside
+      its nearest relative.
+
+   The Secretary General sees a one-page section map first: the sections, how
+   many items each holds, anything placed twice, and anything the model could
+   not place. Reordering happens there, before any prose is written. The
+   existing prompt already asks for sections that reflect the briefings
+   "οργανικά"; this gives that instruction something to work from.
 7. **Redaction rules** in the section profile, as data: categories that never
    reach members (named staff matters, individual pay, performance, health,
    anything a member could not be told in a room). The step produces the draft
@@ -178,19 +195,25 @@ absent from the archive altogether.
     sources and diff it against the hand-written one. Differences are either a
     bug or a judgement call worth encoding.
 
-## 6. Decisions for you
+## 6. Decisions taken (2026-10-02)
 
-1. **Cadence.** The Regulations say every four meetings and not more than three
-   months. Six-month editions are a breach of our own rules. Is the answer to
-   publish quarterly on a fixed date, or to amend the rule to match practice?
-2. **Who writes Part B.** Today the Director writes the briefings and the
-   Secretary General re-files them. If the Director's briefings adopted the
-   circular's own section names, the re-filing step would mostly disappear.
-3. **Redaction policy.** The categories need to be written down once and agreed,
-   ideally with the Director, since the briefings are his.
-4. **The General Assembly.** Its minutes are missing from the archive. That is a
-   statutory record, and it should be filed before the November assembly adds a
-   second gap.
+1. **Cadence: quarterly, as the Regulations say.** The six-month edition was a
+   consequence of doing it by hand over the summer, not a new norm. The
+   quarterly scheduler job already exists; the period should still be computed
+   from the last published circular rather than from the calendar, so that a
+   late edition widens its window instead of losing the months in between.
+2. **The Director keeps his own headings.** The circular adapts to the briefings,
+   not the reverse, which is why step 6 above reconciles headings rather than
+   imposing them. Flexibility is the requirement: merge what is the same, split
+   what is compound, move an item that sits oddly, and keep the result readable.
+3. **Redaction: strip it, keep the circular members-friendly.** Named staff
+   matters, individual pay, performance and anything a member could not be told
+   in a room stay out. The judgement applied by hand in this edition is the
+   standard to encode.
+4. **The General Assembly minutes are handled manually for now.** No workflow
+   work; the ΓΣ01-2026 minutes exist and will be filed by the Secretary General.
+   Treating the Assembly as a first-class meeting stays on the list for Phase B,
+   but nothing waits on it.
 
 ## 7. Small things this edition exposed
 
