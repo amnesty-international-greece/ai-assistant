@@ -414,6 +414,19 @@ Fix what is broken now, in place, without changing structure.
 
 ---
 
+## 7a. Open items raised since this review
+
+**Archive as PDF/A, not plain PDF.** The minutes and the register are permanent
+statutory records; a plain PDF depends on fonts and resources that may not be
+there in ten years, and nothing in it declares that it is self-contained.
+PDF/A-2b (ISO 19005-2) embeds every font, forbids external references and
+carries the metadata an archive needs. The documents the platform files are
+produced by exporting Google Docs, which exports plain PDF, so conversion would
+happen on our side before upload, and the register would record the conformance
+level. Worth doing for minutes, circulars, invitations and anything else that
+enters the πρωτόκολλο. Raised 2026-10-02; to be scheduled after the circular
+workflow is finished.
+
 ## 8. Decisions for the owner
 
 1. **Package name** (replacing `src`). Needed before Phase 5, cheap any time before it.

@@ -152,6 +152,62 @@ What the output shows:
 So the order of work is: redaction, then fidelity (no truncation, one entry per
 event), then the missing sources, then style. The pipeline itself is sound.
 
+## 4b. Getting the draft to the hand-written standard (runs 2 to 7, 2026-10-02)
+
+Measured against the hand-written edition with its General Assembly and "Λοιπά
+πεπραγμένα" parts left out, since those stay manual (section 6).
+
+| | words | dated events covered (of 46) | decisions (of 16) | staff named |
+|---|---|---|---|---|
+| hand-written | 3,784 | 39 | 13 | none |
+| run 3: one writer per section, all briefings to each | 6,613 | 35 | 14 | new hire by name, a salary figure |
+| run 5: items extracted, assigned, guarded | 4,410 | 43 | 12 | none |
+| run 7: each item once, worked examples, house style in code | 4,443 | 43 | 12 | none; the guard had nothing left to remove |
+
+What made the difference, in order of effect:
+
+* **Write piece by piece.** One call for six months produced 786 words. One call
+  per meeting and one per Office section gives each piece its own output budget.
+* **Extract items before writing.** Each briefing is broken into items (date,
+  title, text, `personal`); items outside the period or about one employee, or a
+  small group of them, are dropped in code; the plan assigns item IDs to
+  sections, **each exactly once**; each writer sees only its own items. Before
+  this, every writer saw every briefing and Athens Pride appeared in four
+  sections, March events leaked into an April edition, and a hire was named.
+* **A deterministic guard behind the prompts.** It removes a paragraph that
+  names an employee *and* concerns hiring, leaving, pay or evaluation, and a
+  sentence that puts a sum of money right next to a word about pay. Other
+  mentions of a name are kept and listed for the reviewer: the list of staff
+  names comes from the model, which in one run counted the journalists hosting
+  an interview among the staff and would have emptied two media entries. The
+  report sits next to the draft as `*_draft_redactions.md`.
+* **Concrete examples beat rules.** The board-minutes writer named the new hire
+  despite "no staff names"; a worked example of how a hire *is* written
+  ("ενέκρινε την **πρόσληψη Face-to-Face Manager**") fixed it.
+* **House conventions in code, not in the prompt.** Plain hyphens, the
+  `### **\[13 - 14 Ιουνίου 2026\] Title**` entry form, section titles snapped to
+  the previous edition's wording, the day in the heading when two meetings
+  share a month.
+* **Fail, don't degrade.** A piece that fails stops the step, so a draft with a
+  hole never reaches the review gate; a malformed extraction is retried once.
+
+What still separates it from the hand-written edition, all judgement rather than
+coverage:
+
+* explanation that the sources do not contain (the rationale for the
+  extraordinary hire came from an email thread, not from the minutes);
+* placement the model gets wrong now and then (a meeting with the Minister filed
+  under the International Secretariat);
+* related events the hand-written edition merges into one entry (the 3 June
+  press conference and the 4 June event);
+* small accuracy slips a reader with the sources catches (eight resolutions
+  "for" where the minutes give seven and one split vote);
+* bold "conclusion" sentences the writer adds to narrative sections, which are
+  not in the source and should go.
+
+The reviewer's job becomes reading a complete draft and a short privacy report,
+rather than writing from four briefings and five sets of minutes.
+
 ## 5. Plan
 
 Each phase ends with something usable on its own. Effort assumes the current
@@ -197,8 +253,10 @@ absent from the archive altogether.
    2. split compound headings into atomic topics, so
       "Εκδηλώσεις - Ακτιβισμός - Θεσμικές παρεμβάσεις" yields three;
    3. cluster those topics across the period's briefings into candidate sections;
-   4. place each item, allowing one item in two sections where it genuinely
-      belongs in both, as a press conference belongs to both events and media;
+   4. place each item in exactly one section. (The first design allowed an
+      item in two sections where it seemed to belong in both, as a press
+      conference belongs to both events and media; the model used that for
+      ordinary events and members would read one event as two. See 4b.)
    5. label each section with the previous circular's wording when the cluster
       matches it, so members see continuity, and with the Director's own wording
       otherwise;
