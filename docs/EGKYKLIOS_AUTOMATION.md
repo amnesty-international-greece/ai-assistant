@@ -119,6 +119,39 @@ render -> review gate -> archive (protocol number) -> Brevo -> Discord
 Only two steps need judgement that cannot be delegated: the redaction review and
 the final approval. Everything else is mechanical once the inputs exist.
 
+## 4a. What happened when the workflow was actually run (2026-10-02)
+
+With the four briefings and five meetings' content backfilled into the two
+tables the workflow reads, it ran end to end for 1 April to 30 September and
+halted at the approval gate: sources resolved, text extracted, draft written by
+the model, PDF rendered, review copy emailed to the test address, draft row
+recorded. Nothing had to be fixed to make it run.
+
+What the output shows:
+
+* **The section reconciliation already works.** Part B came out under the
+  Director's own headings, including a separate "Εκστρατείες" section, which is
+  exactly the behaviour decided in section 6.
+* **It would have published a staff resignation by name.** Part B named the
+  departing campaigner and her resignation. Nothing in the pipeline removes
+  personal matters, which puts the redaction step first in priority, not third.
+* **It is six times too short.** 786 words against the 4,100 of the hand-written
+  edition and the 3,000 to 4,000 of past ones. Each briefing is truncated to
+  8,000 characters, and the September one alone is 12,872; the prompt also never
+  asks for one entry per event, so six months collapse into one paragraph per
+  section.
+* **Whole items are missing.** The General Assembly and the Global Assembly do
+  not appear at all, and "Λοιπά πεπραγμένα" states that nothing else happened,
+  which is false. Neither has a source the workflow can see.
+* **House style is approximate.** Dates appear inline as `20/04/2026` instead of
+  `[20 Απριλίου 2026]` entry headings, and the fixed opening paragraph picked up
+  two grammatical slips ("από τον Απριλίου").
+* **No invention.** Every name, programme and figure in the draft traces to a
+  source document. The model compressed and omitted; it did not fabricate.
+
+So the order of work is: redaction, then fidelity (no truncation, one entry per
+event), then the missing sources, then style. The pipeline itself is sound.
+
 ## 5. Plan
 
 Each phase ends with something usable on its own. Effort assumes the current
